@@ -1,0 +1,16 @@
+{
+  "name": "@stockastic/settlement",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@stockastic/config": "*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.4"
+  }
+}
