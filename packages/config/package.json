@@ -1,9 +1,17 @@
 {
   "name": "@stockastic/config",
-  "version": "0.1.0",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Rulebook constants: rulebook.json is the single source of truth (Go loads it directly; TS types are generated from the schema).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "gen": "node scripts/gen-types.mjs",
+    "check": "node scripts/check.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "json-schema-to-typescript": "^16.0.0"
   }
 }
