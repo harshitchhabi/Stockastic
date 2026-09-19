@@ -39,7 +39,6 @@ export interface StockasticConfig {
     /** Sec 1/17: strict cap; the timeline below must sum to exactly this. */
     totalMinutes: number;
     expectedParticipants: number;
-    expectedConcurrentClients: number;
     /** Sec 17 — the 17-block schedule. */
     timeline: EventBlock[];
   };
@@ -54,8 +53,6 @@ export interface StockasticConfig {
   accounts: {
     /** Sec 4: identical for every team. [RECOMMENDED] ₹10,00,000 — set by organisers. */
     startingCapital: number;
-    /** Direct-stock exposure cap. Rulebook defines none (only fund/wallet caps). */
-    exposureCapPerAccount: number | null;
   };
 
   qualification: {
@@ -102,12 +99,6 @@ export interface StockasticConfig {
     fundManagerLeadTimeMs: number;
   };
 
-  matchingEngine: {
-    tickSize: number;
-    minOrderQty: number;
-    maxOrderQty: number | null;
-  };
-
   market: {
     /** Sec 14: ~250 simulated companies. */
     symbolCount: number;
@@ -124,8 +115,6 @@ export interface StockasticConfig {
     refreshMs: number;
     /** Sec 12: NAV / AUM sampled at the same 5-minute interval. */
     navSampleMs: number;
-    /** How often we sample portfolio value for Phase-1 tie-break "intraday peak" (Sec 5). */
-    peakSampleMs: number;
   };
 
   disputes: {
@@ -166,7 +155,6 @@ export const CONFIG: StockasticConfig = {
   event: {
     totalMinutes: 300,
     expectedParticipants: 750,
-    expectedConcurrentClients: 750,
     timeline: [
       { id: "briefing", label: "Registration verification, seating & Opening Briefing", publicLabel: "Registration & Opening Briefing", durationMin: 15, stage: "phase1", marketOpen: false, allocationWindow: null },
       { id: "login", label: "Move to Phase 1 stations / login verification", publicLabel: "Platform & team login verification", durationMin: 5, stage: "phase1", marketOpen: false, allocationWindow: null },
@@ -192,7 +180,6 @@ export const CONFIG: StockasticConfig = {
 
   accounts: {
     startingCapital: 1_000_000,
-    exposureCapPerAccount: null,
   },
 
   qualification: {
@@ -218,13 +205,11 @@ export const CONFIG: StockasticConfig = {
 
   news: { fundManagerLeadTimeMs: 60_000 },
 
-  matchingEngine: { tickSize: 0.05, minOrderQty: 1, maxOrderQty: null },
-
   market: { symbolCount: 250 },
 
   rateLimits: { tradesPerWindow: 2, windowMs: 60_000 },
 
-  leaderboard: { refreshMs: 5 * 60_000, navSampleMs: 5 * 60_000, peakSampleMs: 15_000 },
+  leaderboard: { refreshMs: 5 * 60_000, navSampleMs: 5 * 60_000 },
 
   disputes: { expeditedPerPhase: 3, raiseWithinMinutes: 10, expeditedTurnaroundMinutes: 15 },
 
@@ -242,55 +227,3 @@ export const CONFIG: StockasticConfig = {
     },
   },
 };
-
-/** Cumulative start offset (minutes from T+00:00) of every timeline block. */
-export function timelineOffsets(timeline: EventBlock[] = CONFIG.event.timeline): number[] {
-  const offsets: number[] = [];
-  let acc = 0;
-  for (const block of timeline) {
-    offsets.push(acc);
-    acc += block.durationMin;
-  }
-  return offsets;
-}
-
-/** Participant-facing schedule: no confidential regime marker, no internal labels (Sec 13/17). */
-export function getPublicTimeline() {
-  const offsets = timelineOffsets();
-  return CONFIG.event.timeline.map((b, i) => ({
-    id: b.id,
-    label: b.publicLabel,
-    startMin: offsets[i],
-    durationMin: b.durationMin,
-    stage: b.stage,
-    marketOpen: b.marketOpen,
-    allocationWindow: b.allocationWindow,
-  }));
-}
-
-/** Subset of CONFIG safe to expose to participants via GET /api/config. */
-export function getPublicConfig() {
-  return {
-    event: {
-      totalMinutes: CONFIG.event.totalMinutes,
-      timeline: getPublicTimeline(),
-    },
-    teams: CONFIG.teams,
-    accounts: { startingCapital: CONFIG.accounts.startingCapital },
-    qualification: {
-      qualifyingTeams: CONFIG.qualification.qualifyingTeams,
-      fundCount: CONFIG.qualification.fundCount,
-    },
-    fund: CONFIG.fund,
-    fees: {
-      managementFeePercent: CONFIG.fees.managementFeePercent,
-      performanceFeePercent: CONFIG.fees.performanceFeePercent,
-    },
-    news: CONFIG.news,
-    matchingEngine: CONFIG.matchingEngine,
-    rateLimits: CONFIG.rateLimits,
-    leaderboard: CONFIG.leaderboard,
-    disputes: CONFIG.disputes,
-    prizes: CONFIG.prizes,
-  };
-}

@@ -7,10 +7,8 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test -w @stockastic/matching-engine",
-    "dev:server": "npm run dev -w @stockastic/server",
     "dev:web": "npm run dev -w @stockastic/web",
-    "build": "npm run build -w @stockastic/config && npm run build -w @stockastic/matching-engine && npm run build -w @stockastic/server"
+    "build": "npm run build -w @stockastic/config && npm run build -w @stockastic/web"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

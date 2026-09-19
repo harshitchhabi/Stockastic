@@ -1,7 +1,48 @@
 import type { Role } from "@stockastic/config";
-import type { BookDepth, Fill, Order, OrderSide } from "@stockastic/matching-engine";
+export type { Role };
 
-export type { BookDepth, Fill, Order, OrderSide, Role };
+// Wire types for the order book and trades. Placeholder until the Go API contract defines them.
+export type OrderSide = "buy" | "sell";
+export type OrderStatus = "open" | "partially_filled" | "filled" | "cancelled" | "rejected";
+
+export interface Order {
+  id: string;
+  clientOrderId: string;
+  accountId: string;
+  symbol: string;
+  side: OrderSide;
+  price: number;
+  qty: number;
+  remainingQty: number;
+  status: OrderStatus;
+  createdAt: number;
+  seq: number;
+}
+
+export interface Fill {
+  id: string;
+  symbol: string;
+  price: number;
+  qty: number;
+  takerOrderId: string;
+  makerOrderId: string;
+  takerAccountId: string;
+  makerAccountId: string;
+  takerSide: OrderSide;
+  timestamp: number;
+}
+
+export interface PriceLevel {
+  price: number;
+  qty: number;
+  orderCount: number;
+}
+
+export interface BookDepth {
+  symbol: string;
+  bids: PriceLevel[];
+  asks: PriceLevel[];
+}
 
 export interface Account {
   id: string;
