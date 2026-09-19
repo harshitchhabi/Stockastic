@@ -4,3 +4,8 @@ dist/
 *.log
 .env
 .env.local
+
+# Go
+apps/api/bin/
+*.exe
+coverage.out
