@@ -25,60 +25,29 @@ export function LoginForm() {
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center" }}>
-      <form
-        onSubmit={submit}
-        className="panel"
-        style={{ width: 340, padding: 24, gap: 12, display: "flex", flexDirection: "column" }}
-      >
-        <h2 style={{ margin: 0 }}>Stockastic</h2>
+    <div className="login-wrap">
+      <div className="login-hero">
+        <span className="colophon">Live Financial Ecosystem</span>
+        <div>
+          <h1>Stockastic</h1>
+          <p>Five hours. Two hundred and fifty companies. One book to trade them in.</p>
+        </div>
+        <span className="colophon">Trades are final</span>
+      </div>
 
-        <div style={{ display: "flex", gap: 4 }}>
-          <button
-            type="button"
-            onClick={() => setMode("login")}
-            style={{
-              flex: 1,
-              background: mode === "login" ? "var(--accent)" : "transparent",
-              color: mode === "login" ? "#fff" : "var(--text)",
-              border: "1px solid var(--panel-border)",
-              borderRadius: 4,
-              padding: 6,
-            }}
-          >
+      <form onSubmit={submit} className="login-form">
+        <div className="seg">
+          <button type="button" aria-pressed={mode === "login"} onClick={() => setMode("login")}>
             Log in
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("signup")}
-            style={{
-              flex: 1,
-              background: mode === "signup" ? "var(--accent)" : "transparent",
-              color: mode === "signup" ? "#fff" : "var(--text)",
-              border: "1px solid var(--panel-border)",
-              borderRadius: 4,
-              padding: 6,
-            }}
-          >
+          <button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
             Sign up
           </button>
         </div>
-
         {mode === "signup" && (
-          <input
-            placeholder="Display name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            required
-          />
+          <input placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
         )}
-        <input
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
+        <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input
           placeholder="Password"
           type="password"
@@ -87,13 +56,9 @@ export function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        {error && <div style={{ color: "var(--red)", fontSize: 12 }}>{error}</div>}
-        <button
-          type="submit"
-          disabled={submitting}
-          style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4, padding: 8 }}
-        >
-          {submitting ? "…" : mode === "signup" ? "Create account" : "Enter terminal"}
+        {error && <div className="down">{error}</div>}
+        <button type="submit" className="solid" disabled={submitting} style={{ padding: 11 }}>
+          {submitting ? "…" : mode === "signup" ? "Create account" : "Enter the floor"}
         </button>
       </form>
     </div>

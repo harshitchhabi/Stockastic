@@ -32,35 +32,24 @@ export function Watchlist({
   }, [symbols.length]);
 
   return (
-    <div className="panel">
+    <div className="panel" style={{ flex: 1 }}>
       <div className="panel-header">Watchlist</div>
       <div className="panel-body" style={{ padding: 0 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Last</th>
-            </tr>
-          </thead>
-          <tbody>
-            {symbols.map((s) => (
-              <tr
-                key={s.symbol}
-                onClick={() => onSelect(s.symbol)}
-                style={{
-                  cursor: "pointer",
-                  background: s.symbol === selected ? "#1a2233" : undefined,
-                }}
-              >
-                <td>
-                  <div>{s.symbol}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{s.displayName}</div>
-                </td>
-                <td className="mono">{s.lastPrice != null ? s.lastPrice.toFixed(2) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {symbols.map((s) => (
+          <button
+            key={s.symbol}
+            className="watch-row"
+            aria-current={s.symbol === selected}
+            onClick={() => onSelect(s.symbol)}
+          >
+            <span>
+              <span className="sym">{s.symbol}</span>
+              <br />
+              <span className="name">{s.displayName}</span>
+            </span>
+            <span className="mono">{s.lastPrice != null ? s.lastPrice.toFixed(2) : "—"}</span>
+          </button>
+        ))}
       </div>
     </div>
   );

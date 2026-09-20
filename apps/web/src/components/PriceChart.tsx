@@ -2,6 +2,15 @@ import { useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import type { Fill } from "@/lib/types";
+import { cssVar } from "@/lib/theme";
+import type { ColorType } from "lightweight-charts";
+
+const chartColors = () => ({
+  layout: { background: { type: "solid" as unknown as ColorType.Solid, color: cssVar("--paper") }, textColor: cssVar("--ink-2"), fontFamily: cssVar("--mono") },
+  grid: { vertLines: { color: cssVar("--rule") }, horzLines: { color: cssVar("--rule") } },
+  rightPriceScale: { borderColor: cssVar("--rule-strong") },
+  timeScale: { borderColor: cssVar("--rule-strong") },
+});
 
 export function PriceChart({ symbol }: { symbol: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -16,13 +25,18 @@ export function PriceChart({ symbol }: { symbol: string }) {
       if (disposed || !containerRef.current) return;
 
       chart = createChart(containerRef.current, {
-        layout: { background: { type: ColorType.Solid, color: "#121722" }, textColor: "#8a93a6" },
-        grid: { vertLines: { color: "#1c2431" }, horzLines: { color: "#1c2431" } },
+        ...chartColors(),
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
-        timeScale: { timeVisible: true, secondsVisible: true },
+        timeScale: { timeVisible: true, secondsVisible: true, borderColor: cssVar("--rule-strong") },
+        crosshair: { mode: 0 },
       });
-      series = chart.addLineSeries({ color: "#4a8cff", lineWidth: 2 });
+      series = chart.addLineSeries({ color: cssVar("--ink"), lineWidth: 2, priceLineColor: cssVar("--flag") });
+      const restyle = () => {
+        chart?.applyOptions(chartColors());
+        series?.applyOptions({ color: cssVar("--ink"), priceLineColor: cssVar("--flag") });
+      };
+      window.addEventListener("themechange", restyle);
 
       const history = await api.get<{ price: number; timestamp: number }[]>(
         `/api/symbols/${symbol}/history`
@@ -51,6 +65,7 @@ export function PriceChart({ symbol }: { symbol: string }) {
 
       return () => {
         window.removeEventListener("resize", resize);
+        window.removeEventListener("themechange", restyle);
         socket.off("trade", onTrade);
         socket.emit("unsubscribe:symbol", symbol);
       };
@@ -66,8 +81,7 @@ export function PriceChart({ symbol }: { symbol: string }) {
   }, [symbol]);
 
   return (
-    <div className="panel" style={{ minHeight: 260 }}>
-      <div className="panel-header">Price · {symbol}</div>
+    <div className="panel">
       <div className="panel-body" style={{ padding: 0 }}>
         <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
       </div>

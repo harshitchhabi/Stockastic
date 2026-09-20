@@ -7,6 +7,7 @@ import type { Order, OrderSide } from "@/lib/types";
 export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; tradingFrozen: boolean }) {
   const { account } = useSession();
   const [side, setSide] = useState<OrderSide>("buy");
+  const [orderType, setOrderType] = useState<"limit" | "market">("limit");
   const [price, setPrice] = useState("");
   const [qty, setQty] = useState("");
   const [pending, setPending] = useState<Order[]>([]);
@@ -57,6 +58,7 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
         clientOrderId,
         symbol,
         side,
+        type: orderType,
         price: Number(price),
         qty: Number(qty),
       });
@@ -76,88 +78,58 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
   }
 
   return (
-    <div className="panel">
-      <div className="panel-header">Order Ticket · {symbol}</div>
+    <div className="panel" style={{ flex: 1 }}>
+      <div className="panel-header">
+        Order ticket <span className="label">{symbol}</span>
+      </div>
       <div className="panel-body">
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button
-              type="button"
-              onClick={() => setSide("buy")}
-              style={{
-                flex: 1,
-                background: side === "buy" ? "var(--green)" : "transparent",
-                color: side === "buy" ? "#04140b" : "var(--text)",
-                border: "1px solid var(--green)",
-                borderRadius: 4,
-                padding: 6,
-                fontWeight: 600,
-              }}
-            >
+        <form onSubmit={submit} className="stack">
+          <div className="seg">
+            <button type="button" className="buy" aria-pressed={side === "buy"} onClick={() => setSide("buy")}>
               BUY
             </button>
-            <button
-              type="button"
-              onClick={() => setSide("sell")}
-              style={{
-                flex: 1,
-                background: side === "sell" ? "var(--red)" : "transparent",
-                color: side === "sell" ? "#210608" : "var(--text)",
-                border: "1px solid var(--red)",
-                borderRadius: 4,
-                padding: 6,
-                fontWeight: 600,
-              }}
-            >
+            <button type="button" className="sell" aria-pressed={side === "sell"} onClick={() => setSide("sell")}>
               SELL
             </button>
           </div>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>Limit price</span>
-            <input
-              type="number"
-              step="0.05"
-              required
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-            />
+          <div className="seg">
+            <button type="button" aria-pressed={orderType === "limit"} onClick={() => setOrderType("limit")}>
+              Limit
+            </button>
+            <button type="button" aria-pressed={orderType === "market"} onClick={() => setOrderType("market")}>
+              Market
+            </button>
+          </div>
+
+          <label className="field">
+            <span className="label">{orderType === "market" ? "Worst price you will accept" : "Limit price"}</span>
+            <input type="number" step="0.01" min="0" required value={price} onChange={(e) => setPrice(e.target.value)} />
           </label>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>Quantity</span>
+          <label className="field">
+            <span className="label">Quantity</span>
             <input type="number" step="1" min="1" required value={qty} onChange={(e) => setQty(e.target.value)} />
           </label>
 
-          {error && <div style={{ color: "var(--red)", fontSize: 11 }}>{error}</div>}
-          {tradingFrozen && (
-            <div style={{ color: "var(--red)", fontSize: 11 }}>Trading is frozen by the organizer.</div>
-          )}
+          {error && <div className="down">{error}</div>}
+          {tradingFrozen && <div className="down">Trading is frozen by the organizer.</div>}
 
-          <button
-            type="submit"
-            disabled={!account || submitting || tradingFrozen}
-            style={{
-              background: "var(--accent)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 4,
-              padding: 8,
-              fontWeight: 600,
-            }}
-          >
-            {submitting ? "Submitting…" : `Place ${side.toUpperCase()} order`}
+          <button type="submit" className="solid" disabled={!account || submitting || tradingFrozen} style={{ padding: 10 }}>
+            {submitting ? "Submitting…" : `Place ${orderType} ${side} order`}
           </button>
         </form>
 
-        <div style={{ marginTop: 16 }}>
-          <div style={{ color: "var(--text-dim)", fontSize: 11, marginBottom: 4 }}>Pending orders</div>
+        <div style={{ marginTop: 26 }}>
+          <div className="label" style={{ marginBottom: 6 }}>
+            Working orders
+          </div>
           <table>
             <thead>
               <tr>
                 <th>Side</th>
                 <th>Price</th>
-                <th>Qty left</th>
+                <th>Left</th>
                 <th></th>
               </tr>
             </thead>
@@ -165,17 +137,19 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
               {pending.map((o) => (
                 <tr key={o.id}>
                   <td className={o.side === "buy" ? "up" : "down"}>{o.side}</td>
-                  <td className="mono">{o.price.toFixed(2)}</td>
-                  <td className="mono">{o.remainingQty}</td>
+                  <td>{o.price.toFixed(2)}</td>
+                  <td>{o.remainingQty}</td>
                   <td>
-                    <button onClick={() => cancel(o)}>✕</button>
+                    <button className="ghost" onClick={() => cancel(o)} aria-label="Cancel order">
+                      ✕
+                    </button>
                   </td>
                 </tr>
               ))}
               {pending.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ color: "var(--text-dim)", textAlign: "center" }}>
-                    none
+                  <td colSpan={4} className="dim" style={{ textAlign: "center", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+                    nothing working
                   </td>
                 </tr>
               )}
