@@ -19,7 +19,7 @@ Node exists only on a developer machine to build the frontend.
 
 | Path | What |
 |---|---|
-| `apps/api` | Go backend (`stockastic/api`). **Built and tested:** `rulebook`, `scoring`, `engine`, `ledger`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui`. **Still stubs:** `store` (pgx), `auth`, `httpapi` (Gin), `wsapi`, `funds`, `obs`, `config` |
+| `apps/api` | Go backend (`stockastic/api`). **Built and tested:** `rulebook`, `scoring`, `engine`, `ledger`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui`. **Still stubs:** `store` (pgx), `auth`, `httpapi` (Gin), `wsapi`, `funds`, `config` |
 | `apps/api/internal/rulebook/rulebook.json` | **Every rulebook value**, embedded in the binary. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
 | `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
 | `loadtest/` | k6 load tests (to be written against the Go API) |
