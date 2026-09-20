@@ -1,22 +1,40 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { LeaderboardRow } from "@/lib/types";
+import type { LeaderboardRow, PublicConfig } from "@/lib/types";
 
-// Fields are a stub (rank + portfolio value + % return only) — the Prize 3/4
-// scoring rubric and tie-break logic are explicitly unfinalized in the
-// rulebook, so nothing downstream of that is built yet.
-const POLL_INTERVAL_MS = 5000;
+// Rulebook Sec 15: the leaderboard is a periodic snapshot (refreshed every rulebook.leaderboard
+// refreshSeconds on the server), NOT a live feed — that is a deliberate anti-copy-trading and load
+// choice. The server enforces the cadence; the client just picks up each new snapshot promptly by
+// polling a cheap cached endpoint at most every 30s, with jitter so ~750 clients don't fire together.
+const MAX_POLL_MS = 30_000;
 
 export function Leaderboard() {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
 
   useEffect(() => {
-    const load = () => api.get<LeaderboardRow[]>("/api/leaderboard").then(setRows);
-    load();
-    const interval = setInterval(load, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let pollMs = MAX_POLL_MS;
+    const load = () => api.get<LeaderboardRow[]>("/api/leaderboard").then((r) => !stopped && setRows(r)).catch(() => {});
+    const schedule = () => {
+      timer = setTimeout(() => {
+        load().finally(() => !stopped && schedule());
+      }, pollMs * (0.85 + Math.random() * 0.3));
+    };
+    api
+      .get<PublicConfig>("/api/config")
+      .then((c) => {
+        pollMs = Math.min(MAX_POLL_MS, c.leaderboard.refreshSeconds * 1000);
+      })
+      .catch(() => {})
+      .finally(() => {
+        load();
+        schedule();
+      });
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   return (

@@ -1,5 +1,9 @@
-import type { Role } from "@stockastic/config";
-export type { Role };
+export type Role = "investor" | "fund_manager";
+
+/** The participant-safe slice of GET /api/config that the UI reads (the server owns the full shape). */
+export interface PublicConfig {
+  leaderboard: { refreshSeconds: number };
+}
 
 // Wire types for the order book and trades. Placeholder until the Go API contract defines them.
 export type OrderSide = "buy" | "sell";

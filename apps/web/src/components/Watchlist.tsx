@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
@@ -31,7 +29,6 @@ export function Watchlist({
     return () => {
       socket.off("trade", onTrade);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbols.length]);
 
   return (

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useSession } from "@/lib/session";
 

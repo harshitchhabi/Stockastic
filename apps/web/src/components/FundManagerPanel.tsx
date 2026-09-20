@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -33,7 +31,6 @@ export function FundManagerPanel() {
 
   useEffect(() => {
     loadFund();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
 
   async function createFund(e: React.FormEvent) {

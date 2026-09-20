@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
@@ -55,7 +53,7 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
       // (e.g. a flaky connection, or a reconnect-and-retry after one) without
       // risking a duplicate order — the server dedupes on (account, this id).
       const clientOrderId = crypto.randomUUID();
-      await api.post("/api/orders", {
+      await api.postIdempotent("/api/orders", {
         clientOrderId,
         symbol,
         side,

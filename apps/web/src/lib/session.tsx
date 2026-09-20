@@ -1,8 +1,6 @@
-"use client";
-
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, authEvents, getToken, setToken } from "./api";
-import { reconnectSocket } from "./socket";
+import { closeSocket, reconnectSocket } from "./socket";
 import type { Account } from "./types";
 
 interface SessionContextValue {
@@ -40,6 +38,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onUnauthenticated = () => {
+      closeSocket();
       setToken(null);
       setAccount(null);
     };
@@ -69,6 +68,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    closeSocket();
     setToken(null);
     setAccount(null);
   }, []);

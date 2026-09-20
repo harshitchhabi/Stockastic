@@ -9,3 +9,7 @@ dist/
 apps/api/bin/
 *.exe
 coverage.out
+
+# Frontend build output is embedded into the Go binary; only the placeholder is tracked
+apps/api/internal/webui/dist/*
+!apps/api/internal/webui/dist/.gitkeep

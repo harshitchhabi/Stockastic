@@ -1,8 +1,7 @@
-"use client";
-
 import { useState } from "react";
 import { useSession } from "@/lib/session";
 import { useControlState } from "@/lib/useControlState";
+import { useConnection } from "@/lib/useConnection";
 import { Watchlist } from "./Watchlist";
 import { OrderBookLadder } from "./OrderBookLadder";
 import { OrderTicket } from "./OrderTicket";
@@ -12,18 +11,37 @@ import { Leaderboard } from "./Leaderboard";
 import { FundBrowser } from "./FundBrowser";
 import { FundManagerPanel } from "./FundManagerPanel";
 import { NewsFeed } from "./NewsFeed";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 const DEFAULT_SYMBOL = "ACME";
 
 export function DashboardShell() {
   const { account, logout } = useSession();
   const { tradingFrozen } = useControlState();
+  const connection = useConnection();
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
 
   if (!account) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", padding: 8, gap: 8 }}>
+      {connection !== "open" && (
+        <div
+          role="status"
+          style={{
+            background: "#3a2a05",
+            border: "1px solid #b8860b",
+            color: "#f5d36b",
+            padding: "6px 12px",
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {connection === "unauthenticated"
+            ? "Your session is no longer valid. Please sign in again."
+            : "Live connection lost — reconnecting. Prices and your orders may be out of date until it returns; orders you place are safe to retry."}
+        </div>
+      )}
       <div
         className="panel"
         style={{ flexDirection: "row", alignItems: "center", padding: "8px 12px", gap: 16, flexShrink: 0 }}
@@ -66,36 +84,54 @@ export function DashboardShell() {
         }}
       >
         <div style={{ gridRow: "1 / 3" }}>
-          <Watchlist selected={symbol} onSelect={setSymbol} />
+          <ErrorBoundary name="Watchlist">
+            <Watchlist selected={symbol} onSelect={setSymbol} />
+          </ErrorBoundary>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
-          <PriceChart symbol={symbol} />
+          <ErrorBoundary name="Price chart">
+            <PriceChart symbol={symbol} />
+          </ErrorBoundary>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <OrderBookLadder symbol={symbol} />
+            <ErrorBoundary name="Order book">
+              <OrderBookLadder symbol={symbol} />
+            </ErrorBoundary>
           </div>
         </div>
 
         <div style={{ gridRow: "1 / 3" }}>
-          <OrderTicket symbol={symbol} tradingFrozen={tradingFrozen} />
+          <ErrorBoundary name="Order ticket">
+            <OrderTicket symbol={symbol} tradingFrozen={tradingFrozen} />
+          </ErrorBoundary>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <Portfolio />
-          <Leaderboard />
+          <ErrorBoundary name="Portfolio">
+            <Portfolio />
+          </ErrorBoundary>
+          <ErrorBoundary name="Leaderboard">
+            <Leaderboard />
+          </ErrorBoundary>
         </div>
       </div>
 
       {account.role === "investor" && (
         <div style={{ height: 220, flexShrink: 0 }}>
-          <FundBrowser />
+          <ErrorBoundary name="Fund browser">
+            <FundBrowser />
+          </ErrorBoundary>
         </div>
       )}
 
       {account.role === "fund_manager" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, height: 220, flexShrink: 0 }}>
-          <FundManagerPanel />
-          <NewsFeed title="Fund Manager News (early feed)" />
+          <ErrorBoundary name="Fund manager ops">
+            <FundManagerPanel />
+          </ErrorBoundary>
+          <ErrorBoundary name="Fund manager news">
+            <NewsFeed title="Fund Manager News (early feed)" />
+          </ErrorBoundary>
         </div>
       )}
     </div>

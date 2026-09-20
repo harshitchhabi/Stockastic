@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import type { NewsItem } from "@/lib/types";

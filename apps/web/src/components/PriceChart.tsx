@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
