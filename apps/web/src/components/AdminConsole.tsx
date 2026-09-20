@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Leaderboard } from "./Leaderboard";
 import { useSession } from "@/lib/session";
 
 interface AdminState {
@@ -189,6 +190,8 @@ export function AdminConsole() {
           </tbody>
         </table>
       </div>
+
+      <Leaderboard />
 
       <div className="panel" style={{ padding: 12 }}>
         <div className="panel-header" style={{ padding: 0, border: "none" }}>

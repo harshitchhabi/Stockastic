@@ -1,48 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
-import { getSocket } from "@/lib/socket";
 import { useSession } from "@/lib/session";
-import type { Order, OrderSide } from "@/lib/types";
+import { usePendingOrders } from "@/lib/useOrders";
+import type { OrderSide } from "@/lib/types";
 
 export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; tradingFrozen: boolean }) {
   const { account } = useSession();
+  const { pending, reload, cancel } = usePendingOrders();
   const [side, setSide] = useState<OrderSide>("buy");
   const [orderType, setOrderType] = useState<"limit" | "market">("limit");
   const [price, setPrice] = useState("");
   const [qty, setQty] = useState("");
-  const [pending, setPending] = useState<Order[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPending = useCallback(() => {
-    if (!account) return;
-    api
-      .get<Order[]>("/api/orders/pending")
-      .then(setPending)
-      .catch(() => {});
-  }, [account]);
-
-  useEffect(() => {
-    loadPending();
-  }, [loadPending]);
-
-  useEffect(() => {
-    if (!account) return;
-    const socket = getSocket();
-    const refresh = () => loadPending();
-    socket.on("orderAccepted", refresh);
-    socket.on("orderCancelled", refresh);
-    socket.on("fill", refresh);
-    // Reconnection resync: after a dropped wifi and reconnect, trust the
-    // server's current state, not whatever this panel had before the drop.
-    socket.on("connect", refresh);
-    return () => {
-      socket.off("orderAccepted", refresh);
-      socket.off("orderCancelled", refresh);
-      socket.off("fill", refresh);
-      socket.off("connect", refresh);
-    };
-  }, [account, loadPending]);
+  const mine = pending.filter((o) => o.symbol === symbol);
+  const value = (Number(price) || 0) * (Number(qty) || 0);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,9 +23,8 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
     setError(null);
     setSubmitting(true);
     try {
-      // Client-generated idempotency key: safe to retry this exact submit
-      // (e.g. a flaky connection, or a reconnect-and-retry after one) without
-      // risking a duplicate order — the server dedupes on (account, this id).
+      // Client-generated idempotency key: safe to retry this exact submit (a flaky connection, or a
+      // reconnect-and-retry) without risking a duplicate order — the server dedupes on (account, this id).
       const clientOrderId = crypto.randomUUID();
       await api.postIdempotent("/api/orders", {
         clientOrderId,
@@ -64,7 +36,7 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
       });
       setPrice("");
       setQty("");
-      loadPending();
+      reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "order failed");
     } finally {
@@ -72,15 +44,8 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
     }
   }
 
-  const value = (Number(price) || 0) * (Number(qty) || 0);
-
-  async function cancel(order: Order) {
-    await api.del(`/api/orders/${order.symbol}/${order.id}`);
-    loadPending();
-  }
-
   return (
-    <div className="panel" style={{ flex: 1 }}>
+    <div className="panel ticket">
       <div className="panel-header">
         Order ticket <span className="label">{symbol}</span>
       </div>
@@ -133,42 +98,29 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
           </button>
         </form>
 
-        <div style={{ marginTop: 26 }}>
-          <div className="label" style={{ marginBottom: 6 }}>
-            Working orders
+        {mine.length > 0 && (
+          <div style={{ marginTop: 22 }}>
+            <div className="label" style={{ marginBottom: 6 }}>
+              Working orders in {symbol}
+            </div>
+            <table>
+              <tbody>
+                {mine.map((o) => (
+                  <tr key={o.id}>
+                    <td className={o.side === "buy" ? "up" : "down"}>{o.side}</td>
+                    <td>{o.price.toFixed(2)}</td>
+                    <td>{o.remainingQty}</td>
+                    <td>
+                      <button className="ghost" onClick={() => cancel(o)} aria-label="Cancel order">
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Side</th>
-                <th>Price</th>
-                <th>Left</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pending.map((o) => (
-                <tr key={o.id}>
-                  <td className={o.side === "buy" ? "up" : "down"}>{o.side}</td>
-                  <td>{o.price.toFixed(2)}</td>
-                  <td>{o.remainingQty}</td>
-                  <td>
-                    <button className="ghost" onClick={() => cancel(o)} aria-label="Cancel order">
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {pending.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="empty">
-                    nothing working
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        )}
       </div>
     </div>
   );

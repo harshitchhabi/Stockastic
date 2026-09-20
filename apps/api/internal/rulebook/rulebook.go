@@ -156,6 +156,9 @@ type Leaderboard struct {
 	InvestorFields   []string `json:"investorFields"`
 	FundFields       []string `json:"fundFields"`
 	ExposeHoldings   bool     `json:"exposeHoldings"`
+	// VisibleToParticipants says whether teams see the standings at all. Section 15 describes a public
+	// board, but the organiser has asked for standings to be organiser-only, so this defaults to false.
+	VisibleToParticipants bool `json:"visibleToParticipants"`
 }
 
 type Disputes struct {

@@ -12,7 +12,11 @@ const chartColors = () => ({
   timeScale: { borderColor: cssVar("--rule-strong") },
 });
 
-export function PriceChart({ symbol }: { symbol: string }) {
+export type HistoryPoint = { price: number; timestamp: number };
+
+export function PriceChart({ symbol, onHistory }: { symbol: string; onHistory?: (h: HistoryPoint[]) => void }) {
+  const onHistoryRef = useRef(onHistory);
+  onHistoryRef.current = onHistory;
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +40,7 @@ export function PriceChart({ symbol }: { symbol: string }) {
       const history = await api.get<{ price: number; timestamp: number }[]>(
         `/api/symbols/${symbol}/history`
       );
+      onHistoryRef.current?.(history);
       series.setData(
         history.map((h) => ({ time: Math.floor(h.timestamp / 1000) as import("lightweight-charts").UTCTimestamp, value: h.price }))
       );

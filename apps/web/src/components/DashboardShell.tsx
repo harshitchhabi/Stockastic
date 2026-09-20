@@ -2,69 +2,70 @@ import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useControlState } from "@/lib/useControlState";
 import { useConnection } from "@/lib/useConnection";
+import { UniverseProvider, useUniverse } from "@/lib/universe";
+import { pagePath, useRoute, type Page } from "@/lib/router";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import type { Fill, SymbolInfo } from "@/lib/types";
-import { Watchlist } from "./Watchlist";
-import { OrderBookLadder } from "./OrderBookLadder";
-import { OrderTicket } from "./OrderTicket";
-import { PriceChart } from "./PriceChart";
-import { Portfolio } from "./Portfolio";
-import { Leaderboard } from "./Leaderboard";
+import type { Fill, PublicConfig } from "@/lib/types";
+import { ExplorePage } from "./pages/ExplorePage";
+import { WatchlistPage } from "./pages/WatchlistPage";
+import { HoldingsPage } from "./pages/HoldingsPage";
+import { CompanyPage } from "./pages/CompanyPage";
 import { FundBrowser } from "./FundBrowser";
 import { FundManagerPanel } from "./FundManagerPanel";
+import { Leaderboard } from "./Leaderboard";
 import { NewsFeed } from "./NewsFeed";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { Tick } from "./Tick";
-
-const DEFAULT_SYMBOL = "ACME";
-
-type Tab = "portfolio" | "leaderboard" | "funds" | "ops";
 
 export function DashboardShell() {
+  return (
+    <UniverseProvider>
+      <Shell />
+    </UniverseProvider>
+  );
+}
+
+function Shell() {
   const { account, logout } = useSession();
   const { tradingFrozen } = useControlState();
   const connection = useConnection();
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
-  const [tab, setTab] = useState<Tab>("portfolio");
-  const [info, setInfo] = useState<SymbolInfo | null>(null);
-  const [live, setLive] = useState<number | null>(null);
-  const [lastTick, setLastTick] = useState<number | null>(null);
+  const route = useRoute();
+  const { starred } = useUniverse();
+  const [standingsVisible, setStandingsVisible] = useState(false);
+  const [lastTrade, setLastTrade] = useState<number | null>(null);
 
+  // Whether teams may see the standings at all is a rulebook decision, read from the server's public config.
   useEffect(() => {
-    setLive(null);
-    const socket = getSocket();
-    socket.emit("subscribe:symbol", symbol);
-    const onTrade = (f: Fill) => {
-      if (f.symbol !== symbol) return;
-      setLive(f.price);
-      setLastTick(Date.now());
-    };
-    socket.on("trade", onTrade);
-    return () => {
-      socket.off("trade", onTrade);
-    };
-  }, [symbol]);
-
-  useEffect(() => {
-    let alive = true;
     api
-      .get<SymbolInfo[]>("/api/symbols")
-      .then((all) => alive && setInfo(all.find((s) => s.symbol === symbol) ?? null))
+      .get<PublicConfig>("/api/config")
+      .then((c) => setStandingsVisible(c.leaderboard.visibleToParticipants === true))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const socket = getSocket();
+    const on = (_: Fill) => setLastTrade(Date.now());
+    socket.on("trade", on);
     return () => {
-      alive = false;
+      socket.off("trade", on);
     };
-  }, [symbol]);
+  }, []);
 
   if (!account) return null;
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "portfolio", label: "Holdings" },
-    { id: "leaderboard", label: "Standings" },
-    ...(account.role === "investor" ? [{ id: "funds" as Tab, label: "Funds" }] : []),
-    ...(account.role === "fund_manager" ? [{ id: "ops" as Tab, label: "Fund desk" }] : []),
+  const nav: { page: Page; label: string }[] = [
+    { page: "explore", label: "Explore" },
+    { page: "watchlist", label: `Watchlist${starred.size > 0 ? ` (${starred.size})` : ""}` },
+    { page: "holdings", label: "Holdings" },
+    ...(account.role === "investor" ? [{ page: "funds" as Page, label: "Funds" }] : []),
+    ...(account.role === "fund_manager" ? [{ page: "desk" as Page, label: "Fund desk" }] : []),
+    ...(standingsVisible ? [{ page: "standings" as Page, label: "Standings" }] : []),
   ];
+
+  // The role decides which pages exist; anything else falls back to Explore.
+  const allowed = new Set<Page>(["explore", "watchlist", "holdings", "company", ...nav.map((n) => n.page)]);
+  const page: Page = allowed.has(route.page) ? route.page : "explore";
+  const activeNav: Page = page === "company" ? "explore" : page;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -72,6 +73,13 @@ export function DashboardShell() {
         <div className="brand">
           Stockastic<small>Live Financial Ecosystem</small>
         </div>
+        <nav className="nav" aria-label="Pages">
+          {nav.map((n) => (
+            <a key={n.page} href={pagePath(n.page)} aria-current={activeNav === n.page ? "page" : undefined}>
+              {n.label}
+            </a>
+          ))}
+        </nav>
         {tradingFrozen && <span className="chip alert">Trading frozen</span>}
         <span style={{ marginLeft: "auto" }} className="dim">
           {account.displayName} <span className="label">· {account.role.replace("_", " ")}</span>
@@ -92,59 +100,35 @@ export function DashboardShell() {
         </div>
       )}
 
-      <div className="terminal">
-        <aside className="col-left">
-          <ErrorBoundary name="Watchlist">
-            <Watchlist selected={symbol} onSelect={setSymbol} />
+      <div className="body">
+        <main className="main">
+          <ErrorBoundary name={page}>
+            {page === "explore" && <ExplorePage />}
+            {page === "watchlist" && <WatchlistPage />}
+            {page === "holdings" && <HoldingsPage />}
+            {page === "company" && route.symbol && <CompanyPage key={route.symbol} symbol={route.symbol} tradingFrozen={tradingFrozen} />}
+            {page === "funds" && (
+              <div className="page">
+                <FundBrowser />
+              </div>
+            )}
+            {page === "desk" && (
+              <div className="page">
+                <FundManagerPanel />
+              </div>
+            )}
+            {page === "standings" && (
+              <div className="page">
+                <Leaderboard />
+              </div>
+            )}
           </ErrorBoundary>
-        </aside>
-
-        <main className="col-center">
-          <div className="symbol-head">
-            <h1>{symbol}</h1>
-            <span className="dim">{info?.displayName}</span>
-            <Tick value={live ?? info?.lastPrice} className="last" />
-          </div>
-
-          <div className="chart-row">
-            <ErrorBoundary name="Price chart">
-              <PriceChart symbol={symbol} />
-            </ErrorBoundary>
-            <ErrorBoundary name="Order book">
-              <OrderBookLadder symbol={symbol} />
-            </ErrorBoundary>
-          </div>
-
-          <section className="lower">
-            <div className="tabs" role="tablist">
-              {tabs.map((t) => (
-                <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <div className="tabpane">
-              <ErrorBoundary name={tab}>
-                {tab === "portfolio" && <Portfolio />}
-                {tab === "leaderboard" && <Leaderboard />}
-                {tab === "funds" && <FundBrowser />}
-                {tab === "ops" && <FundManagerPanel />}
-              </ErrorBoundary>
-            </div>
-          </section>
         </main>
 
-        <aside className="col-right">
-          <div className="ticket-wrap">
-            <ErrorBoundary name="Order ticket">
-              <OrderTicket symbol={symbol} tradingFrozen={tradingFrozen} />
-            </ErrorBoundary>
-          </div>
-          <div className="wire">
-            <ErrorBoundary name="News">
-              <NewsFeed title={account.role === "fund_manager" ? "The wire · early" : "The wire"} />
-            </ErrorBoundary>
-          </div>
+        <aside className="rail">
+          <ErrorBoundary name="News">
+            <NewsFeed title={account.role === "fund_manager" ? "The wire · early" : "The wire"} />
+          </ErrorBoundary>
         </aside>
       </div>
 
@@ -153,7 +137,7 @@ export function DashboardShell() {
           <i className={`dot ${connection === "open" ? "" : "off"}`} />
           {connection === "open" ? "Live" : "Reconnecting"}
         </span>
-        <span>Last trade {lastTick ? new Date(lastTick).toLocaleTimeString() : "—"}</span>
+        <span>Last trade {lastTrade ? new Date(lastTrade).toLocaleTimeString() : "—"}</span>
         <span style={{ marginLeft: "auto" }}>Trades are final</span>
       </footer>
     </div>

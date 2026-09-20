@@ -2,7 +2,7 @@ export type Role = "investor" | "fund_manager";
 
 /** The participant-safe slice of GET /api/config that the UI reads (the server owns the full shape). */
 export interface PublicConfig {
-  leaderboard: { refreshSeconds: number };
+  leaderboard: { refreshSeconds: number; visibleToParticipants?: boolean };
 }
 
 // Wire types for the order book and trades. Placeholder until the Go API contract defines them.
@@ -84,6 +84,8 @@ export interface SymbolInfo {
   symbol: string;
   displayName: string;
   lastPrice: number | null;
+  /** The price the session opened at; the day change is measured from it. Falls back to the first price seen. */
+  openPrice?: number;
   /** Optional: supplied with the company universe. Filter chips are built from whatever sectors exist. */
   sector?: string;
 }
