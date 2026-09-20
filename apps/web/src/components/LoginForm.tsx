@@ -27,12 +27,10 @@ export function LoginForm() {
   return (
     <div className="login-wrap">
       <div className="login-hero">
-        <span className="colophon">Live Financial Ecosystem</span>
         <div>
           <h1>Stockastic</h1>
           <p>Five hours. Two hundred and fifty companies. One book to trade them in.</p>
         </div>
-        <span className="colophon">Trades are final</span>
       </div>
 
       <form onSubmit={submit} className="login-form">

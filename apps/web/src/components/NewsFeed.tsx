@@ -97,11 +97,9 @@ export function NewsFeed({ title = "The wire" }: { title?: string }) {
 
   return (
     <div className="panel" style={{ flex: 1 }}>
-      <div className="panel-header">
-        {title} <span className="label">{entries.length > 0 ? `${entries.length} items` : "live"}</span>
-      </div>
+      <div className="panel-header">{title}</div>
       <div className="panel-body" style={{ padding: 0 }}>
-        {entries.length === 0 && <div className="empty">quiet for now — events will appear here as they happen</div>}
+        {entries.length === 0 && <div className="empty">nothing yet. Events appear here as they happen</div>}
         {entries.map((e) => (
           <article key={e.id} className={`wire-item ${e.kind} ${fresh.has(e.id) ? "tick-up" : ""}`}>
             <div className="label">

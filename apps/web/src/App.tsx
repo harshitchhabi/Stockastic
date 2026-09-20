@@ -1,7 +1,7 @@
 import { useSession } from "@/lib/session";
 import { LoginForm } from "@/components/LoginForm";
 import { DashboardShell } from "@/components/DashboardShell";
-import { AdminConsole } from "@/components/AdminConsole";
+import { AdminApp } from "@/components/admin/AdminApp";
 
 /** Two routes, no router library: `/admin` is the organiser console, everything else the terminal. */
 export default function App() {
@@ -17,7 +17,7 @@ export default function App() {
         </div>
       );
     }
-    return <AdminConsole />;
+    return <AdminApp />;
   }
   return <DashboardShell />;
 }

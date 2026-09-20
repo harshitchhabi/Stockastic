@@ -71,7 +71,7 @@ function Shell() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <header className="masthead">
         <div className="brand">
-          Stockastic<small>Live Financial Ecosystem</small>
+          Stockastic
         </div>
         <nav className="nav" aria-label="Pages">
           {nav.map((n) => (
@@ -96,7 +96,7 @@ function Shell() {
         <div role="status" className="banner">
           {connection === "unauthenticated"
             ? "Your session is no longer valid. Please sign in again."
-            : "Live connection lost — reconnecting. Prices and your orders may be out of date until it returns; orders you place are safe to retry."}
+            : "Live connection lost, reconnecting. Prices and your orders may be out of date until it returns; orders you place are safe to retry."}
         </div>
       )}
 
@@ -138,7 +138,6 @@ function Shell() {
           {connection === "open" ? "Live" : "Reconnecting"}
         </span>
         <span>Last trade {lastTrade ? new Date(lastTrade).toLocaleTimeString() : "—"}</span>
-        <span style={{ marginLeft: "auto" }}>Trades are final</span>
       </footer>
     </div>
   );

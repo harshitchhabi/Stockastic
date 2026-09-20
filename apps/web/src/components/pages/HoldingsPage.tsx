@@ -117,7 +117,7 @@ export function HoldingsPage() {
           {portfolio && holdings.length === 0 && (
             <tr>
               <td colSpan={6} className="empty">
-                nothing held yet — find a company on <a href={pagePath("explore")}>Explore</a>
+                nothing held yet. Find a company on <a href={pagePath("explore")}>Explore</a>
               </td>
             </tr>
           )}

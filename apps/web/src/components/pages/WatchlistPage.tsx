@@ -54,7 +54,7 @@ export function WatchlistPage() {
       ) : (
         loaded && (
           <div className="empty">
-            nothing followed yet — star a company on <a href={pagePath("explore")}>Explore</a> to keep it here
+            nothing followed yet. Star a company on <a href={pagePath("explore")}>Explore</a> to keep it here
           </div>
         )
       )}

@@ -55,7 +55,7 @@ export function FundManagerPanel() {
       <div className="panel-body">
         {!myFund && (
           <form onSubmit={createFund} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No fund yet — create one.</div>
+            <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No fund yet. Create one.</div>
             <input placeholder="Fund name" value={name} onChange={(e) => setName(e.target.value)} required />
             <input placeholder="Pitch" value={pitch} onChange={(e) => setPitch(e.target.value)} />
             <button type="submit">Create fund</button>
