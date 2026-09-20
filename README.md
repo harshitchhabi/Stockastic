@@ -2,13 +2,26 @@
 
 Live financial-market simulation event platform. Governing spec: `Live_Financial_Ecosystem_Rulebook_v1.1.pdf` (not final — values change).
 
+## Shape of the system
+
+At event time there are exactly **two processes**: the Go binary and Postgres.
+
+```
+ browsers ──HTTP/WS──►  Go binary  ──►  Postgres
+ (static SPA served by                 (system of record)
+  the same binary)
+```
+
+The frontend is built once and embedded in the Go binary, so there is no Node server, no second origin and no CORS.
+Node exists only on a developer machine to build the frontend.
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `packages/config` | **`rulebook.json`** — single source of truth for every rulebook value, plus its JSON Schema. The Go backend loads the JSON directly; web types are generated from the schema. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
-| `apps/api` | Go backend (`stockastic/api`). Built so far: `rulebook`, `scoring`, `engine`, `ledger`, `eventclock`, `news`, `ratelimit`, `disputes`. Still stubs: `store` (pgx), `auth`, `httpapi` (Gin), `wsapi`, `funds`, `obs`, `config` |
-| `apps/web` | Next.js frontend. Still speaks the deleted TS backend's REST + Socket.IO API; to be ported to plain JSON-over-WS once the Go contract exists |
+| `apps/api` | Go backend (`stockastic/api`). **Built and tested:** `rulebook`, `scoring`, `engine`, `ledger`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui`. **Still stubs:** `store` (pgx), `auth`, `httpapi` (Gin), `wsapi`, `funds`, `obs`, `config` |
+| `apps/api/internal/rulebook/rulebook.json` | **Every rulebook value**, embedded in the binary. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
+| `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
 | `loadtest/` | k6 load tests (to be written against the Go API) |
 
 The previous TypeScript backend lives only on the `archive/ts-backend` branch.
@@ -16,21 +29,38 @@ The previous TypeScript backend lives only on the `archive/ts-backend` branch.
 ## Commands
 
 ```bash
-# rulebook
-npm run check -w @stockastic/config     # validate rulebook.json against the schema + cross-field rules
-npm run gen   -w @stockastic/config     # regenerate TS types from the schema (commit the result)
-
 # backend
 cd apps/api && go vet ./... && go test -race ./...
+
+# frontend
+cd apps/web && npm install
+npm run dev          # Vite on :3000, proxying /api and /ws to the Go API on :8080
+npm run typecheck && npm test
+npm run build        # -> apps/api/internal/webui/dist, then `go build` embeds it
 ```
 
-Changing a rulebook value = edit `rulebook.json`, run `check`. Adding a field = edit the schema, the Go struct in
-`internal/rulebook`, and run `gen`; the Go loader decodes strictly, so a key missing from the struct fails loudly.
+## Rulebook values
 
-## Reliability design (engine)
+Edit `apps/api/internal/rulebook/rulebook.json`. The loader decodes strictly (an unknown key is an error) and validates
+cross-field rules (timeline sums to 300 minutes, windows 0–3 in order, prize weights sum to 1, provenance paths resolve);
+the process **refuses to start** on a bad rulebook. To change a value without rebuilding, point `RULEBOOK_PATH` at an edited
+copy; a wrong path is a startup error, never a silent fallback to the embedded rules.
 
-- One goroutine per symbol, buffered command channel; symbols run in parallel, orders within a symbol strictly serial.
-- **Write-before-ack**: a match is planned read-only, committed to the journal, and only then applied. A failed commit changes nothing.
+Participants only ever see `Rulebook.Public()` (served by `/api/config`). A reflection test forces every new rulebook field
+to be consciously public or organiser-only.
+
+## Reliability design
+
+**Engine** — one goroutine per symbol on a buffered channel; symbols run in parallel, orders within a symbol are serial.
+- *Write-before-ack*: a match is planned read-only, committed to the journal, and only then applied. A failed commit changes nothing.
 - Idempotent on `(account, clientOrderId)`, including concurrent duplicates and post-restart retries.
 - A panic halts only that symbol until `Resume` rebuilds it from durable state.
-- Prices are integer paise end to end (`internal/money`); no floating point where value moves.
+- Money is integer paise end to end (`internal/money`).
+
+**Frontend connection** (`apps/web/src/lib/socket.ts`) — plain JSON-over-WebSocket with a watchdog for silently dead connections,
+full-jitter exponential backoff (no thundering herd after a server restart), immediate retry on `online`/tab-visible,
+automatic subscription replay, and a stop on auth rejection. Order submissions are retried with the same idempotency key.
+Each panel is wrapped in an error boundary so one crash cannot blank the terminal.
+
+**Static assets** (`internal/webui`) — read, hashed and gzip-compressed once at startup; served from memory. No per-request
+file access, content-hash ETags, immutable caching for hashed assets, and a mistyped `/api/...` path gets a JSON 404 rather than HTML.
