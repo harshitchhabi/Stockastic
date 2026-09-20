@@ -53,7 +53,7 @@ export function Leaderboard() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.accountId}>
-                <td>{r.rank}</td>
+                <td className="rank">{r.rank}</td>
                 <td>{r.displayName}</td>
                 <td className="mono">{r.portfolioValue.toFixed(2)}</td>
                 <td className={`mono ${r.percentReturn >= 0 ? "up" : "down"}`}>

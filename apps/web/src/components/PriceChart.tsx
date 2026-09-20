@@ -32,11 +32,6 @@ export function PriceChart({ symbol }: { symbol: string }) {
         crosshair: { mode: 0 },
       });
       series = chart.addLineSeries({ color: cssVar("--ink"), lineWidth: 2, priceLineColor: cssVar("--flag") });
-      const restyle = () => {
-        chart?.applyOptions(chartColors());
-        series?.applyOptions({ color: cssVar("--ink"), priceLineColor: cssVar("--flag") });
-      };
-      window.addEventListener("themechange", restyle);
 
       const history = await api.get<{ price: number; timestamp: number }[]>(
         `/api/symbols/${symbol}/history`
@@ -65,7 +60,6 @@ export function PriceChart({ symbol }: { symbol: string }) {
 
       return () => {
         window.removeEventListener("resize", resize);
-        window.removeEventListener("themechange", restyle);
         socket.off("trade", onTrade);
         socket.emit("unsubscribe:symbol", symbol);
       };

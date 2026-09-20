@@ -72,6 +72,8 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
     }
   }
 
+  const value = (Number(price) || 0) * (Number(qty) || 0);
+
   async function cancel(order: Order) {
     await api.del(`/api/orders/${order.symbol}/${order.id}`);
     loadPending();
@@ -112,6 +114,17 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
             <input type="number" step="1" min="1" required value={qty} onChange={(e) => setQty(e.target.value)} />
           </label>
 
+          <div className="ticket-summary">
+            <div>
+              <span className="label">{orderType === "market" ? "Up to" : "Order value"}</span>
+              <span className="mono">{value > 0 ? value.toFixed(2) : "—"}</span>
+            </div>
+            <div>
+              <span className="label">Cash available</span>
+              <span className="mono">{account ? account.cashBalance.toFixed(2) : "—"}</span>
+            </div>
+          </div>
+
           {error && <div className="down">{error}</div>}
           {tradingFrozen && <div className="down">Trading is frozen by the organizer.</div>}
 
@@ -148,7 +161,7 @@ export function OrderTicket({ symbol, tradingFrozen }: { symbol: string; trading
               ))}
               {pending.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="dim" style={{ textAlign: "center", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+                  <td colSpan={4} className="empty">
                     nothing working
                   </td>
                 </tr>

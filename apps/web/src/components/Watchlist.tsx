@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import type { Fill, SymbolInfo } from "@/lib/types";
+import { Tick } from "./Tick";
 
 export function Watchlist({
   selected,
@@ -47,7 +48,7 @@ export function Watchlist({
               <br />
               <span className="name">{s.displayName}</span>
             </span>
-            <span className="mono">{s.lastPrice != null ? s.lastPrice.toFixed(2) : "—"}</span>
+            <Tick value={s.lastPrice} />
           </button>
         ))}
       </div>

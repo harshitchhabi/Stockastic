@@ -46,13 +46,15 @@ export function Portfolio() {
     <div className="panel">
       <div className="panel-header">Portfolio</div>
       <div className="panel-body">
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ color: "var(--text-dim)" }}>Cash</span>
-          <span className="mono">{portfolio.cashBalance.toFixed(2)}</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ color: "var(--text-dim)" }}>Total value</span>
-          <span className="mono">{portfolio.totalValue.toFixed(2)}</span>
+        <div className="figures">
+          <div className="figure">
+            <div className="label">Net worth</div>
+            <div className="v">{portfolio.totalValue.toFixed(2)}</div>
+          </div>
+          <div className="figure">
+            <div className="label">Cash</div>
+            <div className="v">{portfolio.cashBalance.toFixed(2)}</div>
+          </div>
         </div>
         <table>
           <thead>
@@ -76,8 +78,8 @@ export function Portfolio() {
             ))}
             {portfolio.holdings.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ color: "var(--text-dim)", textAlign: "center" }}>
-                  no holdings
+                <td colSpan={4} className="empty">
+                  no holdings yet
                 </td>
               </tr>
             )}

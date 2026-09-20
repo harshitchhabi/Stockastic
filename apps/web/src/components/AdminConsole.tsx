@@ -104,7 +104,7 @@ export function AdminConsole() {
           onClick={toggleFreeze}
           style={{
             background: state?.tradingFrozen ? "var(--green)" : "var(--red)",
-            color: "#000",
+            color: "var(--paper)",
             border: "none",
             borderRadius: 4,
             padding: "8px 16px",

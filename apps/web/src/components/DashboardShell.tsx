@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useControlState } from "@/lib/useControlState";
 import { useConnection } from "@/lib/useConnection";
-import { toggleTheme, currentTheme } from "@/lib/theme";
 import { api } from "@/lib/api";
-import type { SymbolInfo } from "@/lib/types";
+import { getSocket } from "@/lib/socket";
+import type { Fill, SymbolInfo } from "@/lib/types";
 import { Watchlist } from "./Watchlist";
 import { OrderBookLadder } from "./OrderBookLadder";
 import { OrderTicket } from "./OrderTicket";
@@ -15,6 +15,7 @@ import { FundBrowser } from "./FundBrowser";
 import { FundManagerPanel } from "./FundManagerPanel";
 import { NewsFeed } from "./NewsFeed";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { Tick } from "./Tick";
 
 const DEFAULT_SYMBOL = "ACME";
 
@@ -26,17 +27,33 @@ export function DashboardShell() {
   const connection = useConnection();
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
   const [tab, setTab] = useState<Tab>("portfolio");
-  const [theme, setTheme] = useState(currentTheme());
   const [info, setInfo] = useState<SymbolInfo | null>(null);
+  const [live, setLive] = useState<number | null>(null);
+  const [lastTick, setLastTick] = useState<number | null>(null);
 
   useEffect(() => {
-    let live = true;
+    setLive(null);
+    const socket = getSocket();
+    socket.emit("subscribe:symbol", symbol);
+    const onTrade = (f: Fill) => {
+      if (f.symbol !== symbol) return;
+      setLive(f.price);
+      setLastTick(Date.now());
+    };
+    socket.on("trade", onTrade);
+    return () => {
+      socket.off("trade", onTrade);
+    };
+  }, [symbol]);
+
+  useEffect(() => {
+    let alive = true;
     api
       .get<SymbolInfo[]>("/api/symbols")
-      .then((all) => live && setInfo(all.find((s) => s.symbol === symbol) ?? null))
+      .then((all) => alive && setInfo(all.find((s) => s.symbol === symbol) ?? null))
       .catch(() => {});
     return () => {
-      live = false;
+      alive = false;
     };
   }, [symbol]);
 
@@ -69,9 +86,6 @@ export function DashboardShell() {
           <span className="mono">{account.cashBalance.toFixed(2)}</span>
         </span>
         {account.isAdmin && <a href="/admin">Console</a>}
-        <button className="ghost" onClick={() => setTheme(toggleTheme())} aria-label="Switch theme">
-          {theme === "dark" ? "Paper" : "Night"}
-        </button>
         <button onClick={logout}>Sign out</button>
       </header>
 
@@ -94,7 +108,7 @@ export function DashboardShell() {
           <div className="symbol-head">
             <h1>{symbol}</h1>
             <span className="dim">{info?.displayName}</span>
-            {info?.lastPrice != null && <span className="last">{info.lastPrice.toFixed(2)}</span>}
+            <Tick value={live ?? info?.lastPrice} className="last" />
           </div>
 
           <div className="chart-row">
@@ -132,6 +146,15 @@ export function DashboardShell() {
           </ErrorBoundary>
         </aside>
       </div>
+
+      <footer className="statusbar">
+        <span>
+          <i className={`dot ${connection === "open" ? "" : "off"}`} />
+          {connection === "open" ? "Live" : "Reconnecting"}
+        </span>
+        <span>Last trade {lastTick ? new Date(lastTick).toLocaleTimeString() : "—"}</span>
+        <span style={{ marginLeft: "auto" }}>Trades are final</span>
+      </footer>
     </div>
   );
 }

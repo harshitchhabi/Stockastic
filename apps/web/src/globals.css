@@ -18,7 +18,6 @@
   --down: #b0321d;
   --down-wash: rgba(176, 50, 29, 0.12);
   --flag: #b8791a;
-  --shadow: 0 1px 0 rgba(29, 27, 22, 0.05);
 
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
@@ -34,44 +33,6 @@
   --red: var(--down);
   --accent: var(--ink);
   --font: var(--sans);
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --paper: #15130f;
-  --paper-2: #1c1914;
-  --paper-3: #26221b;
-  --ink: #efe7d2;
-  --ink-2: #a39a83;
-  --ink-3: #75705f;
-  --rule: #332e25;
-  --rule-strong: #4d463a;
-  --up: #72c294;
-  --up-wash: rgba(114, 194, 148, 0.13);
-  --down: #ec8067;
-  --down-wash: rgba(236, 128, 103, 0.13);
-  --flag: #e3ad48;
-  --shadow: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --paper: #15130f;
-    --paper-2: #1c1914;
-    --paper-3: #26221b;
-    --ink: #efe7d2;
-    --ink-2: #a39a83;
-    --ink-3: #75705f;
-    --rule: #332e25;
-    --rule-strong: #4d463a;
-    --up: #72c294;
-    --up-wash: rgba(114, 194, 148, 0.13);
-    --down: #ec8067;
-    --down-wash: rgba(236, 128, 103, 0.13);
-    --flag: #e3ad48;
-    --shadow: none;
-  }
 }
 
 * {
@@ -591,4 +552,85 @@ tbody tr:last-child td {
   .login-hero {
     display: none;
   }
+}
+
+/* ---- live-tick wash: a number that just changed glows for a moment, then settles ---- */
+@keyframes wash-up {
+  from { background: var(--up-wash); }
+  to { background: transparent; }
+}
+@keyframes wash-down {
+  from { background: var(--down-wash); }
+  to { background: transparent; }
+}
+.tick-up { animation: wash-up 0.9s ease-out; }
+.tick-down { animation: wash-down 0.9s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .tick-up, .tick-down { animation: none; }
+}
+
+/* ---- big figures (net worth etc.) ---- */
+.figures {
+  display: flex;
+  gap: 36px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 6px;
+}
+.figure .v {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.rank {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-2);
+}
+.empty {
+  text-align: center;
+  padding: 18px 0;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-3);
+}
+
+/* ---- status strip ---- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 5px 18px;
+  border-top: 1px solid var(--ink);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.statusbar .dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 7px;
+  background: var(--up);
+}
+.statusbar .dot.off {
+  background: var(--down);
+}
+.ticket-summary {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 0;
+  display: grid;
+  gap: 4px;
+}
+.ticket-summary > div {
+  display: flex;
+  justify-content: space-between;
 }
