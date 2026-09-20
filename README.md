@@ -1,6 +1,6 @@
 # Stockastic
 
-Live financial-market simulation event platform. Governing spec: `Live_Financial_Ecosystem_Rulebook_v1.1.pdf` (not final — values change).
+Live financial-market simulation event platform. Governing spec: the organisers' Live Financial Ecosystem rulebook v1.1 (not final, values change). It is not stored in this repository; every rule value lives in `apps/api/internal/rulebook/rulebook.json`.
 
 ## Shape of the system
 

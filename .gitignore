@@ -12,3 +12,6 @@ coverage.out
 # works on a fresh clone before the frontend has ever been built.
 apps/api/internal/webui/dist/*
 !apps/api/internal/webui/dist/.gitkeep
+
+# The organisers' rulebook is kept out of the repository
+Live_Financial_Ecosystem_Rulebook_v1.1.pdf
