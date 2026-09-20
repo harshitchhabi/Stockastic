@@ -74,13 +74,34 @@ type plan struct {
 // caller can commit it durably first and apply it only on success.
 func (b *book) planSubmit(n NewOrder, now time.Time) plan {
 	taker := Order{
-		ID: ids.New(), ClientOrderID: n.ClientOrderID, AccountID: n.AccountID, Symbol: b.symbol,
+		Type: n.Type, TIF: n.TIF, ID: ids.New(), ClientOrderID: n.ClientOrderID, AccountID: n.AccountID, Symbol: b.symbol,
 		Side: n.Side, Price: n.Price, Qty: n.Qty, Remaining: n.Qty, Status: StatusOpen,
 		Seq: b.seq + 1, CreatedAt: now,
 	}
 	p := plan{nextSeq: taker.Seq}
 	opposite := b.side(opposite(n.Side))
 	left := taker.Remaining
+
+	// Fill-or-kill: first measure (read-only) how much crosses; unless all of it can fill, take nothing.
+	if n.TIF == FOK {
+		var avail int64
+	measure:
+		for _, lv := range *opposite {
+			if !crosses(n.Side, n.Price, lv.price) {
+				break
+			}
+			for _, m := range lv.orders {
+				if avail += m.Remaining; avail >= n.Qty {
+					break measure
+				}
+			}
+		}
+		if avail < n.Qty {
+			taker.Status = StatusCancelled
+			p.taker = taker
+			return p
+		}
+	}
 scan:
 	for _, lv := range *opposite {
 		if !crosses(n.Side, n.Price, lv.price) {
@@ -107,6 +128,9 @@ scan:
 	switch {
 	case left == 0:
 		taker.Status = StatusFilled
+	case n.TIF != GTC:
+		// IOC / market: the unfilled part is cancelled, never rested. Remaining keeps what was unfilled.
+		taker.Status = StatusCancelled
 	case left < taker.Qty:
 		taker.Status = StatusPartiallyFilled
 	}

@@ -9,6 +9,8 @@ import (
 
 // fingerprint is what must match for a reused idempotency key to be a genuine retry.
 type fingerprint struct {
+	typ    OrderType
+	tif    TimeInForce
 	symbol string
 	side   Side
 	price  money.Paise
@@ -16,7 +18,7 @@ type fingerprint struct {
 }
 
 func fingerprintOf(n NewOrder) fingerprint {
-	return fingerprint{n.Symbol, n.Side, n.Price, n.Qty}
+	return fingerprint{n.Type, n.TIF, n.Symbol, n.Side, n.Price, n.Qty}
 }
 
 type idemEntry struct {
@@ -87,8 +89,10 @@ func (s *idemStore) abandon(n NewOrder, e *idemEntry, err error) { s.finish(n, e
 
 // seed registers an already-processed order (from durable state) so retries dedupe.
 func (s *idemStore) seed(o Order, fills []Fill) {
+	// Orders persisted before types existed carry zero Type/TIF; normalise so retries still match.
+	n := normalize(NewOrder{Type: o.Type, TIF: o.TIF, Symbol: o.Symbol, Side: o.Side, Price: o.Price, Qty: o.Qty})
 	e := &idemEntry{
-		fp:   fingerprint{o.Symbol, o.Side, o.Price, o.Qty},
+		fp:   fingerprintOf(n),
 		done: make(chan struct{}),
 		res:  Result{Order: o, Fills: fills},
 	}

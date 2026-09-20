@@ -48,8 +48,57 @@ const (
 // Live reports whether the order is still resting in the book.
 func (s Status) Live() bool { return s == StatusOpen || s == StatusPartiallyFilled }
 
-// NewOrder is a limit-order request. Prices are integer paise; quantities are whole shares.
+// OrderType is how an order prices itself.
+type OrderType uint8
+
+const (
+	// TypeLimit trades at its limit price or better.
+	TypeLimit OrderType = iota + 1
+	// TypeMarket takes the best available prices. It never rests: whatever is not filled immediately is
+	// cancelled. Its Price is a PROTECTION price — the worst price it may trade at — so a market order
+	// can never spend more than the cash reserved for it.
+	TypeMarket
+)
+
+func (t OrderType) String() string {
+	switch t {
+	case TypeLimit:
+		return "limit"
+	case TypeMarket:
+		return "market"
+	}
+	return "invalid"
+}
+
+// TimeInForce says what happens to the part of an order that cannot fill immediately.
+type TimeInForce uint8
+
+const (
+	// GTC (good till cancelled) rests the remainder in the book. Limit orders only.
+	GTC TimeInForce = iota + 1
+	// IOC (immediate or cancel) fills what it can now and cancels the rest.
+	IOC
+	// FOK (fill or kill) fills completely now or not at all.
+	FOK
+)
+
+func (t TimeInForce) String() string {
+	switch t {
+	case GTC:
+		return "gtc"
+	case IOC:
+		return "ioc"
+	case FOK:
+		return "fok"
+	}
+	return "invalid"
+}
+
+// NewOrder is an order request. Prices are integer paise; quantities are whole shares. The zero Type
+// means TypeLimit and the zero TIF means GTC for a limit order (IOC for a market order).
 type NewOrder struct {
+	Type OrderType
+	TIF  TimeInForce
 	// ClientOrderID is the client-generated idempotency key, unique per account.
 	ClientOrderID string
 	AccountID     string
@@ -60,6 +109,8 @@ type NewOrder struct {
 }
 
 type Order struct {
+	Type          OrderType
+	TIF           TimeInForce
 	ID            string
 	ClientOrderID string
 	AccountID     string

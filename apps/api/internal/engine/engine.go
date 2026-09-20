@@ -246,14 +246,34 @@ func (e *Engine) Depth(symbol string) (Depth, error) {
 	return *st.depth.Load(), nil
 }
 
+// normalize fills in the defaults so that equivalent requests are identical (and fingerprint equal).
+func normalize(n NewOrder) NewOrder {
+	if n.Type == 0 {
+		n.Type = TypeLimit
+	}
+	if n.TIF == 0 {
+		n.TIF = GTC
+		if n.Type == TypeMarket {
+			n.TIF = IOC
+		}
+	}
+	return n
+}
+
 func validate(n NewOrder) error {
 	switch {
+	case n.Type != TypeLimit && n.Type != TypeMarket:
+		return fmt.Errorf("%w: type", ErrInvalidOrder)
+	case n.TIF != GTC && n.TIF != IOC && n.TIF != FOK:
+		return fmt.Errorf("%w: time in force", ErrInvalidOrder)
+	case n.Type == TypeMarket && n.TIF == GTC:
+		return fmt.Errorf("%w: a market order cannot rest in the book", ErrInvalidOrder)
 	case n.ClientOrderID == "", n.AccountID == "":
 		return fmt.Errorf("%w: clientOrderID and accountID are required", ErrInvalidOrder)
 	case n.Side != Buy && n.Side != Sell:
 		return fmt.Errorf("%w: side", ErrInvalidOrder)
 	case n.Price <= 0:
-		return fmt.Errorf("%w: price must be positive", ErrInvalidOrder)
+		return fmt.Errorf("%w: price must be positive (for a market order it is the protection price)", ErrInvalidOrder)
 	case n.Qty <= 0:
 		return fmt.Errorf("%w: qty must be positive", ErrInvalidOrder)
 	}
@@ -264,6 +284,7 @@ func validate(n NewOrder) error {
 // and applied (write-before-ack). Duplicate (AccountID, ClientOrderID) submissions — sequential or
 // concurrent — return the original result with Deduped=true.
 func (e *Engine) Submit(ctx context.Context, n NewOrder) (Result, error) {
+	n = normalize(n)
 	if err := validate(n); err != nil {
 		return Result{}, err
 	}
