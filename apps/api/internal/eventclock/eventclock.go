@@ -1,5 +1,5 @@
 // Package eventclock is the event state machine: the 17-block, 300-minute timeline, phases,
-// market open/closed, allocation windows 0-3, freeze snapshots, pause/resume with buffer
+// market open/closed, the allocation windows, freeze snapshots, pause/resume with buffer
 // compression, and admin overrides. Everything time-dependent asks it. It takes an injectable time
 // source and an explicit Tick, so it is fully deterministic under test.
 package eventclock
@@ -52,8 +52,9 @@ type Transition struct {
 type Overrides struct {
 	// MarketOpen forces the market open/closed regardless of the block; nil follows the schedule.
 	MarketOpen *bool `json:"marketOpen,omitempty"`
-	// Windows forces allocation window i open/closed; nil follows the schedule.
-	Windows [4]*bool `json:"windows"`
+	// Windows forces allocation window i open/closed; nil follows the schedule. Its length is the
+	// rulebook's window count.
+	Windows []*bool `json:"windows"`
 	// Frozen is the force-freeze: the market is closed whatever else is set.
 	Frozen bool `json:"frozen"`
 }
@@ -96,6 +97,7 @@ func New(rb *rulebook.Rulebook, now func() time.Time, log *slog.Logger) *Clock {
 		log = slog.Default()
 	}
 	c := &Clock{rb: rb, now: now, log: log, last: -1}
+	c.ov.Windows = make([]*bool, rb.WindowCount())
 	for _, b := range rb.Event.Timeline {
 		c.durations = append(c.durations, b.Duration())
 	}
@@ -272,19 +274,24 @@ func (c *Clock) Nudge(d time.Duration) error {
 func (c *Clock) SetFrozen(v bool)          { c.mu.Lock(); c.ov.Frozen = v; c.mu.Unlock() }
 func (c *Clock) SetMarketOverride(v *bool) { c.mu.Lock(); c.ov.MarketOpen = v; c.mu.Unlock() }
 func (c *Clock) SetWindowOverride(w int, v *bool) error {
-	if w < 0 || w > 3 {
-		return fmt.Errorf("window %d out of range 0-3", w)
-	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if w < 0 || w >= len(c.ov.Windows) {
+		return fmt.Errorf("window %d out of range 0-%d", w, len(c.ov.Windows)-1)
+	}
 	c.ov.Windows[w] = v
-	c.mu.Unlock()
 	return nil
+}
+
+func (o Overrides) clone() Overrides {
+	o.Windows = append([]*bool(nil), o.Windows...)
+	return o
 }
 
 func (c *Clock) Overrides() Overrides {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.ov
+	return c.ov.clone()
 }
 
 // MarketOpen is the single answer to "may orders be accepted right now?". Force-freeze always wins;
@@ -305,14 +312,14 @@ func (c *Clock) MarketOpen() bool {
 	return !p.Ended && p.Block.MarketOpen
 }
 
-// WindowOpen reports whether allocation window w (0-3) is open. Windows have a hard close: when the
+// WindowOpen reports whether allocation window w (0..WindowCount-1) is open. Windows have a hard close: when the
 // block ends the window is closed, whether or not any fund's cap was filled.
 func (c *Clock) WindowOpen(w int) bool {
-	if w < 0 || w > 3 {
-		return false
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if w < 0 || w >= len(c.ov.Windows) {
+		return false
+	}
 	p := c.positionLocked(c.now())
 	if !p.Started || p.Paused {
 		return false
@@ -327,7 +334,7 @@ func (c *Clock) WindowOpen(w int) bool {
 func (c *Clock) Snapshot() State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := State{Offset: c.offset, Durations: append([]time.Duration(nil), c.durations...), Overrides: c.ov, LastNotified: c.last}
+	s := State{Offset: c.offset, Durations: append([]time.Duration(nil), c.durations...), Overrides: c.ov.clone(), LastNotified: c.last}
 	if c.started {
 		t := c.startedAt
 		s.StartedAt = &t
@@ -347,7 +354,12 @@ func (c *Clock) Restore(s State) error {
 		return fmt.Errorf("eventclock: restored state has %d block durations, rulebook has %d", len(s.Durations), len(c.rb.Event.Timeline))
 	}
 	c.durations = append([]time.Duration(nil), s.Durations...)
-	c.offset, c.ov, c.last = s.Offset, s.Overrides, s.LastNotified
+	c.offset, c.last = s.Offset, s.LastNotified
+	// Normalise the window overrides to the rulebook's count so a snapshot can never index out of range.
+	c.ov = s.Overrides.clone()
+	ws := make([]*bool, c.rb.WindowCount())
+	copy(ws, c.ov.Windows)
+	c.ov.Windows = ws
 	c.started, c.paused = s.StartedAt != nil, s.PausedAt != nil
 	if s.StartedAt != nil {
 		c.startedAt = *s.StartedAt

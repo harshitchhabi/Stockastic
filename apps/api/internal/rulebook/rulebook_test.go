@@ -162,7 +162,7 @@ func TestLoaderRejectsBrokenRulebooks(t *testing.T) {
 			tl := sub(m, "event")["timeline"].([]any)
 			tl[8].(map[string]any)["allocationWindow"] = 2
 			tl[10].(map[string]any)["allocationWindow"] = 1
-		}, "allocation windows must appear"},
+		}, "allocation windows must be numbered"},
 		"prize 1 weights not summing to 1":    {func(m map[string]any) { sub(m, "prizes", "prize1")["retention"] = 0.5 }, "prize1 weights"},
 		"prize 4 weights not summing to 1":    {func(m map[string]any) { sub(m, "prizes", "prize4")["diversification"] = 0.9 }, "prize4 weights"},
 		"qualifiers not twice the fund count": {func(m map[string]any) { sub(m, "qualification")["qualifyingTeams"] = 21 }, "2 x fundCount"},

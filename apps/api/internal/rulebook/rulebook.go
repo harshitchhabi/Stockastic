@@ -285,7 +285,7 @@ func (r *Rulebook) validate(generic map[string]any) error {
 	}
 	for i, w := range windows {
 		if w != i {
-			bad("allocation windows must appear as 0,1,2,3 in order, got %v", windows)
+			bad("allocation windows must be numbered 0..N-1 in timeline order, got %v", windows)
 			break
 		}
 	}
@@ -374,6 +374,18 @@ func pathExists(root map[string]any, dotted string) bool {
 		}
 	}
 	return true
+}
+
+// WindowCount is how many allocation windows the timeline defines (4 in v1.1). Code derives it from
+// here rather than assuming a number, so a final rulebook with a different count needs no code edit.
+func (r *Rulebook) WindowCount() int {
+	n := 0
+	for _, b := range r.Event.Timeline {
+		if b.AllocationWindow != nil {
+			n++
+		}
+	}
+	return n
 }
 
 // StartingCapital is the identical Phase-1 capital every team begins with (Sec 4).

@@ -363,3 +363,31 @@ func TestAPanickingListenerDoesNotStopOthersOrTheClock(t *testing.T) {
 	}
 	c.Tick() // still alive
 }
+
+func TestWindowCountComesFromTheRulebookNotFromTheCode(t *testing.T) {
+	c, _, _ := newClock(t)
+	if got := len(c.Overrides().Windows); got != 4 {
+		t.Fatalf("v1.1 has 4 windows, clock has %d override slots", got)
+	}
+	if err := c.SetWindowOverride(4, bp(true)); err == nil {
+		t.Error("window 4 does not exist in v1.1")
+	}
+	// A snapshot with too few or too many override slots is normalised, never an out-of-range panic.
+	for _, n := range []int{0, 2, 9} {
+		s := c.Snapshot()
+		s.Overrides.Windows = make([]*bool, n)
+		if err := c.Restore(s); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(c.Overrides().Windows); got != 4 {
+			t.Errorf("restored from %d slots -> %d, want 4", n, got)
+		}
+		_ = c.WindowOpen(3) // must not panic
+	}
+	// Overrides() hands out a copy: mutating it must not change the clock.
+	o := c.Overrides()
+	o.Windows[0] = bp(true)
+	if c.Overrides().Windows[0] != nil {
+		t.Error("Overrides() leaked the internal slice")
+	}
+}
