@@ -5,7 +5,7 @@ import type { NewsItem } from "@/lib/types";
 /**
  * Same component serves both the public ticker and the fund-manager "early"
  * panel — the two-tier timing lives entirely on the backend (separate
- * dispatch queues, see apps/server/src/news/dispatcher.ts). The server joins
+ * Fund Manager and public delivery queues on the server). The server joins
  * a fund_manager socket to `role:fund_manager` from its verified JWT at
  * connection time (never a client-asserted id), so that socket gets the
  * `news` event immediately; everyone else gets the same event after the

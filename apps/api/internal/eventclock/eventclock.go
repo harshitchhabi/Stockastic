@@ -122,13 +122,6 @@ func (c *Clock) elapsedLocked(at time.Time) time.Duration {
 	return ref.Sub(c.startedAt) + c.offset
 }
 
-func (c *Clock) totalLocked() (t time.Duration) {
-	for _, d := range c.durations {
-		t += d
-	}
-	return t
-}
-
 func (c *Clock) indexLocked(elapsed time.Duration) int {
 	if elapsed < 0 {
 		elapsed = 0
