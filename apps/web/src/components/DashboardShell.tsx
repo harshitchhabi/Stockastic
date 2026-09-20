@@ -19,7 +19,7 @@ import { Tick } from "./Tick";
 
 const DEFAULT_SYMBOL = "ACME";
 
-type Tab = "portfolio" | "leaderboard" | "funds" | "ops" | "news";
+type Tab = "portfolio" | "leaderboard" | "funds" | "ops";
 
 export function DashboardShell() {
   const { account, logout } = useSession();
@@ -63,12 +63,7 @@ export function DashboardShell() {
     { id: "portfolio", label: "Holdings" },
     { id: "leaderboard", label: "Standings" },
     ...(account.role === "investor" ? [{ id: "funds" as Tab, label: "Funds" }] : []),
-    ...(account.role === "fund_manager"
-      ? [
-          { id: "ops" as Tab, label: "Fund desk" },
-          { id: "news" as Tab, label: "Wire" },
-        ]
-      : []),
+    ...(account.role === "fund_manager" ? [{ id: "ops" as Tab, label: "Fund desk" }] : []),
   ];
 
   return (
@@ -134,16 +129,22 @@ export function DashboardShell() {
                 {tab === "leaderboard" && <Leaderboard />}
                 {tab === "funds" && <FundBrowser />}
                 {tab === "ops" && <FundManagerPanel />}
-                {tab === "news" && <NewsFeed title="Fund manager wire (early feed)" />}
               </ErrorBoundary>
             </div>
           </section>
         </main>
 
         <aside className="col-right">
-          <ErrorBoundary name="Order ticket">
-            <OrderTicket symbol={symbol} tradingFrozen={tradingFrozen} />
-          </ErrorBoundary>
+          <div className="ticket-wrap">
+            <ErrorBoundary name="Order ticket">
+              <OrderTicket symbol={symbol} tradingFrozen={tradingFrozen} />
+            </ErrorBoundary>
+          </div>
+          <div className="wire">
+            <ErrorBoundary name="News">
+              <NewsFeed title={account.role === "fund_manager" ? "The wire · early" : "The wire"} />
+            </ErrorBoundary>
+          </div>
         </aside>
       </div>
 

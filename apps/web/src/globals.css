@@ -395,15 +395,62 @@ tbody tr:last-child td {
 /* ---- watchlist ---- */
 .watch-row {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  width: 100%;
-  border: 0;
+  align-items: stretch;
   border-bottom: 1px solid var(--rule);
   border-left: 3px solid transparent;
+}
+.watch-row button {
+  border: 0;
   border-radius: 0;
-  padding: 8px 14px 8px 11px;
+}
+.watch-row .pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   text-align: left;
+  padding: 7px 14px 7px 4px;
+}
+.watch-row .star {
+  padding: 0 6px 0 9px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.watch-row .star[aria-pressed="true"] {
+  color: var(--flag);
+}
+.filters {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  gap: 8px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 86px;
+  overflow: auto;
+}
+.chips button {
+  padding: 2px 8px;
+  font-size: 11px;
+  border-color: var(--rule);
+  color: var(--ink-2);
+}
+.chips button[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.chips .n {
+  opacity: 0.6;
+  font-family: var(--mono);
+}
+.count {
+  padding: 6px 14px;
+  border-top: 1px solid var(--rule);
 }
 .watch-row[aria-current="true"] {
   background: var(--paper-2);
@@ -416,10 +463,11 @@ tbody tr:last-child td {
 .watch-row .name {
   font-size: 11px;
   color: var(--ink-3);
+  display: inline-block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+  max-width: 130px;
 }
 
 /* ---- order book ladder ---- */
@@ -633,4 +681,36 @@ tbody tr:last-child td {
 .ticket-summary > div {
   display: flex;
   justify-content: space-between;
+}
+
+/* ---- right column: ticket over the wire ---- */
+.ticket-wrap {
+  display: flex;
+  flex: 0 1 auto;
+  max-height: 62%;
+  min-height: 0;
+}
+.wire {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 190px;
+  border-top: 3px double var(--ink);
+}
+.wire-item {
+  padding: 9px 14px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.wire-item .hl {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 14.5px;
+  line-height: 1.25;
+  margin: 2px 0 3px;
+}
+.wire-item.notice {
+  border-left: 3px solid var(--flag);
+  padding-left: 11px;
+}
+.wire-item.notice .hl {
+  font-style: italic;
 }

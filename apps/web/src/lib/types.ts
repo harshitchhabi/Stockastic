@@ -84,6 +84,8 @@ export interface SymbolInfo {
   symbol: string;
   displayName: string;
   lastPrice: number | null;
+  /** Optional: supplied with the company universe. Filter chips are built from whatever sectors exist. */
+  sector?: string;
 }
 
 export interface NewsItem {
