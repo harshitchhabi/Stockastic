@@ -3,18 +3,19 @@ package rulebook
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
-const realPath = "../../../../packages/config/rulebook.json"
+const realPath = "rulebook.json"
 
 func loadReal(t *testing.T) *Rulebook {
 	t.Helper()
-	rb, err := Load(realPath)
+	rb, err := Default()
 	if err != nil {
-		t.Fatalf("the real rulebook.json must load: %v", err)
+		t.Fatalf("the embedded rulebook.json must load: %v", err)
 	}
 	return rb
 }
@@ -198,5 +199,71 @@ func TestLoaderRejectsBrokenRulebooks(t *testing.T) {
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := Load("does/not/exist.json"); err == nil {
 		t.Fatal("expected an error for a missing file")
+	}
+}
+
+func TestEmbeddedDefaultIsTheFileOnDisk(t *testing.T) {
+	onDisk, err := os.ReadFile(realPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(onDisk) != string(embedded) {
+		t.Fatal("the embedded rulebook is stale relative to rulebook.json")
+	}
+	a, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := LoadOrDefault("")
+	if err != nil || a.Version != b.Version {
+		t.Fatalf("LoadOrDefault(\"\") must equal Default: %v", err)
+	}
+	c, err := LoadOrDefault(realPath)
+	if err != nil || c.Event.TotalMinutes != 300 {
+		t.Fatalf("LoadOrDefault(path) must load the override file: %v", err)
+	}
+	if _, err := LoadOrDefault("nope.json"); err == nil {
+		t.Error("an override path that does not exist must be an error, never a silent fallback to the embedded rules")
+	}
+}
+
+func TestPublicConfigNeverLeaksOrganiserOnlyFields(t *testing.T) {
+	rb := loadReal(t)
+	raw, err := json.Marshal(rb.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.ToLower(string(raw))
+	for _, banned := range []string{"regime", "organiser", "\"roles\"", "minimumdevicerequirements", "\"source\""} {
+		if strings.Contains(s, banned) {
+			t.Errorf("participant-facing config contains %q", banned)
+		}
+	}
+	for _, b := range rb.Event.Timeline {
+		if b.Label != b.PublicLabel && strings.Contains(string(raw), b.Label) {
+			t.Errorf("internal label leaked: %q", b.Label)
+		}
+	}
+	// The tie-break order must be published to participants before Phase 1 (Sec 5).
+	if len(rb.Public().Qualification.TieBreak) == 0 {
+		t.Error("tie-break order must be visible to participants")
+	}
+}
+
+func TestEveryRulebookSectionIsConsciouslyPublicOrPrivate(t *testing.T) {
+	// A new top-level field must be added to PublicConfig OR listed here as organiser-only, so a
+	// confidential value can never become public just by being added to the rulebook.
+	organiserOnly := map[string]bool{"Source": true, "Roles": true, "Technical": true, "Provenance": true}
+	pub := reflect.TypeOf(PublicConfig{})
+	have := map[string]bool{}
+	for i := 0; i < pub.NumField(); i++ {
+		have[pub.Field(i).Name] = true
+	}
+	rt := reflect.TypeOf(Rulebook{})
+	for i := 0; i < rt.NumField(); i++ {
+		name := rt.Field(i).Name
+		if !have[name] && !organiserOnly[name] {
+			t.Errorf("Rulebook.%s is neither in PublicConfig nor listed as organiser-only", name)
+		}
 	}
 }

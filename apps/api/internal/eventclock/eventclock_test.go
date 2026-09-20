@@ -14,7 +14,7 @@ var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func load(t *testing.T) *rulebook.Rulebook {
 	t.Helper()
-	rb, err := rulebook.Load("../../../../packages/config/rulebook.json")
+	rb, err := rulebook.Default()
 	if err != nil {
 		t.Fatal(err)
 	}

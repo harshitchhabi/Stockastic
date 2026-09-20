@@ -12,7 +12,7 @@ var t0 = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
 func tracker(t *testing.T) *Tracker {
 	t.Helper()
-	rb, err := rulebook.Load("../../../../packages/config/rulebook.json")
+	rb, err := rulebook.Default()
 	if err != nil {
 		t.Fatal(err)
 	}

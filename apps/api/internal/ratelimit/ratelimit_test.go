@@ -13,7 +13,7 @@ import (
 var t0 = time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
 
 func TestTwoTradesPerMinutePerAccountFromTheRulebook(t *testing.T) {
-	rb, err := rulebook.Load("../../../../packages/config/rulebook.json")
+	rb, err := rulebook.Default()
 	if err != nil {
 		t.Fatal(err)
 	}

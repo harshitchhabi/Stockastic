@@ -12,7 +12,7 @@ import (
 
 func rb(t *testing.T) *rulebook.Rulebook {
 	t.Helper()
-	r, err := rulebook.Load("../../../../packages/config/rulebook.json")
+	r, err := rulebook.Default()
 	if err != nil {
 		t.Fatal(err)
 	}

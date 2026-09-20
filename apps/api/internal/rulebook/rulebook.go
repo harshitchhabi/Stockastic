@@ -1,11 +1,14 @@
 // Package rulebook exposes the event-rule constants (timeline, fees, caps, prize weights,
-// rate limits) to the backend. The single source of truth is packages/config/rulebook.json;
-// this package is the only place the backend reads it, so a rulebook change never touches
-// engine or ledger code.
+// rate limits) to the backend. The single source of truth is rulebook.json in this directory,
+// embedded in the binary (so it cannot be missing or stale at deploy time) and overridable with a
+// file path for an organiser edit that should not need a rebuild. This package is the only place the
+// backend reads it, so a rulebook change never touches engine or ledger code. Decoding is strict and
+// validated: the process refuses to start on a bad rulebook rather than run on wrong rules.
 package rulebook
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +52,7 @@ type Provenance struct {
 	Note    string `json:"note,omitempty"`
 }
 
-// Rulebook mirrors packages/config/rulebook.json. Decoding is strict: an unknown key is an error,
+// Rulebook mirrors rulebook.json. Decoding is strict: an unknown key is an error,
 // so the JSON and this struct cannot drift apart silently.
 type Rulebook struct {
 	Version       string                `json:"version"`
@@ -197,8 +200,22 @@ type Technical struct {
 	MinimumDeviceRequirements *string `json:"minimumDeviceRequirements"`
 }
 
-// Load reads, strictly decodes and validates a rulebook file. The backend calls this once at
-// startup and refuses to run on any error.
+//go:embed rulebook.json
+var embedded []byte
+
+// Default parses and validates the rulebook embedded in the binary.
+func Default() (*Rulebook, error) { return Parse(embedded) }
+
+// LoadOrDefault uses the file at path when one is given, else the embedded rulebook. The backend
+// calls it once at startup and refuses to run on any error.
+func LoadOrDefault(path string) (*Rulebook, error) {
+	if path == "" {
+		return Default()
+	}
+	return Load(path)
+}
+
+// Load reads, strictly decodes and validates a rulebook file.
 func Load(path string) (*Rulebook, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -405,4 +422,48 @@ func (r *Rulebook) PublicTimeline() []PublicBlock {
 		start += b.DurationMin
 	}
 	return out
+}
+
+// PublicConfig is what participants may see, served by GET /api/config. It is built field by field
+// (never by serialising Rulebook) so a confidential field added to the rulebook later stays private
+// until someone consciously adds it here. Organiser-only: the internal block labels, the
+// regime-event marker, the provenance notes (which value is still TBF, and why), and the
+// technical/role bookkeeping.
+type PublicConfig struct {
+	Version       string        `json:"version"`
+	Event         PublicEvent   `json:"event"`
+	Market        Market        `json:"market"`
+	Teams         Teams         `json:"teams"`
+	Accounts      Accounts      `json:"accounts"`
+	Qualification Qualification `json:"qualification"`
+	Fund          Fund          `json:"fund"`
+	Fees          Fees          `json:"fees"`
+	News          News          `json:"news"`
+	RateLimits    RateLimits    `json:"rateLimits"`
+	Leaderboard   Leaderboard   `json:"leaderboard"`
+	Disputes      Disputes      `json:"disputes"`
+	Prizes        Prizes        `json:"prizes"`
+}
+
+type PublicEvent struct {
+	TotalMinutes int           `json:"totalMinutes"`
+	Timeline     []PublicBlock `json:"timeline"`
+}
+
+func (r *Rulebook) Public() PublicConfig {
+	return PublicConfig{
+		Version:       r.Version,
+		Event:         PublicEvent{TotalMinutes: r.Event.TotalMinutes, Timeline: r.PublicTimeline()},
+		Market:        r.Market,
+		Teams:         r.Teams,
+		Accounts:      r.Accounts,
+		Qualification: r.Qualification,
+		Fund:          r.Fund,
+		Fees:          r.Fees,
+		News:          r.News,
+		RateLimits:    r.RateLimits,
+		Leaderboard:   r.Leaderboard,
+		Disputes:      r.Disputes,
+		Prizes:        r.Prizes,
+	}
 }
