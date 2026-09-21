@@ -6,6 +6,7 @@ import { ControlRoom } from "./ControlRoom";
 import { Systems } from "./Systems";
 import { Participants } from "./Participants";
 import { NewsDesk } from "./NewsDesk";
+import { Shares } from "./Shares";
 import { Disputes } from "./Disputes";
 import { AdminStandings } from "./AdminStandings";
 import { AuditLog } from "./AuditLog";
@@ -15,6 +16,7 @@ const PAGES = [
   { id: "control", label: "Control room", view: ControlRoom },
   { id: "systems", label: "Systems", view: Systems },
   { id: "participants", label: "Participants", view: Participants },
+  { id: "shares", label: "Shares", view: Shares },
   { id: "news", label: "News desk", view: NewsDesk },
   { id: "disputes", label: "Disputes", view: Disputes },
   { id: "standings", label: "Standings", view: AdminStandings },

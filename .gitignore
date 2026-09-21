@@ -15,3 +15,7 @@ apps/api/internal/webui/dist/*
 
 # The organisers' rulebook is kept out of the repository
 Live_Financial_Ecosystem_Rulebook_v1.1.pdf
+
+# Runtime data (the durable log) and local secrets
+apps/api/data/
+*.wal

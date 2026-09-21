@@ -350,6 +350,29 @@ func (l *Ledger) DirectValue(accountID string, price PriceFn) (money.Paise, erro
 	return total, nil
 }
 
+// Grant credits shares to an account with no cash movement. It is the only way inventory enters the
+// system (an initial allocation, or a market-maker's stock); every other change of holdings comes from a
+// matched trade. price is the cost basis per share.
+func (l *Ledger) Grant(accountID, symbol string, qty int64, price money.Paise) error {
+	if qty <= 0 || price < 0 {
+		return engine.ErrInvalidOrder
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a, err := l.get(accountID)
+	if err != nil {
+		return err
+	}
+	p := a.pos[symbol]
+	if p == nil {
+		p = &Position{Symbol: symbol}
+		a.pos[symbol] = p
+	}
+	p.Qty += qty
+	p.Cost += price * money.Paise(qty)
+	return nil
+}
+
 // Accounts lists every account id (sorted).
 func (l *Ledger) Accounts() []string {
 	l.mu.RLock()

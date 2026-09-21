@@ -512,3 +512,9 @@ func (e *Engine) afterApply(st *symbolState, b Batch, now time.Time) {
 		}
 	}()
 }
+
+// Seen reports whether this client order id has already been submitted by the account. A repeated
+// submission of it is a retry that returns the original result rather than a new order.
+func (e *Engine) Seen(accountID, clientOrderID string) bool {
+	return e.idem.has(accountID, clientOrderID)
+}

@@ -69,7 +69,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const code = typeof body?.error === "string" ? body.error : undefined;
-    throw new ApiError(code ?? `request failed (${res.status})`, res.status, code);
+    // Prefer the server's plain-language message; the code stays available for logic.
+    const message = typeof body?.message === "string" && body.message ? body.message : code;
+    throw new ApiError(message ?? `request failed (${res.status})`, res.status, code);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

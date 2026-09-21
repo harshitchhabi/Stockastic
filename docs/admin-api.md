@@ -1,7 +1,6 @@
 # Organiser API
 
-What the organiser console (`apps/web/src/components/admin/`) calls. The Go `httpapi` package must implement
-exactly this. Types are in `apps/web/src/lib/adminTypes.ts`.
+What the organiser console (`apps/web/src/components/admin/`) calls. Implemented in `apps/api/internal/httpapi`. Types are in `apps/web/src/lib/adminTypes.ts`.
 
 ## Rules for every route
 
@@ -44,6 +43,7 @@ so a rulebook with five windows shows five switches with no console change.
 | `POST /api/admin/accounts/{id}/promote` | | move a team into the fund manager role |
 | `POST /api/admin/accounts/{id}/warn` | | formal warning (rulebook Section 21) |
 | `POST /api/admin/accounts/{id}/disqualify` | | disqualify; a fund is frozen at its current NAV |
+| `POST /api/admin/grants` | `accountId` (or `"*"` for every team), `symbol`, `qty`, `price` | `Ledger.Grant`: gives shares with no cash movement. This is the only way inventory enters the market |
 | `POST /api/admin/news` | `kind: "news" / "regime"`, `headline`, `body?` | `news.Dispatcher.Publish` |
 | `POST /api/admin/disputes/{id}/triage` | `platformWide: bool` | `disputes.Tracker.Triage` |
 | `POST /api/admin/disputes/{id}/resolve` | | resolves; `reason` is the resolution shown to the team |

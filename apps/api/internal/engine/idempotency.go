@@ -101,3 +101,11 @@ func (s *idemStore) seed(o Order, fills []Fill) {
 	s.m[key(o.AccountID, o.ClientOrderID)] = e
 	s.mu.Unlock()
 }
+
+// has reports whether (accountID, clientOrderID) has already been submitted.
+func (s *idemStore) has(accountID, clientOrderID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.m[key(accountID, clientOrderID)]
+	return ok
+}
