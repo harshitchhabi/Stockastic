@@ -23,15 +23,22 @@ import (
 	"stockastic/api/internal/engine"
 )
 
+// ErrLocked means another process already has this log open. Two servers writing one log would corrupt
+// it, so the second refuses to start.
+var ErrLocked = errors.New("store: the data log is already in use by another running server")
+
 // Record kinds.
 const (
-	KindUser   = "user"
-	KindBatch  = "batch"
-	KindAudit  = "audit"
-	KindClock  = "clock"
-	KindNews   = "news"
-	KindTicket = "ticket"
-	KindGrant  = "grant"
+	KindUser     = "user"
+	KindBatch    = "batch"
+	KindAudit    = "audit"
+	KindClock    = "clock"
+	KindNews     = "news"
+	KindTicket   = "ticket"
+	KindGrant    = "grant" // shares given (Qty > 0) or taken back (Qty < 0)
+	KindCash     = "cash"
+	KindAnnounce = "announce"
+	KindPause    = "pause"
 )
 
 // Log is an append-only, replayable record of everything durable.
@@ -52,9 +59,19 @@ type envelope struct {
 // FileLog is a Log backed by one fsync'd file.
 type FileLog struct {
 	mu   sync.Mutex
+	cond *sync.Cond
 	f    *os.File
 	w    *bufio.Writer
 	path string
+
+	// Group commit: appends made while a disk sync is running share the next one, so many orders in
+	// different companies cost one fsync between them instead of one each.
+	pending int64 // records written into the buffer so far
+	synced  int64 // records known to be on disk
+	syncing bool
+	// broken is set if a sync ever fails. After that nothing is acknowledged: the file's state is
+	// unknown, and pretending otherwise could lose data that was reported as safe.
+	broken error
 	// Torn is how many trailing bytes of a torn record were found (and truncated) when the file was opened.
 	Torn int
 }
@@ -68,7 +85,12 @@ func OpenFile(path string) (*FileLog, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := lockFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
 	l := &FileLog{f: f, path: path}
+	l.cond = sync.NewCond(&l.mu)
 	good, err := l.validLength()
 	if err != nil {
 		f.Close()
@@ -126,13 +148,44 @@ func (l *FileLog) Append(kind string, v any) error {
 	if l.f == nil {
 		return errors.New("store: log closed")
 	}
+	if l.broken != nil {
+		return l.broken
+	}
 	if _, err := l.w.Write(append(line, '\n')); err != nil {
+		l.broken = err
+		l.cond.Broadcast()
 		return err
 	}
-	if err := l.w.Flush(); err != nil {
-		return err
+	l.pending++
+	mine := l.pending
+
+	// Wait until a sync that covers this record has finished; if none is running, run it.
+	for l.synced < mine {
+		if l.broken != nil {
+			return l.broken
+		}
+		if l.syncing {
+			l.cond.Wait()
+			continue
+		}
+		l.syncing = true
+		upTo := l.pending
+		err := l.w.Flush()
+		f := l.f
+		l.mu.Unlock()
+		if err == nil {
+			err = f.Sync() // the slow part; other appenders keep filling the buffer meanwhile
+		}
+		l.mu.Lock()
+		l.syncing = false
+		if err != nil {
+			l.broken = err
+		} else if upTo > l.synced {
+			l.synced = upTo
+		}
+		l.cond.Broadcast()
 	}
-	return l.f.Sync()
+	return nil
 }
 
 func (l *FileLog) Replay(fn func(string, json.RawMessage) error) error {
@@ -164,12 +217,17 @@ func (l *FileLog) Replay(fn func(string, json.RawMessage) error) error {
 func (l *FileLog) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	for l.syncing {
+		l.cond.Wait()
+	}
 	if l.f == nil {
 		return nil
 	}
 	_ = l.w.Flush()
+	_ = l.f.Sync()
 	err := l.f.Close()
 	l.f = nil
+	l.cond.Broadcast()
 	return err
 }
 

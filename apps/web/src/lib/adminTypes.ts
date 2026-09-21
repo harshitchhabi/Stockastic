@@ -27,6 +27,7 @@ export interface Overview {
   timeline: TimelineBlock[];
   control: {
     tradingFrozen: boolean;
+    pausedSymbols: string[];
     marketOverride: Override;
     marketOpen: boolean;
     windowOverrides: Override[];
@@ -111,4 +112,13 @@ export interface RulebookStatus {
   source: string;
   provenance: { path: string; status: "recommended" | "tbf" | "assumption"; section: string; note?: string }[];
   values: unknown;
+}
+
+export interface TeamDetail {
+  account: AdminAccount;
+  wallet: { cash: number; reserved: number; available: number; netWorth: number };
+  holdings: { symbol: string; qty: number; avgPrice: number; marketValue: number; unrealizedPnl: number }[];
+  orders: { id: string; symbol: string; side: "buy" | "sell"; price: number; remainingQty: number }[];
+  fills: { id: string; symbol: string; price: number; qty: number; takerAccountId: string; takerSide: "buy" | "sell"; timestamp: number }[];
+  history: AuditEntry[];
 }

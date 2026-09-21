@@ -21,6 +21,7 @@ import (
 	"stockastic/api/internal/eventclock"
 	"stockastic/api/internal/ledger"
 	"stockastic/api/internal/market"
+	"stockastic/api/internal/money"
 	"stockastic/api/internal/news"
 	"stockastic/api/internal/ratelimit"
 	"stockastic/api/internal/rulebook"
@@ -86,6 +87,16 @@ type App struct {
 	haltMu    sync.Mutex
 	haltSince map[string]time.Time
 
+	// recentFills keeps each team's latest trades for the organiser's team page.
+	fillMu      sync.Mutex
+	recentFills map[string][]engine.Fill
+
+	annMu         sync.Mutex
+	announcements []Announcement
+
+	pauseMu sync.RWMutex
+	paused  map[string]bool
+
 	lbMu    sync.Mutex
 	lbAt    time.Time
 	lbCache []dto.LeaderRow
@@ -110,6 +121,7 @@ func New(cfg Config) (*App, error) {
 		users: newUserStore(), companies: map[string]universe.Company{}, started: cfg.Now(),
 		live: map[string]map[string]engine.Order{}, tickets: map[string]*TicketRec{},
 		commits: newDurations(1000), errs: &errRing{}, haltSince: map[string]time.Time{},
+		recentFills: map[string][]engine.Fill{}, paused: map[string]bool{},
 	}
 	base := cfg.Log
 	if base == nil {
@@ -180,11 +192,23 @@ type state struct {
 	fills  []engine.Fill
 }
 
+// restore replays the log in the order things happened, so every fill, grant and correction lands on
+// the ledger exactly as it did live (average cost depends on that order).
 func (a *App) restore() error {
 	st := state{orders: map[string]engine.Order{}}
 	var clockState *eventclock.State
 	releases := map[string]news.Release{}
-	var grants []Grant
+
+	openAccount := func(u User) error {
+		if u.IsAdmin {
+			return nil
+		}
+		err := a.Ledger.Open(ledger.Account{ID: u.ID, Name: u.DisplayName, Kind: ledger.KindTeam}, a.RB.StartingCapital())
+		if errors.Is(err, ledger.ErrAccountExists) {
+			return nil
+		}
+		return err
+	}
 
 	err := a.wal.Replay(func(kind string, raw json.RawMessage) error {
 		switch kind {
@@ -193,7 +217,10 @@ func (a *App) restore() error {
 			if err := json.Unmarshal(raw, &u); err != nil {
 				return err
 			}
-			return a.users.put(u)
+			if err := a.users.put(u); err != nil {
+				return err
+			}
+			return openAccount(u)
 		case store.KindBatch:
 			var b engine.Batch
 			if err := json.Unmarshal(raw, &b); err != nil {
@@ -203,7 +230,43 @@ func (a *App) restore() error {
 			for _, m := range b.Makers {
 				st.orders[m.ID] = m
 			}
+			for _, f := range b.Fills {
+				a.Ledger.ReplayFill(f)
+				a.Market.PriceUpdate(f.Symbol, f.Price, f.At)
+				a.recordFill(f)
+			}
 			st.fills = append(st.fills, b.Fills...)
+		case store.KindGrant:
+			var g Grant
+			if err := json.Unmarshal(raw, &g); err != nil {
+				return err
+			}
+			if g.Qty > 0 {
+				return a.Ledger.Grant(g.AccountID, g.Symbol, g.Qty, g.Price)
+			}
+			return a.Ledger.Revoke(g.AccountID, g.Symbol, -g.Qty, true)
+		case store.KindCash:
+			var c CashAdjustment
+			if err := json.Unmarshal(raw, &c); err != nil {
+				return err
+			}
+			return a.Ledger.AdjustCash(c.AccountID, money.Paise(c.Delta), true)
+		case store.KindAnnounce:
+			var n Announcement
+			if err := json.Unmarshal(raw, &n); err != nil {
+				return err
+			}
+			a.announcements = append(a.announcements, n)
+		case store.KindPause:
+			var p SymbolPause
+			if err := json.Unmarshal(raw, &p); err != nil {
+				return err
+			}
+			if p.Paused {
+				a.paused[p.Symbol] = true
+			} else {
+				delete(a.paused, p.Symbol)
+			}
 		case store.KindAudit:
 			var e AuditEntry
 			if err := json.Unmarshal(raw, &e); err != nil {
@@ -222,12 +285,6 @@ func (a *App) restore() error {
 				return err
 			}
 			releases[r.Item.ID] = r
-		case store.KindGrant:
-			var g Grant
-			if err := json.Unmarshal(raw, &g); err != nil {
-				return err
-			}
-			grants = append(grants, g)
 		case store.KindTicket:
 			var t TicketRec
 			if err := json.Unmarshal(raw, &t); err != nil {
@@ -241,20 +298,6 @@ func (a *App) restore() error {
 		return err
 	}
 
-	// Accounts first, then holdings and reservations, then the books.
-	for _, u := range a.users.all() {
-		if u.IsAdmin {
-			continue
-		}
-		if err := a.Ledger.Open(ledger.Account{ID: u.ID, Name: u.DisplayName, Kind: ledger.KindTeam}, a.RB.StartingCapital()); err != nil {
-			return err
-		}
-	}
-	for _, g := range grants {
-		if err := a.Ledger.Grant(g.AccountID, g.Symbol, g.Qty, g.Price); err != nil {
-			return fmt.Errorf("replaying a share grant: %w", err)
-		}
-	}
 	var liveOrders, allOrders []engine.Order
 	for _, o := range st.orders {
 		allOrders = append(allOrders, o)
@@ -263,11 +306,10 @@ func (a *App) restore() error {
 			a.indexLive(o)
 		}
 	}
-	a.Ledger.Restore(st.fills, liveOrders)
+	a.Ledger.RestoreReservations(liveOrders)
 	byTaker := map[string][]engine.Fill{}
 	for _, f := range st.fills {
 		byTaker[f.TakerOrderID] = append(byTaker[f.TakerOrderID], f)
-		a.Market.PriceUpdate(f.Symbol, f.Price, f.At)
 	}
 	if err := a.Engine.Restore(allOrders, byTaker); err != nil {
 		return err
@@ -387,7 +429,10 @@ func (s sink) OnApplied(ap engine.Applied) {
 		a.Hub.ToAccount(ap.Order.AccountID, "orderAccepted", dto.FromOrder(ap.Order))
 		for _, f := range ap.Fills {
 			a.tradesPM.Add(1, now)
-			a.Hub.ToSymbol(f.Symbol, "trade", dto.FromPublicFill(f))
+			a.recordFill(f)
+			// Trades are tiny and everyone needs them for prices, so they go to all clients; the much bigger
+			// order book below goes only to people looking at that company.
+			a.Hub.ToAll("trade", dto.FromPublicFill(f))
 			private := dto.FromFill(f)
 			a.Hub.ToAccount(f.TakerAccountID, "fill", private)
 			if f.MakerAccountID != f.TakerAccountID {
@@ -425,11 +470,12 @@ type ControlState struct {
 	TradingFrozen   bool              `json:"tradingFrozen"`
 	MarketOpen      bool              `json:"marketOpen"`
 	WindowOverrides map[string]string `json:"windowOverrides"`
+	PausedSymbols   []string          `json:"pausedSymbols"`
 }
 
 func (a *App) ControlState() ControlState {
 	ov := a.Clock.Overrides()
-	cs := ControlState{TradingFrozen: ov.Frozen, MarketOpen: a.Clock.MarketOpen(), WindowOverrides: map[string]string{}}
+	cs := ControlState{TradingFrozen: ov.Frozen, MarketOpen: a.Clock.MarketOpen(), WindowOverrides: map[string]string{}, PausedSymbols: a.PausedSymbols()}
 	for i, w := range ov.Windows {
 		if w != nil {
 			cs.WindowOverrides[fmt.Sprintf("Allocation window %d", i)] = map[bool]string{true: "open", false: "closed"}[*w]
@@ -484,6 +530,11 @@ func (a *App) NewsFor(u User) []dto.NewsItem {
 	for _, it := range items {
 		out = append(out, dto.NewsItem{ID: it.ID, Kind: string(it.Kind), Headline: it.Headline, Body: it.Body, CreatedAt: dto.MS(it.CreatedAt)})
 	}
+	a.annMu.Lock()
+	for _, n := range a.announcements {
+		out = append(out, dto.NewsItem{ID: n.ID, Kind: "notice", Headline: n.Text, CreatedAt: dto.MS(n.At)})
+	}
+	a.annMu.Unlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
 	return out
 }

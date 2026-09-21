@@ -66,18 +66,12 @@ export function UniverseProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const socket = getSocket();
-    const subscribeAll = () => {
-      for (const s of symbols) socket.emit("subscribe:symbol", s.symbol);
-    };
-    subscribeAll();
+    // Every trade for every company is pushed to every client (they are tiny), so prices need no
+    // per-company subscription. Only a company page subscribes, for its order book.
     const onTrade = (f: Fill) => pending.current.set(f.symbol, f.price);
     socket.on("trade", onTrade);
-    // After a reconnect the client's view may be stale and its room memberships are gone: refetch and resubscribe.
-    const onConnect = () => {
-      subscribeAll();
-      load();
-    };
-    socket.on("connect", onConnect);
+    // After a reconnect the client's view may be stale: refetch the prices.
+    socket.on("connect", load);
 
     const timer = setInterval(() => {
       if (pending.current.size === 0) return;
@@ -89,9 +83,9 @@ export function UniverseProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearInterval(timer);
       socket.off("trade", onTrade);
-      socket.off("connect", onConnect);
+      socket.off("connect", load);
     };
-  }, [symbols.length, load]);
+  }, [load]);
 
   const toggleStar = useCallback((symbol: string) => {
     setStarred((prev) => {

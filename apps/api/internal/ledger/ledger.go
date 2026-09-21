@@ -373,6 +373,76 @@ func (l *Ledger) Grant(accountID, symbol string, qty int64, price money.Paise) e
 	return nil
 }
 
+// AdjustCash changes an account's cash by delta, positive or negative (an organiser correction). A
+// live adjustment is refused if it would leave less cash than is held back for working orders. force
+// skips that check and is for replaying the durable log, where the same change was already accepted.
+func (l *Ledger) AdjustCash(accountID string, delta money.Paise, force bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a, err := l.get(accountID)
+	if err != nil {
+		return err
+	}
+	if !force && delta < 0 && a.cash+delta < a.reservedCash() {
+		return ErrInsufficientCash
+	}
+	a.cash += delta
+	return nil
+}
+
+// Revoke takes qty shares of symbol back from an account (an organiser correction) at its average
+// cost. A live revoke is refused if the account does not hold that many unreserved shares; force is
+// for replaying the durable log.
+func (l *Ledger) Revoke(accountID, symbol string, qty int64, force bool) error {
+	if qty <= 0 {
+		return engine.ErrInvalidOrder
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a, err := l.get(accountID)
+	if err != nil {
+		return err
+	}
+	p := a.pos[symbol]
+	have := int64(0)
+	if p != nil {
+		have = p.Qty
+	}
+	if !force && have-a.reservedShares(symbol) < qty {
+		return ErrInsufficientShares
+	}
+	if p == nil {
+		return ErrInsufficientShares
+	}
+	if p.Qty > 0 {
+		p.Cost -= money.Paise(int64(p.Cost) * min(qty, p.Qty) / p.Qty)
+	}
+	p.Qty -= qty
+	if p.Qty <= 0 {
+		p.Qty, p.Cost = max(p.Qty, 0), 0
+	}
+	return nil
+}
+
+// ReplayFill applies one committed fill while rebuilding state from the log, in the order it happened.
+func (l *Ledger) ReplayFill(f engine.Fill) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.applyFillLocked(f)
+}
+
+// RestoreReservations rebuilds the cash and shares held back for working orders, after everything else
+// has been replayed.
+func (l *Ledger) RestoreReservations(live []engine.Order) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, o := range live {
+		if a, ok := l.accts[o.AccountID]; ok && o.Status.Live() {
+			a.res[o.ClientOrderID] = reservation{side: o.Side, symbol: o.Symbol, price: o.Price, remaining: o.Remaining}
+		}
+	}
+}
+
 // Accounts lists every account id (sorted).
 func (l *Ledger) Accounts() []string {
 	l.mu.RLock()

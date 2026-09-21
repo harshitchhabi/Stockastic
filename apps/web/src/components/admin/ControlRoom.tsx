@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import type { SymbolInfo } from "@/lib/types";
 import type { Override, Overview } from "@/lib/adminTypes";
 import { fmtClock, fmtMinSec } from "@/lib/format";
 import { ActionButton, Badge, ChoiceControl, LoadError, useDo, useNow, usePoll } from "./shared";
@@ -17,6 +19,19 @@ export function ControlRoom() {
   const run = useDo(reload);
   const [jumpTo, setJumpTo] = useState("");
   const [compress, setCompress] = useState("");
+  const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
+  const [pauseSym, setPauseSym] = useState("");
+  const [announce, setAnnounce] = useState("");
+
+  useEffect(() => {
+    api
+      .get<SymbolInfo[]>("/api/symbols")
+      .then((s) => {
+        setSymbols(s);
+        setPauseSym((cur) => cur || s[0]?.symbol || "");
+      })
+      .catch(() => {});
+  }, []);
 
   if (!data) return <div className="page"><LoadError error={error} at={at} />{!error && <div className="empty">loading the control room…</div>}</div>;
 
@@ -181,6 +196,56 @@ export function ControlRoom() {
             />
           </div>
         ))}
+      </div>
+
+      <h2 className="section">Pause one company</h2>
+      <p className="dim" style={{ marginTop: 0 }}>
+        Stops new orders in a single company while everything else keeps trading. Orders already in its book stay there and can still be cancelled.
+      </p>
+      <div className="row-field" style={{ maxWidth: 520 }}>
+        <select value={pauseSym} onChange={(e) => setPauseSym(e.target.value)} aria-label="Company to pause">
+          {symbols.map((s) => (
+            <option key={s.symbol} value={s.symbol}>
+              {s.displayName} ({s.symbol})
+            </option>
+          ))}
+        </select>
+        <ActionButton
+          danger
+          disabled={!pauseSym || control.pausedSymbols.includes(pauseSym)}
+          label="Pause"
+          title={`Pause trading in ${pauseSym}`}
+          run={(reason) => run(`/api/admin/control/symbols/${encodeURIComponent(pauseSym)}`, { reason, paused: true }, `${pauseSym} paused`)}
+        />
+      </div>
+      {control.pausedSymbols.length > 0 && (
+        <div className="pausedlist">
+          {control.pausedSymbols.map((sym) => (
+            <span key={sym} className="row-field" style={{ alignItems: "center" }}>
+              <Badge tone="down">{sym} paused</Badge>
+              <ActionButton
+                className="ghost"
+                label="Resume"
+                title={`Resume trading in ${sym}`}
+                run={(reason) => run(`/api/admin/control/symbols/${encodeURIComponent(sym)}`, { reason, paused: false }, `${sym} resumed`)}
+              />
+            </span>
+          ))}
+        </div>
+      )}
+
+      <h2 className="section">Announce to everyone</h2>
+      <p className="dim" style={{ marginTop: 0 }}>Appears at once on every participant's news column as a desk notice, and stays in it.</p>
+      <div className="row-field" style={{ maxWidth: 720 }}>
+        <input value={announce} maxLength={280} placeholder="For example: Allocation window 1 opens in five minutes" onChange={(e) => setAnnounce(e.target.value)} />
+        <ActionButton
+          className="solid"
+          disabled={announce.trim().length < 3}
+          label="Announce"
+          title="Send this announcement to every participant"
+          description={<strong>{announce}</strong>}
+          run={(reason) => run("/api/admin/announce", { reason, text: announce.trim() }, "Announcement sent").then(() => setAnnounce(""))}
+        />
       </div>
 
       <h2 className="section">Schedule</h2>

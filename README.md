@@ -26,8 +26,9 @@ Node exists only on a developer machine to build the frontend.
 | `apps/api` | Go backend (`stockastic/api`). **Built and tested:** `app` (wiring), `httpapi` (Gin), `wsapi`, `auth`, `store` (durable log), `config`, `market`, `universe`, `dto`, `rulebook`, `scoring`, `engine`, `ledger`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui`. **Not built yet:** `funds` (Stage 2), a Postgres `store.Log` |
 | `apps/api/internal/rulebook/rulebook.json` | **Every rulebook value**, embedded in the binary. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
 | `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
-| `docs/` | `admin-api.md` (organiser routes), `stage2-dashboards.md` (Stage 2 plan) |
-| `loadtest/` | k6 load tests (to be written against the Go API) |
+| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `stage2-dashboards.md` (Stage 2 plan) |
+| `deploy/` | Ready-to-use server files: systemd unit, Caddy config, backup script, kernel settings, env template |
+| `apps/api/cmd/loadsim` | Load simulator: hundreds of teams sign up, log in together, trade over live sockets, then stampede one company |
 
 The previous TypeScript backend lives only on the `archive/ts-backend` branch.
 
@@ -62,7 +63,7 @@ Settings are environment variables (a `.env.local` next to where you run the ser
 | `WEB_DIR` | embedded | Serve the built web app from a folder instead |
 
 **Nobody can trade until shares exist.** Teams start with cash only and short selling is not allowed. As an organiser,
-open **Shares** in the console and give teams some. Then start the event in the **Control room** (start, then jump to
+open **Shares** in the console and give teams some (or open a team from **Participants** to give it shares or change its cash). Then start the event in the **Control room** (start, then jump to
 "Phase 1, live trading").
 
 ## Commands
@@ -70,6 +71,9 @@ open **Shares** in the console and give teams some. Then start the event in the 
 ```bash
 # backend
 cd apps/api && go vet ./... && go test -race ./...
+
+# load test against a running server (use a throwaway DATA_DIR; it creates accounts and orders)
+cd apps/api && go run ./cmd/loadsim -url http://127.0.0.1:8080 -admin-email <email> -admin-password <password> -users 300
 
 # frontend
 cd apps/web && npm install
@@ -94,6 +98,9 @@ to be consciously public or organiser-only.
 holdings, cash, the order books, working orders, the event clock, news and disputes from the log. A hard kill mid-session
 loses nothing that was acknowledged; a half-written final record is discarded on the next start. A retry of an order sent
 before the crash returns the original result instead of trading twice.
+
+**One server only** — the durable log is locked while a server uses it, so a second server started by mistake refuses to run
+instead of corrupting it. Orders that finish at the same moment share one disk sync.
 
 **Slow clients** — each WebSocket has a bounded send queue and broadcasts never wait, so one stuck browser cannot slow
 anyone else; it is disconnected and reconnects.

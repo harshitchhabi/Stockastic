@@ -16,9 +16,9 @@ import (
 
 var ErrInvalidToken = errors.New("invalid_token")
 
-// hashSlots bounds concurrent bcrypt work: hundreds of teams logging in at the same second must not
-// starve matching of CPU.
-var hashSlots = make(chan struct{}, max(2, runtime.NumCPU()/2))
+// hashSlots bounds concurrent bcrypt work so a login storm queues instead of thrashing. It may use every
+// core: matching is light (an order takes milliseconds), and a login storm is over in seconds.
+var hashSlots = make(chan struct{}, max(2, runtime.NumCPU()))
 
 func HashPassword(pw string) (string, error) {
 	hashSlots <- struct{}{}

@@ -152,6 +152,41 @@ func New(opt Options) (http.Handler, error) {
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true, "teams": n})
 	})
+	adm.GET("/accounts/:id", func(c *gin.Context) {
+		d, err := s.a.Team(c.Param("id"))
+		if err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, d)
+	})
+	adm.POST("/accounts/:id/cash", s.act(func(u app.User, b body, c *gin.Context) error {
+		return s.a.AdjustCash(u, b.Reason, c.Param("id"), b.Amount)
+	}))
+	adm.POST("/accounts/:id/shares", s.act(func(u app.User, b body, c *gin.Context) error {
+		switch b.Direction {
+		case "give":
+			_, err := s.a.GrantShares(u, b.Reason, c.Param("id"), b.Symbol, b.Qty, b.Price)
+			return err
+		case "take":
+			return s.a.RevokeShares(u, b.Reason, c.Param("id"), b.Symbol, b.Qty)
+		}
+		return &app.BadRequest{Code: "invalid_direction", Message: "Direction must be give or take."}
+	}))
+	adm.POST("/accounts/:id/cancel-orders", s.act(func(u app.User, b body, c *gin.Context) error {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+		return s.a.CancelTeamOrders(ctx, u, b.Reason, c.Param("id"), b.OrderID)
+	}))
+	adm.POST("/accounts/:id/reinstate", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Reinstate(u, b.Reason, c.Param("id")) }))
+	adm.POST("/accounts/:id/reset-password", s.act(func(u app.User, b body, c *gin.Context) error {
+		return s.a.ResetPassword(u, b.Reason, c.Param("id"), b.Password)
+	}))
+	adm.POST("/accounts/:id/role", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.SetRole(u, b.Reason, c.Param("id"), b.Role) }))
+	adm.POST("/announce", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.Announce(u, b.Reason, b.Text) }))
+	adm.POST("/control/symbols/:symbol", s.act(func(u app.User, b body, c *gin.Context) error {
+		return s.a.PauseSymbol(u, b.Reason, c.Param("symbol"), b.Paused)
+	}))
 	adm.POST("/trade-adjustments", s.act(func(u app.User, b body, _ *gin.Context) error {
 		return s.a.RecordAdjustment(u, b.Reason, b.FillID, b.Adjustment.Note)
 	}))
@@ -276,6 +311,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrSignupClosed, 403, "Sign-up is closed."},
 		{app.ErrDisqualified, 403, "This team has been disqualified."},
 		{app.ErrMarketClosed, 403, "The market is closed right now."},
+		{app.ErrSymbolPaused, 403, "Trading in this company is paused by the organisers."},
 		{app.ErrNoAccount, 403, "This account has no trading account."},
 		{app.ErrUnknownUser, 404, "No such account."},
 		{app.ErrUnknownTicket, 404, "No such dispute."},
@@ -515,17 +551,27 @@ func (s *Server) raiseDispute(c *gin.Context) {
 // ---- organiser actions ----
 
 type body struct {
-	Reason          string `json:"reason"`
-	CompressBlockID string `json:"compressBlockId"`
-	BlockID         string `json:"blockId"`
-	Minutes         int    `json:"minutes"`
-	Frozen          bool   `json:"frozen"`
-	Override        any    `json:"override"`
-	Kind            string `json:"kind"`
-	Headline        string `json:"headline"`
-	Body            string `json:"body"`
-	PlatformWide    bool   `json:"platformWide"`
-	FillID          string `json:"fillId"`
+	Reason          string  `json:"reason"`
+	CompressBlockID string  `json:"compressBlockId"`
+	BlockID         string  `json:"blockId"`
+	Minutes         int     `json:"minutes"`
+	Frozen          bool    `json:"frozen"`
+	Override        any     `json:"override"`
+	Kind            string  `json:"kind"`
+	Headline        string  `json:"headline"`
+	Body            string  `json:"body"`
+	PlatformWide    bool    `json:"platformWide"`
+	Amount          float64 `json:"amount"`
+	Password        string  `json:"password"`
+	Role            string  `json:"role"`
+	Text            string  `json:"text"`
+	Symbol          string  `json:"symbol"`
+	Qty             int64   `json:"qty"`
+	Price           float64 `json:"price"`
+	OrderID         string  `json:"orderId"`
+	Paused          bool    `json:"paused"`
+	Direction       string  `json:"direction"`
+	FillID          string  `json:"fillId"`
 	Adjustment      struct {
 		Note string `json:"note"`
 	} `json:"adjustment"`

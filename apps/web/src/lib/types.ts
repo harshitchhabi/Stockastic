@@ -92,6 +92,8 @@ export interface SymbolInfo {
 
 export interface NewsItem {
   id: string;
+  /** "notice" is an organiser announcement; anything else is market news. */
+  kind?: string;
   headline: string;
   body?: string;
   createdAt: number;

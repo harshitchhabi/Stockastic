@@ -60,7 +60,9 @@ export function Participants() {
           {rows.map((a) => (
             <tr key={a.id}>
               <td>
-                <strong>{a.displayName}</strong>
+                <a href={`#/team/${a.id}`} className="rowlink">
+                  <strong>{a.displayName}</strong>
+                </a>
                 <div className="dim" style={{ fontSize: 11 }}>{a.email}</div>
               </td>
               <td style={{ fontFamily: "var(--sans)" }}>{a.role === "fund_manager" ? "Fund manager" : "Investor"}</td>

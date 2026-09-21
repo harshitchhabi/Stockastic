@@ -29,7 +29,7 @@ function merge(prev: Entry[], incoming: Entry[]): Entry[] {
   return [...fresh, ...prev].sort((a, b) => b.at - a.at).slice(0, MAX_ENTRIES);
 }
 
-const fromNews = (n: NewsItem): Entry => ({ id: n.id, kind: "news", headline: n.headline, body: n.body, at: n.createdAt });
+const fromNews = (n: NewsItem): Entry => ({ id: n.id, kind: n.kind === "notice" ? "notice" : "news", headline: n.headline, body: n.body, at: n.createdAt });
 
 export function NewsFeed({ title = "The wire" }: { title?: string }) {
   const [entries, setEntries] = useState<Entry[]>([]);

@@ -17,6 +17,7 @@ import (
 var (
 	ErrMarketClosed = errors.New("market_closed")
 	ErrNoAccount    = errors.New("no_trading_account")
+	ErrSymbolPaused = errors.New("trading_paused")
 )
 
 // RateLimited is returned when an account has used its trades for the current window.
@@ -104,6 +105,9 @@ func (a *App) PlaceOrder(ctx context.Context, u User, req OrderRequest) (engine.
 	}
 	if !a.Clock.MarketOpen() {
 		return engine.Result{}, ErrMarketClosed
+	}
+	if a.symbolPaused(n.Symbol) {
+		return engine.Result{}, ErrSymbolPaused
 	}
 
 	// A repeat of an order we already processed is a retry: it returns the original result and must

@@ -29,8 +29,8 @@ func newLedger(t *testing.T, cash int64, ids ...string) *Ledger {
 	return l
 }
 
-// grant gives an account shares directly. Tests only: how real liquidity is seeded is an open
-// organiser decision, so there is deliberately no production method for it.
+// grant gives an account shares at an exact total cost, bypassing the average-cost arithmetic of the
+// production Grant method, so tests can set a precise starting position.
 func (l *Ledger) grant(id, symbol string, qty int64, cost money.Paise) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -370,5 +370,62 @@ func TestMarketMakerIsJustAnAccountKindForNow(t *testing.T) {
 	}
 	if KindMarketMaker.String() != "market_maker" || KindFund.String() != "fund" {
 		t.Error("kind names")
+	}
+}
+
+func TestAdjustCashAndRevokeRespectWhatIsHeldBack(t *testing.T) {
+	l := newLedger(t, 1000, "a") // 1000 rupees of cash
+
+	// Hold 100 rupees back for a working buy.
+	if _, err := l.Reserve(buy("a", "c1", 10, 10)); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.AdjustCash("a", -rp(950), false); !errors.Is(err, ErrInsufficientCash) {
+		t.Fatalf("a debit into reserved cash: %v", err)
+	}
+	if err := l.AdjustCash("a", -rp(900), false); err != nil {
+		t.Fatalf("a debit that leaves the reservation covered: %v", err)
+	}
+	if err := l.AdjustCash("a", rp(50), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.AdjustCash("a", -rp(500), true); err != nil { // replaying the log never refuses
+		t.Fatal(err)
+	}
+	if err := l.AdjustCash("nobody", 1, false); !errors.Is(err, ErrUnknownAccount) {
+		t.Fatalf("unknown account: %v", err)
+	}
+
+	if err := l.Grant("a", "X", 10, rp(50)); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Revoke("a", "X", 11, false); !errors.Is(err, ErrInsufficientShares) {
+		t.Fatalf("revoking more than held: %v", err)
+	}
+	if err := l.Revoke("a", "X", 4, false); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := l.Snapshot("a")
+	if len(snap.Positions) != 1 || snap.Positions[0].Qty != 6 || snap.Positions[0].Cost != 6*rp(50) {
+		t.Fatalf("position after revoke = %+v (cost is taken back at average cost)", snap.Positions)
+	}
+	if err := l.Revoke("a", "X", 6, false); err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ = l.Snapshot("a"); len(snap.Positions) != 0 {
+		t.Fatalf("a fully revoked position is still listed: %+v", snap.Positions)
+	}
+	if err := l.Revoke("a", "Y", 1, false); !errors.Is(err, ErrInsufficientShares) {
+		t.Fatalf("revoking an unheld company: %v", err)
+	}
+	// Shares held back for a working sell cannot be taken away.
+	if err := l.Grant("a", "ACME", 5, rp(50)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(sell("a", "s1", 60, 5)); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Revoke("a", "ACME", 1, false); !errors.Is(err, ErrInsufficientShares) {
+		t.Fatalf("revoking shares held back for a working sell: %v", err)
 	}
 }

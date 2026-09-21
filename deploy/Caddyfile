@@ -1,0 +1,14 @@
+# HTTPS in front of the server. Replace the name with your own domain (its DNS must point at this machine).
+# Caddy gets and renews the certificate by itself, and passes WebSockets through.
+event.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080 {
+		# Keep long-lived WebSocket connections open for the whole event.
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+		health_uri /healthz
+		health_interval 5s
+	}
+}

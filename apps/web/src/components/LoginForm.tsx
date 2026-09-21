@@ -29,7 +29,6 @@ export function LoginForm() {
       <div className="login-hero">
         <div>
           <h1>Stockastic</h1>
-          <p>Five hours. Two hundred and fifty companies. One book to trade them in.</p>
         </div>
       </div>
 

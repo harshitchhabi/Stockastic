@@ -1048,3 +1048,19 @@ textarea {
   overflow: auto;
   max-height: 480px;
 }
+
+.row-field {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.row-field input {
+  flex: 1;
+  min-width: 0;
+}
+.pausedlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

@@ -11,6 +11,7 @@ import { Disputes } from "./Disputes";
 import { AdminStandings } from "./AdminStandings";
 import { AuditLog } from "./AuditLog";
 import { RulebookView } from "./RulebookView";
+import { TeamPage } from "./TeamPage";
 
 const PAGES = [
   { id: "control", label: "Control room", view: ControlRoom },
@@ -26,9 +27,15 @@ const PAGES = [
 
 type PageId = (typeof PAGES)[number]["id"];
 
-const fromHash = (): PageId => {
-  const id = window.location.hash.replace(/^#\/?/, "");
-  return PAGES.find((p) => p.id === id)?.id ?? "control";
+interface Where {
+  page: PageId;
+  team?: string;
+}
+
+const fromHash = (): Where => {
+  const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  if (parts[0] === "team" && parts[1]) return { page: "participants", team: decodeURIComponent(parts[1]) };
+  return { page: PAGES.find((p) => p.id === parts[0])?.id ?? "control" };
 };
 
 export function AdminApp() {
@@ -42,10 +49,11 @@ export function AdminApp() {
 function Frame() {
   const { account, logout } = useSession();
   const { notice } = useAdmin();
-  const [page, setPage] = useState<PageId>(fromHash);
+  const [where, setWhere] = useState<Where>(fromHash);
+  const page = where.page;
 
   useEffect(() => {
-    const on = () => setPage(fromHash());
+    const on = () => setWhere(fromHash());
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
@@ -74,7 +82,7 @@ function Frame() {
         </nav>
         <main className="main">
           <ErrorBoundary name={page}>
-            <View />
+            {where.team ? <TeamPage key={where.team} id={where.team} /> : <View />}
           </ErrorBoundary>
         </main>
       </div>

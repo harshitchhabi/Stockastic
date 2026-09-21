@@ -1,0 +1,28 @@
+[Unit]
+Description=Stockastic event platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stockastic
+Group=stockastic
+WorkingDirectory=/var/lib/stockastic
+EnvironmentFile=/etc/stockastic/env
+ExecStart=/opt/stockastic/api
+# If the server ever stops, bring it back within seconds. It rebuilds everything from its log.
+Restart=always
+RestartSec=2
+# Give a clean shutdown time to finish queued orders before systemd gives up.
+TimeoutStopSec=30
+# One open connection per browser, plus the log and a margin.
+LimitNOFILE=65535
+
+# Safety: the server needs its data folder and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/stockastic
+
+[Install]
+WantedBy=multi-user.target

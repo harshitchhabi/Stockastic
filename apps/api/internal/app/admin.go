@@ -542,6 +542,7 @@ type Overview struct {
 	Timeline []Block `json:"timeline"`
 	Control  struct {
 		TradingFrozen   bool      `json:"tradingFrozen"`
+		PausedSymbols   []string  `json:"pausedSymbols"`
 		MarketOverride  *string   `json:"marketOverride"`
 		MarketOpen      bool      `json:"marketOpen"`
 		WindowOverrides []*string `json:"windowOverrides"`
@@ -584,6 +585,7 @@ func (a *App) Overview() Overview {
 	}
 	ov := a.Clock.Overrides()
 	o.Control.TradingFrozen, o.Control.MarketOverride, o.Control.MarketOpen = ov.Frozen, ovString(ov.MarketOpen), a.Clock.MarketOpen()
+	o.Control.PausedSymbols = a.PausedSymbols()
 	n := a.RB.WindowCount()
 	o.Control.WindowOverrides, o.Control.WindowsOpen = make([]*string, n), make([]bool, n)
 	for i := 0; i < n; i++ {

@@ -42,8 +42,17 @@ so a rulebook with five windows shows five switches with no console change.
 | `POST /api/admin/symbols/{symbol}/resume` | | `Engine.Resume` |
 | `POST /api/admin/accounts/{id}/promote` | | move a team into the fund manager role |
 | `POST /api/admin/accounts/{id}/warn` | | formal warning (rulebook Section 21) |
-| `POST /api/admin/accounts/{id}/disqualify` | | disqualify; a fund is frozen at its current NAV |
+| `POST /api/admin/accounts/{id}/disqualify` | | disqualify: stops trading and cancels every working order (a fund is frozen at its current NAV) |
 | `POST /api/admin/grants` | `accountId` (or `"*"` for every team), `symbol`, `qty`, `price` | `Ledger.Grant`: gives shares with no cash movement. This is the only way inventory enters the market |
+| `GET /api/admin/accounts/{id}` | | A team's wallet, holdings, working orders, recent trades and history |
+| `POST /api/admin/accounts/{id}/cash` | `amount` (rupees, negative to remove) | `Ledger.AdjustCash`. Refused if it would reach into cash held back for working orders |
+| `POST /api/admin/accounts/{id}/shares` | `direction: "give" / "take"`, `symbol`, `qty`, `price` (give only) | `Ledger.Grant` or `Ledger.Revoke`. Taking is refused for shares held back for a working sell |
+| `POST /api/admin/accounts/{id}/cancel-orders` | `orderId?` (all orders if omitted) | cancels working orders on the team's behalf |
+| `POST /api/admin/accounts/{id}/reinstate` | | lets a disqualified team trade again |
+| `POST /api/admin/accounts/{id}/reset-password` | `password` | sets a new password. The password is never written to the audit log |
+| `POST /api/admin/accounts/{id}/role` | `role: "investor" / "fund_manager"` | moves a team either way |
+| `POST /api/admin/control/symbols/{symbol}` | `paused: bool` | stops or resumes new orders in one company. Cancels still work |
+| `POST /api/admin/announce` | `text` | shows a desk notice on every participant's news column, and keeps it |
 | `POST /api/admin/news` | `kind: "news" / "regime"`, `headline`, `body?` | `news.Dispatcher.Publish` |
 | `POST /api/admin/disputes/{id}/triage` | `platformWide: bool` | `disputes.Tracker.Triage` |
 | `POST /api/admin/disputes/{id}/resolve` | | resolves; `reason` is the resolution shown to the team |
