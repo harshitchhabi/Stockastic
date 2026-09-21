@@ -44,6 +44,7 @@ export function ControlRoom() {
   const now = useNow(1000);
   const run = useDo(reload);
   const [jumpTo, setJumpTo] = useState("");
+  const [startAt, setStartAt] = useState("");
   const [compress, setCompress] = useState("");
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [pauseSym, setPauseSym] = useState("");
@@ -102,14 +103,35 @@ export function ControlRoom() {
 
       <div className="btn-row">
         {clock.status === "not_started" && (
-          <ActionButton
-            className="solid"
-            label="Start the event"
-            title="Start the event clock"
-            description="The clock starts now and the schedule begins running. This cannot be undone."
-            run={() => run("/api/admin/clock/start", {}, "Event started")}
-          />
+          <>
+            <select value={startAt} onChange={(e) => setStartAt(e.target.value)} aria-label="Block to start at">
+              <option value="">Start at the first block</option>
+              {timeline.map((b) => (
+                <option key={b.id} value={b.id}>
+                  Start at: {b.label}
+                </option>
+              ))}
+            </select>
+            <ActionButton
+              className="solid"
+              label="Start the event"
+              title="Start the event clock"
+              description={
+                startAt
+                  ? `The clock starts now at "${timeline.find((b) => b.id === startAt)?.label ?? startAt}". Blocks before it are treated as done.`
+                  : "The clock starts now at the first block of your schedule."
+              }
+              run={() => run("/api/admin/clock/start", { blockId: startAt || undefined }, "Event started")}
+            />
+          </>
         )}
+        <ActionButton
+          danger
+          label="Reset the whole event"
+          title="Reset the whole event"
+          description="Every team goes back to its starting cash with no shares, prices go back to their opening values, and trades, funds, news, disputes and snapshots are erased. Teams keep their accounts and passwords, warnings are cleared, and your schedule is kept. This cannot be undone."
+          run={() => run("/api/admin/event/reset", {}, "The event was reset")}
+        />
         {running && (
           <ActionButton
             label="Pause"

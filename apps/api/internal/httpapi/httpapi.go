@@ -89,7 +89,7 @@ func New(opt Options) (http.Handler, error) {
 	s.fundRoutes(me, adm)
 	adm.GET("/standings", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Leaderboard()) })
 
-	adm.POST("/clock/start", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockStart(u, b.Reason) }))
+	adm.POST("/clock/start", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockStartAt(u, b.BlockID) }))
 	adm.POST("/clock/pause", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockPause(u, b.Reason) }))
 	adm.POST("/clock/resume", s.act(func(u app.User, b body, _ *gin.Context) error {
 		return s.a.ClockResume(u, b.Reason, b.CompressBlockID)
@@ -106,7 +106,7 @@ func New(opt Options) (http.Handler, error) {
 	}))
 	adm.POST("/control/windows/:i", s.act(func(u app.User, b body, c *gin.Context) error {
 		i, err := strconv.Atoi(c.Param("i"))
-		if err != nil || i < 0 || i >= s.a.RB.WindowCount() {
+		if err != nil || i < 0 || i >= s.a.Clock.WindowCount() {
 			return &app.BadRequest{Code: "unknown_window", Message: "There is no such allocation window."}
 		}
 		o, err := b.override()
@@ -337,6 +337,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrNoAccount, 403, "This account has no trading account."},
 		{app.ErrFundsNotFormed, 409, "The funds have not been formed yet."},
 		{app.ErrNotAllowed, 403, "You cannot do that."},
+		{app.ErrNotTrader, 403, "The other team in your fund places its trades. You can watch the fund from here."},
 		{funds.ErrUnknownFund, 404, "No such fund."},
 		{app.ErrUnknownUser, 404, "No such account."},
 		{app.ErrUnknownTicket, 404, "No such dispute."},
@@ -454,7 +455,7 @@ type publicConfig struct {
 func (s *Server) config(c *gin.Context) {
 	cs := s.a.ControlState()
 	anyOpen := false
-	for i := 0; i < s.a.RB.WindowCount(); i++ {
+	for i := 0; i < s.a.Clock.WindowCount(); i++ {
 		if s.a.Clock.WindowOpen(i) {
 			anyOpen = true
 		}
@@ -536,27 +537,29 @@ func (s *Server) raiseDispute(c *gin.Context) {
 // ---- organiser actions ----
 
 type body struct {
-	Reason          string   `json:"reason"`
-	CompressBlockID string   `json:"compressBlockId"`
-	BlockID         string   `json:"blockId"`
-	Minutes         int      `json:"minutes"`
-	Frozen          bool     `json:"frozen"`
-	Override        any      `json:"override"`
-	Kind            string   `json:"kind"`
-	Headline        string   `json:"headline"`
-	Body            string   `json:"body"`
-	PlatformWide    bool     `json:"platformWide"`
-	Amount          float64  `json:"amount"`
-	SetTo           *float64 `json:"setTo"`
-	Password        string   `json:"password"`
-	Role            string   `json:"role"`
-	Text            string   `json:"text"`
-	Symbol          string   `json:"symbol"`
-	Qty             int64    `json:"qty"`
-	Price           float64  `json:"price"`
-	Paused          bool     `json:"paused"`
-	Direction       string   `json:"direction"`
-	FillID          string   `json:"fillId"`
+	Pairs           [][]string `json:"pairs"`
+	AccountID       string     `json:"accountId"`
+	Reason          string     `json:"reason"`
+	CompressBlockID string     `json:"compressBlockId"`
+	BlockID         string     `json:"blockId"`
+	Minutes         int        `json:"minutes"`
+	Frozen          bool       `json:"frozen"`
+	Override        any        `json:"override"`
+	Kind            string     `json:"kind"`
+	Headline        string     `json:"headline"`
+	Body            string     `json:"body"`
+	PlatformWide    bool       `json:"platformWide"`
+	Amount          float64    `json:"amount"`
+	SetTo           *float64   `json:"setTo"`
+	Password        string     `json:"password"`
+	Role            string     `json:"role"`
+	Text            string     `json:"text"`
+	Symbol          string     `json:"symbol"`
+	Qty             int64      `json:"qty"`
+	Price           float64    `json:"price"`
+	Paused          bool       `json:"paused"`
+	Direction       string     `json:"direction"`
+	FillID          string     `json:"fillId"`
 	Adjustment      struct {
 		Note string `json:"note"`
 	} `json:"adjustment"`

@@ -53,8 +53,12 @@ function Shell() {
     socket.on("trade", onTrade);
     socket.on("portfolio", onRole);
     socket.on("fundsFormed", onRole);
+    // The organiser reset the whole event: reload so every screen starts clean.
+    const onReset = () => window.location.reload();
+    socket.on("eventReset", onReset);
     socket.on("connect", onRole);
     return () => {
+      socket.off("eventReset", onReset);
       socket.off("trade", onTrade);
       socket.off("portfolio", onRole);
       socket.off("fundsFormed", onRole);

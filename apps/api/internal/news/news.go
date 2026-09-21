@@ -237,3 +237,12 @@ func (d *Dispatcher) Stop() {
 		c()
 	}
 }
+
+// Reset cancels pending deliveries and forgets every release (a new event).
+func (d *Dispatcher) Reset() {
+	d.Stop()
+	d.mu.Lock()
+	d.releases = nil
+	d.byID = map[string]*Release{}
+	d.mu.Unlock()
+}

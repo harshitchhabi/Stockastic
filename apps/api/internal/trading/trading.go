@@ -201,3 +201,10 @@ func (e *Executor) Execute(ctx context.Context, r Request) (Result, error) {
 	e.Seed(t)
 	return Result{Trade: t}, nil
 }
+
+// Reset forgets every trade id, so a new event starts with a clean slate.
+func (e *Executor) Reset() {
+	e.mu.Lock()
+	e.seen = map[string]entry{}
+	e.mu.Unlock()
+}

@@ -475,3 +475,12 @@ func (e *Engine) Status() Status {
 	sort.Slice(s.Items, func(i, j int) bool { return s.Items[i].AtMinute < s.Items[j].AtMinute })
 	return s
 }
+
+// Reset returns the simulation to its start: no price updates done, no events fired, nothing waiting. The
+// caller puts the opening prices back in the price store.
+func (e *Engine) Reset() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.st = State{}
+	e.fired = map[string]bool{}
+}

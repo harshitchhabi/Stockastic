@@ -197,6 +197,9 @@ func (a *App) updateUser(id string, f func(*User) error) (User, error) {
 	}
 	*cur = next
 	a.users.mu.Unlock()
+	if !next.IsAdmin {
+		a.Hub.SetRole(id, next.Role) // sockets already open pick up a role change straight away
+	}
 	return next, nil
 }
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AdminFund, LogEntrant, Prizes, PrizeRow, Qualification, StrategyLogs } from "@/lib/adminTypes";
+import type { AdminAccount, AdminFund, LogEntrant, Prizes, PrizeRow, Qualification, StrategyLogs } from "@/lib/adminTypes";
 import { ActionButton, Badge, LoadError, useDo, usePoll } from "./shared";
 
 const money = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -19,10 +19,12 @@ export function FundsAdmin() {
   const f = usePoll<AdminFund[]>("/api/admin/funds", 5000);
   const p = usePoll<Prizes>("/api/admin/prizes", 8000);
   const l = usePoll<StrategyLogs>("/api/admin/strategy-logs", 10000);
-  const reloadAll = () => Promise.all([q.reload(), f.reload(), p.reload(), l.reload()]);
+  const accts = usePoll<AdminAccount[]>("/api/admin/accounts", 8000);
+  const reloadAll = () => Promise.all([q.reload(), f.reload(), p.reload(), l.reload(), accts.reload()]);
   const run = useDo(reloadAll);
   const qual = q.data;
   const funds = f.data ?? [];
+  const names = new Map((accts.data ?? []).map((a) => [a.id, a.displayName]));
 
   return (
     <div className="page">
@@ -33,9 +35,19 @@ export function FundsAdmin() {
 
       <h2 className="section">Phase 1 result</h2>
       {!qual?.ready ? (
-        <div className="empty" style={{ textAlign: "left" }}>
-          Phase 1 has not been frozen yet. The ranking appears when trading freezes.
-        </div>
+        <>
+          <div className="empty" style={{ textAlign: "left" }}>
+            Phase 1 has not been frozen yet. The ranking appears when trading freezes: at a schedule block set to freeze the standings, or when you do it here.
+          </div>
+          <div className="btn-row">
+            <ActionButton
+              label="Freeze Phase 1 standings now"
+              title="Freeze the Phase 1 standings now"
+              description="Every team's value is recorded at today's prices. The ranking that forms the funds comes from it. It can be taken once."
+              run={() => run("/api/admin/snapshots/phase1", {}, "Phase 1 standings frozen")}
+            />
+          </div>
+        </>
       ) : (
         <>
           <div className="btn-row">
@@ -91,7 +103,27 @@ export function FundsAdmin() {
         </>
       )}
 
+      {!qual?.done && (
+        <ManualPairs
+          accounts={accts.data ?? []}
+          count={qual ? qual.cutoff / 2 : 10}
+          ranked={qual?.rows ?? []}
+          run={run}
+        />
+      )}
+
       <h2 className="section">Funds</h2>
+      {funds.length > 0 && (
+        <div className="btn-row">
+          <ActionButton
+            danger
+            label="Dissolve the funds"
+            title="Dissolve the funds"
+            description="Takes the funds apart so they can be formed again, and moves their teams back to investors. Only possible before anyone has invested."
+            run={() => run("/api/admin/funds/dissolve", {}, "Funds dissolved")}
+          />
+        </div>
+      )}
       <table className="roomy">
         <thead>
           <tr>
@@ -112,7 +144,21 @@ export function FundsAdmin() {
               <td>
                 <strong>{x.name}</strong> {x.disqualified && <Badge tone="down">Out of Prize 1</Badge>}
                 <div className="label">
-                  {x.id} · ranks {x.ranks[0]} and {x.ranks[1]} · {x.managers.join(", ")} · {x.risk}
+                  {x.id} · {x.managers.join(", ")} · {x.risk}
+                </div>
+                <div className="label">
+                  Places the trades:{" "}
+                  <select
+                    value={x.trader}
+                    aria-label={`Who trades for ${x.name}`}
+                    onChange={(e) => void run(`/api/admin/funds/${x.id}/trader`, { accountId: e.target.value }, "Trader changed").catch(() => {})}
+                  >
+                    {x.memberIds.map((m) => (
+                      <option key={m} value={m}>
+                        {names.get(m) ?? m}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </td>
               <td>{money(x.nav)}</td>
@@ -179,6 +225,16 @@ export function FundsAdmin() {
       )}
 
       <h2 className="section">Prizes {p.data?.final ? <Badge tone="up">from the final freeze</Badge> : <Badge tone="flag">live, not final</Badge>}</h2>
+      {p.data && !p.data.final && (
+        <div className="btn-row">
+          <ActionButton
+            label="Freeze the final standings now"
+            title="Freeze the final standings now"
+            description="Every team's and fund's value is recorded at today's prices and the prizes are decided from it. It can be taken once."
+            run={() => run("/api/admin/snapshots/final", {}, "Final standings frozen")}
+          />
+        </div>
+      )}
       {p.data && (
         <div className="two-col" style={{ gap: 32 }}>
           <PrizeTable title="Prize 1: best fund management team" rows={p.data.prize1} fmt={(n) => n.toFixed(1)} unit="score" />
@@ -273,5 +329,81 @@ function Entrant({ e, rubric, run }: { e: LogEntrant; rubric: StrategyLogs["rubr
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Choose the fund managers yourself: each fund is two teams, and the first one places the fund's trades. Or fill
+ * the rows from the Phase 1 ranking (first with last, second with second last, ...) and change what you like.
+ */
+function ManualPairs({
+  accounts,
+  count,
+  ranked,
+  run,
+}: {
+  accounts: AdminAccount[];
+  count: number;
+  ranked: { accountId: string; rank: number }[];
+  run: ReturnType<typeof useDo>;
+}) {
+  const teams = accounts.filter((a) => !a.isAdmin && a.status !== "disqualified");
+  const [rows, setRows] = useState<[string, string][]>([]);
+  const used = new Set(rows.flat().filter(Boolean));
+  const ok = rows.length > 0 && rows.every(([a, b]) => a && b && a !== b);
+
+  const fromRanking = () => {
+    const top = ranked.slice(0, count * 2);
+    setRows(Array.from({ length: Math.min(count, Math.floor(top.length / 2)) }, (_, k) => [top[k].accountId, top[top.length - 1 - k].accountId] as [string, string]));
+  };
+  const set = (i: number, j: 0 | 1, v: string) => setRows((rs) => rs.map((r, k) => (k === i ? (j === 0 ? [v, r[1]] : [r[0], v]) : r)) as [string, string][]);
+
+  return (
+    <>
+      <h2 className="section">Choose the fund managers</h2>
+      <p className="dim" style={{ marginTop: 0 }}>
+        Up to {count} funds of two teams each. The first team of each fund places its trades; you can change that later. Leave this empty and press "Form the funds" above to use the Phase 1 ranking as it stands.
+      </p>
+      <table className="roomy">
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="mono">Fund {i + 1}</td>
+              {[0, 1].map((j) => (
+                <td key={j}>
+                  <select value={r[j]} onChange={(e) => set(i, j as 0 | 1, e.target.value)} aria-label={`Fund ${i + 1} ${j === 0 ? "trading team" : "other team"}`}>
+                    <option value="">{j === 0 ? "Trading team…" : "Other team…"}</option>
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id} disabled={used.has(t.id) && r[j] !== t.id}>
+                        {t.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+              ))}
+              <td>
+                <button className="ghost" onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))}>
+                  Remove
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="btn-row">
+        <button onClick={() => setRows((rs) => (rs.length < count ? [...rs, ["", ""]] : rs))} disabled={rows.length >= count}>
+          Add a fund
+        </button>
+        {ranked.length >= 2 && <button onClick={fromRanking}>Fill from the ranking</button>}
+        <ActionButton
+          className="solid"
+          disabled={!ok}
+          label="Form the funds from these pairs"
+          title="Form the funds from these pairs"
+          description={`${rows.length} fund${rows.length === 1 ? "" : "s"} will be created and their teams become fund managers.`}
+          run={() => run("/api/admin/qualification/run", { pairs: rows }, "Funds formed")}
+        />
+      </div>
+    </>
   );
 }

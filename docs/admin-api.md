@@ -27,6 +27,7 @@ What the organiser console (`apps/web/src/components/admin/`) calls. Implemented
 | `GET /api/admin/funds` | 5 s | every fund: NAV, return, AUM, investors, largest fall, capital kept, share of investors in profit, checkpoint fees |
 | `GET /api/admin/prizes` | 8 s | Prizes 1 to 4 ranked (live until the final freeze, then from the frozen figures) |
 | `GET /api/admin/strategy-logs` | 10 s | the rubric and every investor's strategy log entries and judges' scores |
+| `GET /api/admin/schedule` | | the schedule as it is now, and the rulebook timeline that can be loaded as a starting point |
 | `GET /api/admin/rulebook` | 60 s | version, source, the provenance list (tbf / recommended / assumption) and every value |
 
 The schedule length is the sum of the blocks as they stand now, not a fixed five hours.
@@ -37,7 +38,7 @@ so a rulebook with five windows shows five switches with no console change.
 
 | Route | Extra body | Maps to |
 | --- | --- | --- |
-| `POST /api/admin/clock/start` | | `Clock.Start` |
+| `POST /api/admin/clock/start` | `blockId?` | `Clock.StartAt`: starts the event at the chosen block (the first one if omitted). Blocks before it count as done |
 | `POST /api/admin/clock/pause` | | `Clock.Pause` |
 | `POST /api/admin/clock/resume` | `compressBlockId?` | `Clock.Resume` |
 | `POST /api/admin/clock/nudge` | `minutes` (±) | `Clock.Nudge` |
@@ -45,8 +46,14 @@ so a rulebook with five windows shows five switches with no console change.
 | `POST /api/admin/control/freeze` | `frozen: bool` | `Clock.SetFrozen`: every trade is refused while frozen |
 | `POST /api/admin/control/market` | `override: "open" / "closed" / null` | `Clock.SetMarketOverride` |
 | `POST /api/admin/control/windows/{i}` | `override: "open" / "closed" / null` | `Clock.SetWindowOverride` |
+| `PUT /api/admin/schedule` | `blocks: [{ id, label, minutes, stage, marketOpen, allocationWindow, freezeSnapshot }]` | replaces the whole schedule, before or during the event. The clock keeps its time. The rulebook timeline is only a template: nothing in the code depends on any block name |
+| `POST /api/admin/schedule/template` | | loads the rulebook timeline as the schedule |
+| `POST /api/admin/event/reset` | | resets the whole event: cash and shares back to the start, opening prices, clock before the start, and funds, trades, news, disputes and snapshots erased. Accounts, passwords and the schedule are kept; warnings and roles are cleared. Survives a restart |
+| `POST /api/admin/snapshots/{phase1\|final}` | | freezes every team's value now (also done by a schedule block with `freezeSnapshot`). Once each |
+| `POST /api/admin/funds/dissolve` | | takes the funds apart so they can be formed again. Refused once anyone has invested |
+| `POST /api/admin/funds/{id}/trader` | `accountId` | chooses which of the fund's two teams places its trades |
 | `POST /api/admin/sim/{id}/fire` | | releases a scheduled market event or run now; it will not fire again |
-| `POST /api/admin/qualification/run` | | ranks Phase 1 from the freeze snapshot and forms the funds (top teams paired first with last). Once only |
+| `POST /api/admin/qualification/run` | `pairs?: [[traderId, otherId], ...]` | forms the funds. With no pairs it ranks Phase 1 from the freeze snapshot and pairs the top teams first with last. With pairs, the organiser chooses who is merged with whom (up to the rulebook's fund count); the first team of each pair places the fund's trades |
 | `POST /api/admin/funds/{id}/disqualify` | | removes a fund from Prize 1 |
 | `POST /api/admin/strategy-logs/{account}/score` | `scores: { criterion: number }` | a judge's Prize 3 scores |
 | `POST /api/admin/accounts/{id}/promote` | | move a team into the fund manager role |
@@ -82,7 +89,7 @@ console only displays the resulting times.
 | `POST /api/funds/{id}/redeem` | investors | `amount` or `all: true`. If the fund is short of cash it sells a slice of every holding at current prices. Refused if it would leave less than the mandatory share (5%) in funds |
 | `GET /api/funds/mine`, `PUT /api/funds/mine/profile` | fund managers | the fund's cash, holdings, checkpoints and fees; publish the name, philosophy, risk profile and strategy |
 | `POST /api/strategy-log` | investors | 2 to 3 sentences at a checkpoint (Prize 3) |
-| `POST /api/trades` | anyone | a fund manager's trade uses the fund's cash and holdings, and the whole fund shares one two-trades-a-minute allowance |
+| `POST /api/trades` | anyone | a fund manager's trade uses the fund's cash and holdings, and the whole fund shares one two-trades-a-minute allowance. Only the fund's trader may place trades: the fund's other team gets `not_the_trader` (403) and sees the fund read-only |
 
 ## Choices made where the rulebook is silent
 

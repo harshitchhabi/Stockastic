@@ -86,3 +86,12 @@ func (l *Limiter) Tracked() int {
 	defer l.mu.Unlock()
 	return len(l.hits)
 }
+
+// Reset forgets every account's recent trades.
+func (l *Limiter) Reset() {
+	l.mu.Lock()
+	for k := range l.hits {
+		delete(l.hits, k)
+	}
+	l.mu.Unlock()
+}

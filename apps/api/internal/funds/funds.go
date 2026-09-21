@@ -26,6 +26,8 @@ const (
 	OpLog        = "log"        // an investor's strategy log entry (Prize 3)
 	OpScore      = "score"      // a judge's Prize 3 scores for one investor
 	OpFundDQ     = "fundDQ"     // a fund lost eligibility for Prize 1
+	OpTrader     = "trader"     // the organiser chose which member of a fund places its trades
+	OpDissolve   = "dissolve"   // the funds were taken apart before anyone invested
 )
 
 var (
@@ -46,7 +48,9 @@ type Formed struct {
 	Number  int       `json:"number"`
 	Account string    `json:"account"`
 	Members [2]string `json:"members"` // the stronger team, then the weaker
-	Ranks   [2]int    `json:"ranks"`
+	// Trader is the one member who may place the fund's trades. Empty means the first member.
+	Trader string `json:"trader,omitempty"`
+	Ranks  [2]int `json:"ranks"`
 }
 
 // RankRow is one team's place in the Phase 1 ranking, kept so the result can be shown and audited.
@@ -173,6 +177,9 @@ func (b *Book) Apply(ev Event) error {
 			return fmt.Errorf("%w: funds are already formed", ErrBadEvent)
 		}
 		for _, f := range ev.Funds {
+			if f.Trader == "" {
+				f.Trader = f.Members[0]
+			}
 			fd := &Fund{Formed: f, HWM: b.launchNAV, firstNAV: b.launchNAV, peakNAV: b.launchNAV}
 			fd.Profile.Name = fmt.Sprintf("Fund %d", f.Number)
 			b.funds = append(b.funds, fd)
@@ -270,6 +277,14 @@ func (b *Book) Apply(ev Event) error {
 			return ErrBadEvent
 		}
 		b.scores[ev.Investor] = ev.Scores
+	case OpTrader:
+		f, ok := b.byID[ev.FundID]
+		if !ok || (ev.Investor != f.Members[0] && ev.Investor != f.Members[1]) {
+			return ErrUnknownFund
+		}
+		f.Trader = ev.Investor
+	case OpDissolve:
+		b.resetLocked()
 	case OpFundDQ:
 		f, ok := b.byID[ev.FundID]
 		if !ok {
@@ -474,4 +489,19 @@ func (b *Book) PlanCheckpoint(name string, at int64, navs map[string]float64, au
 		cp.Funds = append(cp.Funds, fc)
 	}
 	return cp
+}
+
+func (b *Book) resetLocked() {
+	b.funds, b.byID = nil, map[string]*Fund{}
+	b.holdings, b.inflow = map[string]map[string]*Holding{}, map[int]map[string]money.Paise{}
+	b.ranking, b.seed, b.formed = nil, 0, false
+	b.risks, b.checks, b.logs = map[string]*risk{}, nil, nil
+	b.scores = map[string]map[string]float64{}
+}
+
+// Reset forgets everything: no funds, no holdings, no series, no logs.
+func (b *Book) Reset() {
+	b.mu.Lock()
+	b.resetLocked()
+	b.mu.Unlock()
 }

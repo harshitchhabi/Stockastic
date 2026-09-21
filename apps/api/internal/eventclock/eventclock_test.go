@@ -391,3 +391,71 @@ func TestWindowCountComesFromTheRulebookNotFromTheCode(t *testing.T) {
 		t.Error("Overrides() leaked the internal slice")
 	}
 }
+
+func TestOrganiserSchedule(t *testing.T) {
+	rb, err := rulebook.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	c := New(rb, func() time.Time { return now }, nil)
+	w0 := 0
+	blocks := []rulebook.Block{
+		{ID: "a", Label: "A", DurationMin: 10, Stage: rulebook.StagePhase1},
+		{ID: "b", Label: "B", DurationMin: 20, Stage: rulebook.StagePhase1, MarketOpen: true, FreezeSnapshot: "phase1"},
+		{ID: "c", Label: "C", DurationMin: 5, Stage: rulebook.StagePhase2, AllocationWindow: &w0},
+	}
+	if err := c.SetSchedule([]rulebook.Block{{ID: "a"}, {ID: "a"}}); err == nil {
+		t.Fatal("a broken schedule was accepted")
+	}
+	if err := c.SetSchedule(blocks); err != nil {
+		t.Fatal(err)
+	}
+	if c.Total() != 35*time.Minute || c.WindowCount() != 1 {
+		t.Fatalf("total %v, windows %d", c.Total(), c.WindowCount())
+	}
+
+	var got []string
+	c.OnTransition(func(tr Transition) { got = append(got, tr.Block.ID) })
+	if err := c.StartAt("nope"); err == nil {
+		t.Fatal("started at a block that does not exist")
+	}
+	if err := c.StartAt("b"); err != nil {
+		t.Fatal(err)
+	}
+	c.Tick()
+	if p := c.Position(); p.Block.ID != "b" || !c.MarketOpen() {
+		t.Fatalf("position = %+v", p)
+	}
+	if len(got) != 1 || got[0] != "b" {
+		t.Fatalf("announced %v, want only the block he started at", got)
+	}
+
+	// Pausing stops the clock and the market.
+	if err := c.Pause(); err != nil || c.MarketOpen() {
+		t.Fatalf("pause: %v, open %v", err, c.MarketOpen())
+	}
+	now = now.Add(time.Hour)
+	if _, _, err := c.Resume(""); err != nil {
+		t.Fatal(err)
+	}
+	if p := c.Position(); p.Block.ID != "b" {
+		t.Fatalf("time passed while paused: %+v", p)
+	}
+
+	// The schedule survives a save and restore, and a reset keeps it while putting the clock back.
+	c2 := New(rb, func() time.Time { return now }, nil)
+	if err := c2.Restore(c.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	if c2.Total() != 35*time.Minute || c2.Position().Block.ID != "b" {
+		t.Fatalf("restored: total %v block %v", c2.Total(), c2.Position().Block.ID)
+	}
+	c.Reset()
+	if c.Position().Started || c.MarketOpen() || c.Total() != 35*time.Minute {
+		t.Fatalf("after reset: %+v total %v", c.Position(), c.Total())
+	}
+	if err := c.StartAt(""); err != nil || c.Position().Block.ID != "a" {
+		t.Fatalf("start after reset: %v %+v", err, c.Position())
+	}
+}

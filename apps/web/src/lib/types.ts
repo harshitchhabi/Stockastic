@@ -139,6 +139,9 @@ export interface MyFund {
   checkpoints: FundCheckpoint[];
   maxDrawdown: number;
   retention: number;
+  /** False for the fund's other team: it can watch the fund but only the trader places trades. */
+  canTrade: boolean;
+  traderName: string;
 }
 
 export interface StrategyLogEntry {

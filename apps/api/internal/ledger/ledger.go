@@ -374,3 +374,17 @@ func (l *Ledger) Total() (cash money.Paise, shares map[string]int64) {
 	}
 	return cash, shares
 }
+
+// Reset removes every account. The caller opens them again with their starting cash.
+func (l *Ledger) Reset() {
+	l.mu.Lock()
+	l.accts = make(map[string]*acct)
+	l.mu.Unlock()
+}
+
+// Remove deletes an account (a fund that is dissolved before anyone has invested in it).
+func (l *Ledger) Remove(id string) {
+	l.mu.Lock()
+	delete(l.accts, id)
+	l.mu.Unlock()
+}

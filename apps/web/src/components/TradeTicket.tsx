@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useUniverse } from "@/lib/universe";
-import type { TradeSide } from "@/lib/types";
+import type { MyFund, TradeSide } from "@/lib/types";
 
 const money = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -29,6 +29,16 @@ export function TradeTicket({ symbol, tradingFrozen, onTraded }: { symbol: strin
   const n = Math.floor(Number(qty)) || 0;
   const value = price != null ? price * n : 0;
   const fund = account?.role === "fund_manager";
+  // Two teams share a fund but only one of them places its trades.
+  const [desk, setDesk] = useState<MyFund | null>(null);
+  useEffect(() => {
+    if (!fund) return;
+    api
+      .get<MyFund>("/api/funds/mine")
+      .then(setDesk)
+      .catch(() => {});
+  }, [fund, account?.id]);
+  const viewOnly = fund && desk != null && !desk.canTrade;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,8 +109,9 @@ export function TradeTicket({ symbol, tradingFrozen, onTraded }: { symbol: strin
           {error && <div className="down">{error}</div>}
           {done && <div className="up">{done}</div>}
           {tradingFrozen && <div className="down">Trading is frozen by the organisers.</div>}
+          {viewOnly && <div className="down">{desk?.traderName} places this fund's trades. You can watch the fund from here.</div>}
 
-          <button type="submit" className="solid" disabled={!account || busy || tradingFrozen || price == null || n < 1} style={{ padding: 10 }}>
+          <button type="submit" className="solid" disabled={!account || busy || tradingFrozen || viewOnly || price == null || n < 1} style={{ padding: 10 }}>
             {busy ? "Trading…" : `${side === "buy" ? "Buy" : "Sell"} ${n > 0 ? n : ""} ${symbol}`}
           </button>
         </form>

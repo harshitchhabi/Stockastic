@@ -15,9 +15,11 @@ import { RulebookView } from "./RulebookView";
 import { TeamPage } from "./TeamPage";
 import { FundsAdmin } from "./FundsAdmin";
 import { MarketEvents } from "./MarketEvents";
+import { ScheduleEditor } from "./ScheduleEditor";
 
 const PAGES = [
   { id: "control", label: "Control room", view: ControlRoom },
+  { id: "schedule", label: "Schedule", view: ScheduleEditor },
   { id: "systems", label: "Systems", view: Systems },
   { id: "participants", label: "Participants", view: Participants },
   { id: "wallets", label: "Wallets", view: Wallets },

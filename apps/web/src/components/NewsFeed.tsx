@@ -88,7 +88,9 @@ export function NewsFeed({ title = "The wire" }: { title?: string }) {
     socket.on("news", onNews);
     socket.on("controlState", onControl);
     socket.on("connect", loadHistory);
+    socket.on("fundsFormed", loadHistory); // a promoted team now sees the early feed
     return () => {
+      socket.off("fundsFormed", loadHistory);
       socket.off("news", onNews);
       socket.off("controlState", onControl);
       socket.off("connect", loadHistory);

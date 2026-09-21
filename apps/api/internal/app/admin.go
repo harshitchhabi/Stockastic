@@ -491,7 +491,7 @@ func (a *App) Overview() Overview {
 	ov := a.Clock.Overrides()
 	o.Control.TradingFrozen, o.Control.MarketOverride, o.Control.MarketOpen = ov.Frozen, ovString(ov.MarketOpen), a.Clock.MarketOpen()
 	o.Control.PausedSymbols = a.PausedSymbols()
-	n := a.RB.WindowCount()
+	n := a.Clock.WindowCount()
 	o.Control.WindowOverrides, o.Control.WindowsOpen = make([]*string, n), make([]bool, n)
 	for i := 0; i < n; i++ {
 		if i < len(ov.Windows) {

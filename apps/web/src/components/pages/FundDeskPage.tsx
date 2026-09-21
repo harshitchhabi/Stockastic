@@ -15,18 +15,20 @@ export function FundDeskPage() {
   const [form, setForm] = useState({ name: "", philosophy: "", risk: "Balanced", strategy: "" });
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [loadedProfile, setLoadedProfile] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(() => {
     api
       .get<MyFund>("/api/funds/mine")
       .then((d) => {
         setData(d);
+        setFailed(false);
         setLoadedProfile((done) => {
           if (!done) setForm({ name: d.fund.name, philosophy: d.fund.philosophy, risk: d.fund.risk || "Balanced", strategy: d.fund.strategy });
           return true;
         });
       })
-      .catch(() => {});
+      .catch(() => setFailed(true));
   }, []);
 
   useEffect(load, [load]);
@@ -56,7 +58,15 @@ export function FundDeskPage() {
     }
   }
 
-  if (!data) return <div className="page"><div className="empty">loading…</div></div>;
+  if (!data) {
+    return (
+      <div className="page">
+        <div className="empty" style={{ textAlign: "left" }}>
+          {failed ? "You are not assigned to a fund. The organisers will tell you when your fund is ready." : "loading…"}
+        </div>
+      </div>
+    );
+  }
   const f = data.fund;
 
   return (
@@ -99,8 +109,13 @@ export function FundDeskPage() {
           <div className="v">{(data.retention * 100).toFixed(1)}%</div>
         </div>
       </div>
+      {!data.canTrade && (
+        <div className="chip alert" style={{ marginTop: 8 }}>
+          Your fund is run by two teams. {data.traderName} places its trades; you can see everything and edit the profile.
+        </div>
+      )}
       <p className="dim" style={{ marginTop: 8 }}>
-        To trade for the fund, open any company from <a href={pagePath("explore")}>Explore</a>. Trades use the fund's cash and holdings, and your fund shares one allowance of trades per minute.
+        {data.canTrade ? "To trade for the fund, open any company from" : "Trades for the fund are placed by your teammate team. Company pages are open from"} <a href={pagePath("explore")}>Explore</a>. Trades use the fund's cash and holdings, and your fund shares one allowance of trades per minute.
       </p>
 
       <h2 className="section">Holdings</h2>

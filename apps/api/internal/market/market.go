@@ -142,3 +142,11 @@ func (s Snapshot) Price(symbol string) (money.Paise, bool) {
 	v, ok := s.Prices[symbol]
 	return v, ok
 }
+
+// Reset puts every company back to its opening price and clears the price history.
+func (p *Prices) Reset(cs []universe.Company, start time.Time) {
+	fresh := New(cs, start)
+	p.mu.Lock()
+	p.m = fresh.m
+	p.mu.Unlock()
+}

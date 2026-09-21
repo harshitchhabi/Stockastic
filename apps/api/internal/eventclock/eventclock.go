@@ -1,6 +1,6 @@
-// Package eventclock is the event state machine: the 17-block, 300-minute timeline, phases,
-// market open/closed, the allocation windows, freeze snapshots, pause/resume with buffer
-// compression, and admin overrides. Everything time-dependent asks it. It takes an injectable time
+// Package eventclock is the event state machine: a schedule of blocks (phases, market open or closed,
+// allocation windows, freeze snapshots) that the organiser can edit at any time, pause/resume with buffer
+// compression, start-anywhere, reset, and admin overrides. The rulebook's timeline is only the starting template. Everything time-dependent asks it. It takes an injectable time
 // source and an explicit Tick, so it is fully deterministic under test.
 package eventclock
 
@@ -69,6 +69,8 @@ type State struct {
 	// LastNotified is the highest block index whose Transition has been delivered; after a restart
 	// Tick replays anything after it.
 	LastNotified int `json:"lastNotified"`
+	// Blocks is the schedule as the organiser has set it (absent in state saved by older versions).
+	Blocks []rulebook.Block `json:"blocks,omitempty"`
 }
 
 type Clock struct {
@@ -86,6 +88,7 @@ type Clock struct {
 	ov        Overrides
 	last      int
 	listeners []func(Transition)
+	blocks    []rulebook.Block
 }
 
 // New builds a clock from the rulebook. now defaults to time.Now.
@@ -97,10 +100,11 @@ func New(rb *rulebook.Rulebook, now func() time.Time, log *slog.Logger) *Clock {
 		log = slog.Default()
 	}
 	c := &Clock{rb: rb, now: now, log: log, last: -1}
-	c.ov.Windows = make([]*bool, rb.WindowCount())
-	for _, b := range rb.Event.Timeline {
+	c.blocks = append([]rulebook.Block(nil), rb.Event.Timeline...)
+	for _, b := range c.blocks {
 		c.durations = append(c.durations, b.Duration())
 	}
+	c.ov.Windows = make([]*bool, windowCount(c.blocks))
 	return c
 }
 
@@ -154,7 +158,7 @@ func (c *Clock) positionLocked(at time.Time) Position {
 		p.Ended = true
 		return p
 	}
-	p.Block = c.rb.Event.Timeline[p.Index]
+	p.Block = c.blocks[p.Index]
 	p.Into = p.Elapsed - c.startOfLocked(p.Index)
 	p.Remaining = c.durations[p.Index] - p.Into
 	return p
@@ -229,7 +233,7 @@ func (c *Clock) Resume(compressBlockID string) (absorbed, overrun time.Duration,
 }
 
 func (c *Clock) blockIndexLocked(id string) int {
-	for i, b := range c.rb.Event.Timeline {
+	for i, b := range c.blocks {
 		if b.ID == id {
 			return i
 		}
@@ -279,7 +283,7 @@ func (c *Clock) Schedule() []ScheduledBlock {
 	out := make([]ScheduledBlock, len(c.durations))
 	var at time.Duration
 	for i, d := range c.durations {
-		out[i] = ScheduledBlock{Block: c.rb.Event.Timeline[i], Start: at, Duration: d}
+		out[i] = ScheduledBlock{Block: c.blocks[i], Start: at, Duration: d}
 		at += d
 	}
 	return out
@@ -398,7 +402,7 @@ func (c *Clock) WindowOpen(w int) bool {
 func (c *Clock) Snapshot() State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := State{Offset: c.offset, Durations: append([]time.Duration(nil), c.durations...), Overrides: c.ov.clone(), LastNotified: c.last}
+	s := State{Offset: c.offset, Durations: append([]time.Duration(nil), c.durations...), Overrides: c.ov.clone(), LastNotified: c.last, Blocks: append([]rulebook.Block(nil), c.blocks...)}
 	if c.started {
 		t := c.startedAt
 		s.StartedAt = &t
@@ -414,14 +418,25 @@ func (c *Clock) Snapshot() State {
 func (c *Clock) Restore(s State) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(s.Durations) != len(c.rb.Event.Timeline) {
-		return fmt.Errorf("eventclock: restored state has %d block durations, rulebook has %d", len(s.Durations), len(c.rb.Event.Timeline))
+	if len(s.Blocks) > 0 {
+		if err := validateBlocks(s.Blocks); err != nil {
+			return fmt.Errorf("eventclock: restored schedule: %w", err)
+		}
+		c.blocks = append([]rulebook.Block(nil), s.Blocks...)
+		if len(s.Durations) != len(c.blocks) {
+			s.Durations = nil
+			for _, b := range c.blocks {
+				s.Durations = append(s.Durations, b.Duration())
+			}
+		}
+	} else if len(s.Durations) != len(c.blocks) {
+		return fmt.Errorf("eventclock: restored state has %d block durations, the schedule has %d", len(s.Durations), len(c.blocks))
 	}
 	c.durations = append([]time.Duration(nil), s.Durations...)
 	c.offset, c.last = s.Offset, s.LastNotified
 	// Normalise the window overrides to the rulebook's count so a snapshot can never index out of range.
 	c.ov = s.Overrides.clone()
-	ws := make([]*bool, c.rb.WindowCount())
+	ws := make([]*bool, windowCount(c.blocks))
 	copy(ws, c.ov.Windows)
 	c.ov.Windows = ws
 	c.started, c.paused = s.StartedAt != nil, s.PausedAt != nil
@@ -447,7 +462,7 @@ func (c *Clock) Tick() {
 			upto = len(c.durations) - 1
 		}
 		for i := c.last + 1; i <= upto; i++ {
-			due = append(due, Transition{Index: i, Block: c.rb.Event.Timeline[i], At: c.now()})
+			due = append(due, Transition{Index: i, Block: c.blocks[i], At: c.now()})
 		}
 		if upto > c.last {
 			c.last = upto
@@ -484,4 +499,130 @@ func (c *Clock) Run(ctx context.Context, every time.Duration) {
 			c.Tick()
 		}
 	}
+}
+
+// ---- the schedule is the organiser's ----
+
+// MaxBlocks is the most blocks a schedule may have.
+const MaxBlocks = 60
+
+func windowCount(blocks []rulebook.Block) int {
+	n := 0
+	for _, b := range blocks {
+		if b.AllocationWindow != nil && *b.AllocationWindow+1 > n {
+			n = *b.AllocationWindow + 1
+		}
+	}
+	return n
+}
+
+// WindowCount is how many allocation windows the current schedule has.
+func (c *Clock) WindowCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return windowCount(c.blocks)
+}
+
+func validateBlocks(blocks []rulebook.Block) error {
+	if len(blocks) == 0 || len(blocks) > MaxBlocks {
+		return fmt.Errorf("a schedule needs between 1 and %d blocks", MaxBlocks)
+	}
+	ids, windows := map[string]bool{}, map[int]bool{}
+	for i, b := range blocks {
+		if b.ID == "" || len(b.ID) > 40 || ids[b.ID] {
+			return fmt.Errorf("block %d has an empty, too long or repeated id %q", i+1, b.ID)
+		}
+		ids[b.ID] = true
+		if b.Label == "" || len(b.Label) > 120 {
+			return fmt.Errorf("block %q needs a name of up to 120 characters", b.ID)
+		}
+		if b.Duration() < minBlock || b.Duration() > MaxBlock {
+			return fmt.Errorf("block %q must last between 1 minute and 24 hours", b.ID)
+		}
+		switch b.Stage {
+		case rulebook.StagePhase1, rulebook.StageTransition, rulebook.StagePhase2, rulebook.StageClosing:
+		default:
+			return fmt.Errorf("block %q has an unknown stage %q", b.ID, b.Stage)
+		}
+		if w := b.AllocationWindow; w != nil {
+			if *w < 0 || *w > 20 || windows[*w] {
+				return fmt.Errorf("block %q has an allocation window number that is repeated or out of range", b.ID)
+			}
+			windows[*w] = true
+		}
+		if len(b.FreezeSnapshot) > 30 {
+			return fmt.Errorf("block %q has a snapshot name that is too long", b.ID)
+		}
+	}
+	return nil
+}
+
+// Blocks is the current schedule, with each block's live length in DurationMin.
+func (c *Clock) Blocks() []rulebook.Block {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]rulebook.Block, len(c.blocks))
+	for i, b := range c.blocks {
+		b.DurationMin = int(c.durations[i].Round(time.Minute).Minutes())
+		out[i] = b
+	}
+	return out
+}
+
+// Template is the rulebook's timeline, the starting point the organiser can load and then change.
+func (c *Clock) Template() []rulebook.Block {
+	return append([]rulebook.Block(nil), c.rb.Event.Timeline...)
+}
+
+// SetSchedule replaces the whole schedule. The clock keeps its elapsed time, so the event stays where it is in
+// time; blocks that are now behind it are not announced again, and window overrides are kept by number.
+func (c *Clock) SetSchedule(blocks []rulebook.Block) error {
+	if err := validateBlocks(blocks); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.blocks = append([]rulebook.Block(nil), blocks...)
+	c.durations = c.durations[:0]
+	for _, b := range c.blocks {
+		c.durations = append(c.durations, b.Duration())
+	}
+	ws := make([]*bool, windowCount(c.blocks))
+	copy(ws, c.ov.Windows)
+	c.ov.Windows = ws
+	if c.started {
+		c.last = min(c.indexLocked(c.elapsedLocked(c.now())), len(c.blocks)-1)
+	} else {
+		c.last = -1
+	}
+	return nil
+}
+
+// StartAt begins the event at the start of a chosen block instead of the first one. Blocks before it are
+// treated as already done and are not announced.
+func (c *Clock) StartAt(blockID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.started {
+		return ErrAlreadyStarted
+	}
+	idx := 0
+	if blockID != "" {
+		if idx = c.blockIndexLocked(blockID); idx < 0 {
+			return fmt.Errorf("%w: %q", ErrUnknownBlock, blockID)
+		}
+	}
+	c.started, c.paused, c.startedAt = true, false, c.now()
+	c.offset = c.startOfLocked(idx)
+	c.last = idx - 1
+	return nil
+}
+
+// Reset puts the clock back to before the start: not started, not paused, no manual overrides. The schedule
+// is kept.
+func (c *Clock) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.started, c.paused, c.offset, c.last = false, false, 0, -1
+	c.ov = Overrides{Windows: make([]*bool, windowCount(c.blocks))}
 }

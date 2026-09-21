@@ -364,3 +364,13 @@ func (h *Hub) writePump(ctx context.Context, c *Client) {
 		}
 	}
 }
+
+// SetRole changes the role of every open socket of an account, so a team promoted to fund manager (or moved
+// back) gets the right feed on the connection it already has.
+func (h *Hub) SetRole(account, role string) {
+	h.mu.Lock()
+	for c := range h.byAccount[account] {
+		c.id.Role = role
+	}
+	h.mu.Unlock()
+}

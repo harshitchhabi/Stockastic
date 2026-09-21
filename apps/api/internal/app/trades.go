@@ -72,6 +72,8 @@ func (r TradeRequest) toRequest(account string, stage string) (trading.Request, 
 // limit, then execution at the current price. Every check that refuses a trade leaves nothing behind, and
 // a refused trade does not use up one of the team's trades.
 func (a *App) Trade(ctx context.Context, u User, req TradeRequest) (trading.Result, error) {
+	a.evMu.RLock()
+	defer a.evMu.RUnlock()
 	if err := u.orderable(); err != nil {
 		return trading.Result{}, err
 	}
@@ -82,6 +84,10 @@ func (a *App) Trade(ctx context.Context, u User, req TradeRequest) (trading.Resu
 			acct, key, members = f.Account, f.ID, f.Members[:]
 			if f.Disqualified {
 				return trading.Result{}, ErrDisqualified
+			}
+			// Two teams share a fund but only one of them places its trades.
+			if f.Trader != u.ID {
+				return trading.Result{}, ErrNotTrader
 			}
 		}
 	}

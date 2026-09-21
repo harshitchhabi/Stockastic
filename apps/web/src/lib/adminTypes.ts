@@ -192,6 +192,9 @@ export interface AdminFund {
   retention: number;
   profitability: number;
   ranks: [number, number];
+  memberIds: string[];
+  /** Account id of the team that places the fund's trades. */
+  trader: string;
   checkpoints: { name: string; nav: number; aum: number; avgAum: number; mgmtFee: number; perfFee: number }[];
 }
 
@@ -224,4 +227,20 @@ export interface LogEntrant {
 export interface StrategyLogs {
   rubric: { criterion: string; weight: number; maxScore: number }[];
   entrants: LogEntrant[];
+}
+
+export interface ScheduleBlock {
+  id: string;
+  label: string;
+  minutes: number;
+  stage: "phase1" | "transition" | "phase2" | "closing";
+  marketOpen: boolean;
+  allocationWindow: number | null;
+  freezeSnapshot: string;
+}
+
+export interface Schedule {
+  blocks: ScheduleBlock[];
+  template: ScheduleBlock[];
+  started: boolean;
 }

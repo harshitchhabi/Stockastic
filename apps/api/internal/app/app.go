@@ -96,6 +96,9 @@ type App struct {
 	pauseMu sync.RWMutex
 	paused  map[string]bool
 
+	// evMu keeps a reset of the event from running in the middle of a trade or a fund operation: those hold it
+	// for reading, a reset holds it for writing.
+	evMu sync.RWMutex
 	// fundMu serialises fund operations (allocations, redemptions, checkpoints) so units and NAV stay consistent.
 	fundMu sync.Mutex
 
@@ -410,6 +413,9 @@ func (a *App) restore() error {
 			a.updatePeaks()
 			st := s
 			a.simState = &st
+		case store.KindReset:
+			a.resetState()
+			clockState, releases, trades = nil, map[string]news.Release{}, 0
 		case store.KindFund:
 			var ev funds.Event
 			if err := decode(raw, &ev); err != nil {
@@ -582,7 +588,8 @@ func (a *App) onTransition(t eventclock.Transition) {
 	}
 	if t.Index > 0 {
 		// A window that has just closed is a checkpoint (Section 12), and so is the final close.
-		if prev := a.RB.Event.Timeline[t.Index-1]; prev.AllocationWindow != nil {
+		if blocks := a.Clock.Blocks(); t.Index-1 < len(blocks) && blocks[t.Index-1].AllocationWindow != nil {
+			prev := blocks[t.Index-1]
 			a.takeCheckpoint(fmt.Sprintf("window %d", *prev.AllocationWindow))
 		}
 	}

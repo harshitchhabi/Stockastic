@@ -25,6 +25,7 @@ import (
 var (
 	ErrFundsNotFormed = errors.New("funds_not_formed")
 	ErrNotAllowed     = errors.New("not_allowed")
+	ErrNotTrader      = errors.New("not_the_trader")
 )
 
 // AcctOf is the ledger account a person trades with: their own team's, or, for a fund manager, the fund's.
@@ -111,8 +112,15 @@ func (a *App) applyFundEvent(ev funds.Event, replay bool) error {
 			}
 		}
 	}
+	var gone []funds.Fund
+	if ev.Op == funds.OpDissolve {
+		gone = a.Funds.Funds()
+	}
 	if err := a.Funds.Apply(ev); err != nil {
 		return err
+	}
+	for _, f := range gone {
+		a.Ledger.Remove(f.Account)
 	}
 	if ev.Op == funds.OpFormed {
 		for _, f := range ev.Funds {
@@ -203,38 +211,72 @@ func (a *App) Qualification() Qualification {
 	return q
 }
 
-// FormFunds ranks the Phase 1 result, takes the top teams, pairs them mirror-style (rank k with rank N+1-k)
-// and creates the funds. It can be run once.
-func (a *App) FormFunds(actor User) error {
-	return a.Do(actor, "Formed the funds from the Phase 1 result", "funds", "", func() error {
+// FormFunds creates the funds. With no pairs given it ranks the Phase 1 result, takes the top teams and pairs
+// them mirror-style (rank k with rank N+1-k). With pairs given, the organiser has chosen who is paired with whom:
+// each pair is two teams, the first of which places the fund's trades. It can be done once (until dissolved).
+func (a *App) FormFunds(actor User, pairs [][]string) error {
+	action := "Formed the funds from the Phase 1 result"
+	if len(pairs) > 0 {
+		action = "Formed the funds from chosen pairs"
+	}
+	return a.Do(actor, action, "funds", "", func() error {
+		a.evMu.RLock()
+		defer a.evMu.RUnlock()
 		a.fundMu.Lock()
 		defer a.fundMu.Unlock()
 		if a.Funds.Formed() {
 			return bad("already_formed", "The funds have already been formed.")
 		}
-		st, _, ok := a.phase1Standings()
-		if !ok {
-			return bad("phase1_not_frozen", "Phase 1 has not been frozen yet, so there is no result to rank.")
+		ev := funds.Event{Op: funds.OpFormed, At: a.now().UnixMilli()}
+		ranks := map[string]int{}
+		st, _, haveSnap := a.phase1Standings()
+		if haveSnap {
+			ev.Seed = rand.Int63()
+			for _, r := range scoring.RankPhase1(st, a.RB.Qualification.TieBreak, coinKey(ev.Seed)) {
+				ranks[r.AccountID] = r.Rank
+			}
 		}
-		need := a.RB.Qualification.QualifyingTeams
-		if len(st) < need {
-			return bad("not_enough_teams", fmt.Sprintf("%d teams are needed to form the funds and only %d took part.", need, len(st)))
+		if len(pairs) == 0 {
+			if !haveSnap {
+				return bad("phase1_not_frozen", "Phase 1 has not been frozen yet, so there is no result to rank. Choose the pairs yourself, or take the Phase 1 snapshot first.")
+			}
+			need := a.RB.Qualification.QualifyingTeams
+			if len(st) < need {
+				return bad("not_enough_teams", fmt.Sprintf("%d teams are needed to form the funds and only %d took part.", need, len(st)))
+			}
+			ranked := scoring.RankPhase1(st, a.RB.Qualification.TieBreak, coinKey(ev.Seed))
+			top := ranked[:need]
+			mp, err := scoring.MirrorPairing(top)
+			if err != nil {
+				return bad("pairing", err.Error())
+			}
+			for _, r := range top {
+				ev.Ranking = append(ev.Ranking, funds.RankRow{Account: r.AccountID, Rank: r.Rank, Value: int64(r.FinalValue), DecidedBy: string(r.DecidedBy)})
+			}
+			for _, p := range mp {
+				pairs = append(pairs, []string{p.Stronger.AccountID, p.Weaker.AccountID})
+			}
 		}
-		seed := rand.Int63()
-		ranked := scoring.RankPhase1(st, a.RB.Qualification.TieBreak, coinKey(seed))
-		top := ranked[:need]
-		pairs, err := scoring.MirrorPairing(top)
-		if err != nil {
-			return bad("pairing", err.Error())
+		if len(pairs) > a.RB.Qualification.FundCount {
+			return bad("too_many_funds", fmt.Sprintf("The rulebook has %d funds.", a.RB.Qualification.FundCount))
 		}
-		ev := funds.Event{Op: funds.OpFormed, At: a.now().UnixMilli(), Seed: seed}
-		for _, r := range top {
-			ev.Ranking = append(ev.Ranking, funds.RankRow{Account: r.AccountID, Rank: r.Rank, Value: int64(r.FinalValue), DecidedBy: string(r.DecidedBy)})
-		}
-		for _, p := range pairs {
-			id := fmt.Sprintf("F%d", p.FundNumber)
-			ev.Funds = append(ev.Funds, funds.Formed{ID: id, Number: p.FundNumber, Account: "fund:" + id,
-				Members: [2]string{p.Stronger.AccountID, p.Weaker.AccountID}, Ranks: [2]int{p.Stronger.Rank, p.Weaker.Rank}})
+		used := map[string]bool{}
+		for i, p := range pairs {
+			if len(p) != 2 || p[0] == p[1] {
+				return bad("invalid_pair", fmt.Sprintf("Fund %d needs two different teams.", i+1))
+			}
+			for _, id := range p {
+				u, ok := a.users.get(id)
+				if !ok || u.IsAdmin || u.Status == StatusDisqualified {
+					return bad("invalid_pair", fmt.Sprintf("Fund %d has a team that does not exist or cannot play.", i+1))
+				}
+				if used[id] {
+					return bad("invalid_pair", fmt.Sprintf("%s appears in more than one fund.", u.DisplayName))
+				}
+				used[id] = true
+			}
+			id := fmt.Sprintf("F%d", i+1)
+			ev.Funds = append(ev.Funds, funds.Formed{ID: id, Number: i + 1, Account: "fund:" + id, Members: [2]string{p[0], p[1]}, Trader: p[0], Ranks: [2]int{ranks[p[0]], ranks[p[1]]}})
 		}
 		if err := a.fundAppend(ev); err != nil {
 			return err
@@ -247,6 +289,73 @@ func (a *App) FormFunds(actor User) error {
 				if _, err := a.updateUser(m, func(x *User) error { x.Role = RoleFundManager; return nil }); err != nil {
 					a.log.Error("could not promote a fund manager", "account", m, "err", err)
 				}
+			}
+		}
+		a.Hub.ToAll("fundsFormed", map[string]any{"at": dto.MS(a.now())})
+		return nil
+	})
+}
+
+// SetFundTrader chooses which of a fund's two teams places its trades.
+func (a *App) SetFundTrader(actor User, fundID, account string) error {
+	f, ok := a.Funds.Fund(fundID)
+	if !ok {
+		return funds.ErrUnknownFund
+	}
+	if account != f.Members[0] && account != f.Members[1] {
+		return bad("not_a_member", "That team is not one of this fund's two teams.")
+	}
+	name := account
+	if u, ok := a.users.get(account); ok {
+		name = u.DisplayName
+	}
+	return a.Do(actor, "Chose who trades for the fund", f.ID+": "+name, "", func() error {
+		a.evMu.RLock()
+		defer a.evMu.RUnlock()
+		a.fundMu.Lock()
+		defer a.fundMu.Unlock()
+		ev := funds.Event{Op: funds.OpTrader, At: a.now().UnixMilli(), FundID: fundID, Investor: account}
+		if err := a.fundAppend(ev); err != nil {
+			return err
+		}
+		if err := a.Funds.Apply(ev); err != nil {
+			return err
+		}
+		for _, m := range f.Members {
+			a.Hub.ToAccount(m, "portfolio", map[string]any{"reason": "trader"})
+		}
+		return nil
+	})
+}
+
+// DissolveFunds takes the funds apart so they can be formed again. It is refused once anyone has invested,
+// because their money would have nowhere to go.
+func (a *App) DissolveFunds(actor User) error {
+	return a.Do(actor, "Dissolved the funds", "funds", "", func() error {
+		a.evMu.RLock()
+		defer a.evMu.RUnlock()
+		a.fundMu.Lock()
+		defer a.fundMu.Unlock()
+		if !a.Funds.Formed() {
+			return bad("not_formed", "There are no funds to dissolve.")
+		}
+		if len(a.Funds.Investors()) > 0 {
+			return bad("has_investors", "Investors have already put money into the funds. Reset the event instead.")
+		}
+		members := []string{}
+		for _, f := range a.Funds.Funds() {
+			members = append(members, f.Members[0], f.Members[1])
+		}
+		ev := funds.Event{Op: funds.OpDissolve, At: a.now().UnixMilli()}
+		if err := a.fundAppend(ev); err != nil {
+			return err
+		}
+		if err := a.applyFundEvent(ev, false); err != nil {
+			return err
+		}
+		for _, m := range members {
+			if _, err := a.updateUser(m, func(x *User) error { x.Role = RoleInvestor; return nil }); err != nil {
+				a.log.Error("could not move a team back to investor", "account", m, "err", err)
 			}
 		}
 		a.Hub.ToAll("fundsFormed", map[string]any{"at": dto.MS(a.now())})
@@ -363,6 +472,8 @@ func (a *App) Allocate(u User, fundID string, req AllocationRequest) (Allocation
 	if !open {
 		return AllocationResult{}, bad("window_closed", "Funds can only be entered or left while an allocation window is open.")
 	}
+	a.evMu.RLock()
+	defer a.evMu.RUnlock()
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
 	f, ok := a.Funds.Fund(fundID)
@@ -426,6 +537,8 @@ func (a *App) Redeem(ctx context.Context, u User, fundID string, req AllocationR
 	if !open {
 		return AllocationResult{}, bad("window_closed", "Funds can only be entered or left while an allocation window is open.")
 	}
+	a.evMu.RLock()
+	defer a.evMu.RUnlock()
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
 	f, ok := a.Funds.Fund(fundID)
@@ -685,6 +798,9 @@ type MyFund struct {
 	Checkpoints []FundCheckpoint `json:"checkpoints"`
 	MaxDrawdown float64          `json:"maxDrawdown"`
 	Retention   float64          `json:"retention"`
+	// CanTrade is false for the fund's other team: it can see the fund but only the trader places trades.
+	CanTrade   bool   `json:"canTrade"`
+	TraderName string `json:"traderName"`
 }
 
 type FundCheckpoint struct {
@@ -703,7 +819,10 @@ func (a *App) MyFund(u User) (MyFund, error) {
 	}
 	navs := a.navs()
 	m := MyFund{Fund: a.fundInfo(f, navs, ""), Holdings: []dto.Holding{}, Checkpoints: []FundCheckpoint{},
-		MaxDrawdown: a.Funds.MaxDrawdown(f.ID), Retention: a.Funds.Retention(f.ID)}
+		MaxDrawdown: a.Funds.MaxDrawdown(f.ID), Retention: a.Funds.Retention(f.ID), CanTrade: f.Trader == u.ID}
+	if t, ok := a.users.get(f.Trader); ok {
+		m.TraderName = t.DisplayName
+	}
 	pf, err := a.portfolioOf(f.Account)
 	if err != nil {
 		return m, err
@@ -777,6 +896,7 @@ type AdminFund struct {
 	Profitability float64          `json:"profitability"`
 	Ranks         [2]int           `json:"ranks"`
 	Members       []string         `json:"memberIds"`
+	Trader        string           `json:"trader"` // account id of the team that places the fund's trades
 	Checkpoints   []FundCheckpoint `json:"checkpoints"`
 }
 
@@ -786,7 +906,7 @@ func (a *App) AdminFunds() []AdminFund {
 	out := []AdminFund{}
 	for _, f := range a.Funds.Funds() {
 		af := AdminFund{FundInfo: a.fundInfo(f, navs, ""), MaxDrawdown: a.Funds.MaxDrawdown(f.ID), Retention: a.Funds.Retention(f.ID),
-			Profitability: a.Funds.Profitability(f.ID, navs[f.ID]), Ranks: f.Ranks, Members: f.Members[:], Checkpoints: []FundCheckpoint{}}
+			Profitability: a.Funds.Profitability(f.ID, navs[f.ID]), Ranks: f.Ranks, Members: f.Members[:], Trader: f.Trader, Checkpoints: []FundCheckpoint{}}
 		if s, err := a.Ledger.Snapshot(f.Account); err == nil {
 			af.Cash = dto.Rupees(s.Cash)
 		}
