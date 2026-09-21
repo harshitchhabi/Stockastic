@@ -1,0 +1,902 @@
+[
+ {
+  "symbol": "SMZK",
+  "name": "Saruti Muzuki",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 1788.85
+ },
+ {
+  "symbol": "MHMH",
+  "name": "Mahinder & Mahinder",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 883.65
+ },
+ {
+  "symbol": "MAMO",
+  "name": "Mama Motors",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 423.3
+ },
+ {
+  "symbol": "AJAU",
+  "name": "Ajaj Auto",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 1475.15
+ },
+ {
+  "symbol": "EICH",
+  "name": "Eichor Motors",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 1175.75
+ },
+ {
+  "symbol": "TVXM",
+  "name": "TVX Motor",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 846.65
+ },
+ {
+  "symbol": "BOSC",
+  "name": "Bosche India",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 2500.0
+ },
+ {
+  "symbol": "ZERO",
+  "name": "Zero MotoCorp",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 1049.2
+ },
+ {
+  "symbol": "ASLY",
+  "name": "Asoka Leyland",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 240.0
+ },
+ {
+  "symbol": "BLKN",
+  "name": "Balkishan Tyres",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 800.0
+ },
+ {
+  "symbol": "APTY",
+  "name": "Apolo Tyres",
+  "sector": "Automobile & Auto Components",
+  "openPrice": 354.2
+ },
+ {
+  "symbol": "HPFB",
+  "name": "HPFC Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 706.55
+ },
+ {
+  "symbol": "ICEB",
+  "name": "ICECE Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 609.25
+ },
+ {
+  "symbol": "SBBH",
+  "name": "State Bank of Bharat",
+  "sector": "Banking & Financial Services",
+  "openPrice": 463.7
+ },
+ {
+  "symbol": "AJAF",
+  "name": "Ajaj Finance",
+  "sector": "Banking & Financial Services",
+  "openPrice": 493.15
+ },
+ {
+  "symbol": "MOKR",
+  "name": "Motak Kahindra Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 733.2
+ },
+ {
+  "symbol": "AJFS",
+  "name": "Ajaj Finserve",
+  "sector": "Banking & Financial Services",
+  "openPrice": 724.45
+ },
+ {
+  "symbol": "BOBA",
+  "name": "Baroda's Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 260.45
+ },
+ {
+  "symbol": "CHOL",
+  "name": "Cholamandal Capital",
+  "sector": "Banking & Financial Services",
+  "openPrice": 629.9
+ },
+ {
+  "symbol": "SHRF",
+  "name": "Shreeram Finance",
+  "sector": "Banking & Financial Services",
+  "openPrice": 411.05
+ },
+ {
+  "symbol": "PNBK",
+  "name": "Panjab Nation Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 166.3
+ },
+ {
+  "symbol": "MUTF",
+  "name": "Muthood Finance",
+  "sector": "Banking & Financial Services",
+  "openPrice": 815.85
+ },
+ {
+  "symbol": "HPAM",
+  "name": "HPFC Asset Mgmt",
+  "sector": "Banking & Financial Services",
+  "openPrice": 1085.15
+ },
+ {
+  "symbol": "SBBC",
+  "name": "SBB Cards",
+  "sector": "Banking & Financial Services",
+  "openPrice": 477.35
+ },
+ {
+  "symbol": "AYSF",
+  "name": "AY Small Finance",
+  "sector": "Banking & Financial Services",
+  "openPrice": 441.1
+ },
+ {
+  "symbol": "IDFD",
+  "name": "IDFD First Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 135.75
+ },
+ {
+  "symbol": "FEDB",
+  "name": "Fedral Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 231.85
+ },
+ {
+  "symbol": "LCIH",
+  "name": "LCI Housing",
+  "sector": "Banking & Financial Services",
+  "openPrice": 391.9
+ },
+ {
+  "symbol": "KRVB",
+  "name": "Karoor Vysia Bank",
+  "sector": "Banking & Financial Services",
+  "openPrice": 253.0
+ },
+ {
+  "symbol": "LNDE",
+  "name": "L&D Engineering",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 960.0
+ },
+ {
+  "symbol": "ABDI",
+  "name": "ABD India",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 1164.8
+ },
+ {
+  "symbol": "SEAM",
+  "name": "Seamens India",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 876.35
+ },
+ {
+  "symbol": "CMNG",
+  "name": "Cummings India",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 919.15
+ },
+ {
+  "symbol": "BHEE",
+  "name": "Bharat Heavy Electrik",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 242.65
+ },
+ {
+  "symbol": "AIEE",
+  "name": "AIE Engineering",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 905.1
+ },
+ {
+  "symbol": "TMKN",
+  "name": "Timkan India",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 876.35
+ },
+ {
+  "symbol": "GRWN",
+  "name": "Grindwel Norton",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 640.0
+ },
+ {
+  "symbol": "KRLS",
+  "name": "Kirloskur Engines",
+  "sector": "Capital Goods & Engineering",
+  "openPrice": 452.55
+ },
+ {
+  "symbol": "ULTC",
+  "name": "UltraTeck Cement",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 1715.8
+ },
+ {
+  "symbol": "AMBJ",
+  "name": "Ambooja Cements",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 382.0
+ },
+ {
+  "symbol": "SHRC",
+  "name": "Shri Cement",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 2500.0
+ },
+ {
+  "symbol": "JLCM",
+  "name": "JL Cement",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 1153.8
+ },
+ {
+  "symbol": "ACDC",
+  "name": "ACD Cement",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 697.4
+ },
+ {
+  "symbol": "DLMY",
+  "name": "Dalmiya Bharat",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 697.4
+ },
+ {
+  "symbol": "RMKO",
+  "name": "Ramko Cements",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 505.95
+ },
+ {
+  "symbol": "BRLA",
+  "name": "Birlaa Corp",
+  "sector": "Cement & Construction Materials",
+  "openPrice": 565.7
+ },
+ {
+  "symbol": "ASNP",
+  "name": "Asean Paints",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 783.85
+ },
+ {
+  "symbol": "PDLT",
+  "name": "Pidilyte",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 876.35
+ },
+ {
+  "symbol": "SRGC",
+  "name": "SRG Chemicals",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 861.65
+ },
+ {
+  "symbol": "CRMD",
+  "name": "Coramandal Intl",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 750.45
+ },
+ {
+  "symbol": "DPKN",
+  "name": "Dipak Nitrite",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 715.55
+ },
+ {
+  "symbol": "DTCH",
+  "name": "Data Chemicals",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 493.15
+ },
+ {
+  "symbol": "NVFL",
+  "name": "Naveen Fluorine",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 1036.9
+ },
+ {
+  "symbol": "ARTI",
+  "name": "Arti Industries",
+  "sector": "Chemicals & Fertilisers",
+  "openPrice": 327.9
+ },
+ {
+  "symbol": "TITO",
+  "name": "Titon Company",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 932.95
+ },
+ {
+  "symbol": "AVNW",
+  "name": "Avenew Supermarts",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 1036.9
+ },
+ {
+  "symbol": "TOMA",
+  "name": "Tomato",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 258.0
+ },
+ {
+  "symbol": "INGA",
+  "name": "InterGlobal Aviation",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 1186.6
+ },
+ {
+  "symbol": "TRNR",
+  "name": "Trient Retail",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 1175.75
+ },
+ {
+  "symbol": "INHO",
+  "name": "Indiun Hotels",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 441.1
+ },
+ {
+  "symbol": "JUBF",
+  "name": "Jubilent Foodworks",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 417.25
+ },
+ {
+  "symbol": "DVYN",
+  "name": "Devyanee Intl",
+  "sector": "Consumer Services & Retail",
+  "openPrice": 202.4
+ },
+ {
+  "symbol": "HUNL",
+  "name": "Hindustan Unileaver",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 783.85
+ },
+ {
+  "symbol": "ITDL",
+  "name": "ITD Limited",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 327.9
+ },
+ {
+  "symbol": "MSTL",
+  "name": "Mestle India",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 775.65
+ },
+ {
+  "symbol": "TRNB",
+  "name": "Tarun Beverages",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 350.55
+ },
+ {
+  "symbol": "BRTN",
+  "name": "Britania Foods",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 1186.6
+ },
+ {
+  "symbol": "GDRG",
+  "name": "Godrage Consumer",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 542.6
+ },
+ {
+  "symbol": "DTCN",
+  "name": "Data Consumer",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 530.65
+ },
+ {
+  "symbol": "DABR",
+  "name": "Dabbur India",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 361.35
+ },
+ {
+  "symbol": "MRKO",
+  "name": "Mariko",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 420.3
+ },
+ {
+  "symbol": "CLGT",
+  "name": "Coalgate Palmolive",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 783.85
+ },
+ {
+  "symbol": "EMAM",
+  "name": "Emaami",
+  "sector": "FMCG & Consumer Goods",
+  "openPrice": 385.35
+ },
+ {
+  "symbol": "DCSV",
+  "name": "Data Consultancy Svcs",
+  "sector": "Information Technology",
+  "openPrice": 939.8
+ },
+ {
+  "symbol": "INFS",
+  "name": "Infosis",
+  "sector": "Information Technology",
+  "openPrice": 644.0
+ },
+ {
+  "symbol": "HCMT",
+  "name": "HCM Technologies",
+  "sector": "Information Technology",
+  "openPrice": 663.55
+ },
+ {
+  "symbol": "WHIP",
+  "name": "Whipro",
+  "sector": "Information Technology",
+  "openPrice": 255.5
+ },
+ {
+  "symbol": "LTMT",
+  "name": "LTMindtry",
+  "sector": "Information Technology",
+  "openPrice": 1164.8
+ },
+ {
+  "symbol": "TCMH",
+  "name": "Tech Mahinder",
+  "sector": "Information Technology",
+  "openPrice": 629.9
+ },
+ {
+  "symbol": "PRST",
+  "name": "Persistant Systems",
+  "sector": "Information Technology",
+  "openPrice": 1197.35
+ },
+ {
+  "symbol": "KOFJ",
+  "name": "Koforj",
+  "sector": "Information Technology",
+  "openPrice": 669.35
+ },
+ {
+  "symbol": "EMPH",
+  "name": "Emphasis",
+  "sector": "Information Technology",
+  "openPrice": 846.65
+ },
+ {
+  "symbol": "DELX",
+  "name": "Data Elxie",
+  "sector": "Information Technology",
+  "openPrice": 1175.75
+ },
+ {
+  "symbol": "ZENZ",
+  "name": "Zenzar Tech",
+  "sector": "Information Technology",
+  "openPrice": 446.85
+ },
+ {
+  "symbol": "SYNT",
+  "name": "Syient",
+  "sector": "Information Technology",
+  "openPrice": 576.9
+ },
+ {
+  "symbol": "DLXR",
+  "name": "DLX Realty",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 429.35
+ },
+ {
+  "symbol": "MCTK",
+  "name": "Macrotek Developers",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 554.25
+ },
+ {
+  "symbol": "GMXA",
+  "name": "GMX Airports",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 147.5
+ },
+ {
+  "symbol": "GDPR",
+  "name": "Godrage Properties",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 733.2
+ },
+ {
+  "symbol": "OBRA",
+  "name": "Oberai Realty",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 659.7
+ },
+ {
+  "symbol": "PRSG",
+  "name": "Prestij Estates",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 598.65
+ },
+ {
+  "symbol": "FNXM",
+  "name": "Fenix Mills",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 640.0
+ },
+ {
+  "symbol": "IRDI",
+  "name": "IRD Infrastructure",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 113.15
+ },
+ {
+  "symbol": "BRGD",
+  "name": "Brigaid Enterprises",
+  "sector": "Infrastructure & Realty",
+  "openPrice": 518.45
+ },
+ {
+  "symbol": "NDPT",
+  "name": "Nadani Ports",
+  "sector": "Logistics & Transportation",
+  "openPrice": 598.65
+ },
+ {
+  "symbol": "CNCR",
+  "name": "Contaner Corp",
+  "sector": "Logistics & Transportation",
+  "openPrice": 423.3
+ },
+ {
+  "symbol": "HELV",
+  "name": "Heliverry",
+  "sector": "Logistics & Transportation",
+  "openPrice": 327.9
+ },
+ {
+  "symbol": "BLKT",
+  "name": "Bluekart Express",
+  "sector": "Logistics & Transportation",
+  "openPrice": 1259.85
+ },
+ {
+  "symbol": "TPCP",
+  "name": "Transpoort Corp",
+  "sector": "Logistics & Transportation",
+  "openPrice": 530.65
+ },
+ {
+  "symbol": "VRML",
+  "name": "VRM Logistics",
+  "sector": "Logistics & Transportation",
+  "openPrice": 364.85
+ },
+ {
+  "symbol": "MHLG",
+  "name": "Mahinder Logistics",
+  "sector": "Logistics & Transportation",
+  "openPrice": 299.35
+ },
+ {
+  "symbol": "JSXS",
+  "name": "JSX Steel",
+  "sector": "Metals & Mining",
+  "openPrice": 513.5
+ },
+ {
+  "symbol": "KOLI",
+  "name": "Kol India",
+  "sector": "Metals & Mining",
+  "openPrice": 313.95
+ },
+ {
+  "symbol": "DSTL",
+  "name": "Data Steel",
+  "sector": "Metals & Mining",
+  "openPrice": 205.5
+ },
+ {
+  "symbol": "HZNK",
+  "name": "Hindustan Zink",
+  "sector": "Metals & Mining",
+  "openPrice": 339.4
+ },
+ {
+  "symbol": "VDNT",
+  "name": "Vedaanta",
+  "sector": "Metals & Mining",
+  "openPrice": 339.4
+ },
+ {
+  "symbol": "HNDL",
+  "name": "Hindulco",
+  "sector": "Metals & Mining",
+  "openPrice": 417.25
+ },
+ {
+  "symbol": "JNDL",
+  "name": "Jindaal Steel",
+  "sector": "Metals & Mining",
+  "openPrice": 493.15
+ },
+ {
+  "symbol": "NMDX",
+  "name": "NMDX Mining",
+  "sector": "Metals & Mining",
+  "openPrice": 133.85
+ },
+ {
+  "symbol": "SAEL",
+  "name": "Steel Authority Bharat",
+  "sector": "Metals & Mining",
+  "openPrice": 175.25
+ },
+ {
+  "symbol": "APLT",
+  "name": "APL Apolo Tubes",
+  "sector": "Metals & Mining",
+  "openPrice": 659.7
+ },
+ {
+  "symbol": "REAL",
+  "name": "Realliance Industries",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 609.25
+ },
+ {
+  "symbol": "CNGC",
+  "name": "CONGC",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 250.45
+ },
+ {
+  "symbol": "INDO",
+  "name": "Indiun Oil",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 192.65
+ },
+ {
+  "symbol": "BPCE",
+  "name": "Bharat Petrolium",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 286.2
+ },
+ {
+  "symbol": "GAEL",
+  "name": "GAEL India",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 220.55
+ },
+ {
+  "symbol": "HPCE",
+  "name": "Hindustan Petrolium",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 320.0
+ },
+ {
+  "symbol": "OYLI",
+  "name": "Oyl India",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 331.8
+ },
+ {
+  "symbol": "PTNT",
+  "name": "Petronit LNG",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 286.2
+ },
+ {
+  "symbol": "GJGS",
+  "name": "Gujrat Gas",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 331.8
+ },
+ {
+  "symbol": "IPGS",
+  "name": "Indoprastha Gas",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 231.85
+ },
+ {
+  "symbol": "CSTL",
+  "name": "Castroll India",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 237.3
+ },
+ {
+  "symbol": "MHGS",
+  "name": "Mahanager Gas",
+  "sector": "Oil, Gas & Energy",
+  "openPrice": 609.25
+ },
+ {
+  "symbol": "SUNN",
+  "name": "Sunn Pharma",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 659.7
+ },
+ {
+  "symbol": "DIVY",
+  "name": "Divvy's Labs",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 1249.65
+ },
+ {
+  "symbol": "CIPA",
+  "name": "Ciplaa",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 619.7
+ },
+ {
+  "symbol": "TRNT",
+  "name": "Torrant Pharma",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 919.15
+ },
+ {
+  "symbol": "DRDL",
+  "name": "Dr. Reddi's Labs",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 565.7
+ },
+ {
+  "symbol": "ZYDA",
+  "name": "Zydas Life",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 493.15
+ },
+ {
+  "symbol": "LOOP",
+  "name": "Loopin",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 706.55
+ },
+ {
+  "symbol": "AROB",
+  "name": "Arobindo Pharma",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 542.6
+ },
+ {
+  "symbol": "ALKM",
+  "name": "Alkam Labs",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 1153.8
+ },
+ {
+  "symbol": "LRUS",
+  "name": "Laurrus Labs",
+  "sector": "Pharmaceuticals & Healthcare",
+  "openPrice": 398.4
+ },
+ {
+  "symbol": "NTPD",
+  "name": "NTPD Power",
+  "sector": "Power & Utilities",
+  "openPrice": 290.65
+ },
+ {
+  "symbol": "PWGR",
+  "name": "Powar Grid",
+  "sector": "Power & Utilities",
+  "openPrice": 272.45
+ },
+ {
+  "symbol": "NDNP",
+  "name": "Nadani Power",
+  "sector": "Power & Utilities",
+  "openPrice": 375.25
+ },
+ {
+  "symbol": "DTPW",
+  "name": "Data Power",
+  "sector": "Power & Utilities",
+  "openPrice": 315.95
+ },
+ {
+  "symbol": "JSXE",
+  "name": "JSX Energy",
+  "sector": "Power & Utilities",
+  "openPrice": 357.75
+ },
+ {
+  "symbol": "NHPD",
+  "name": "NHPD Hydro",
+  "sector": "Power & Utilities",
+  "openPrice": 144.9
+ },
+ {
+  "symbol": "TRPW",
+  "name": "Torrant Power",
+  "sector": "Power & Utilities",
+  "openPrice": 576.9
+ },
+ {
+  "symbol": "SJVM",
+  "name": "SJVM Hydro",
+  "sector": "Power & Utilities",
+  "openPrice": 155.95
+ },
+ {
+  "symbol": "CESD",
+  "name": "CESD Power",
+  "sector": "Power & Utilities",
+  "openPrice": 205.5
+ },
+ {
+  "symbol": "BHAT",
+  "name": "Bharat Airtell",
+  "sector": "Telecom & Media",
+  "openPrice": 697.4
+ },
+ {
+  "symbol": "INDT",
+  "name": "Indas Towers",
+  "sector": "Telecom & Media",
+  "openPrice": 299.35
+ },
+ {
+  "symbol": "GPID",
+  "name": "Ghodaphone Idea",
+  "sector": "Telecom & Media",
+  "openPrice": 50.0
+ },
+ {
+  "symbol": "DTCM",
+  "name": "Data Communications",
+  "sector": "Telecom & Media",
+  "openPrice": 649.9
+ },
+ {
+  "symbol": "SNTV",
+  "name": "Sunn TV Network",
+  "sector": "Telecom & Media",
+  "openPrice": 391.9
+ },
+ {
+  "symbol": "ZENT",
+  "name": "Z Entertainment",
+  "sector": "Telecom & Media",
+  "openPrice": 167.8
+ },
+ {
+  "symbol": "PVXI",
+  "name": "PVX Inox",
+  "sector": "Telecom & Media",
+  "openPrice": 505.95
+ },
+ {
+  "symbol": "SRGM",
+  "name": "Sargama India",
+  "sector": "Telecom & Media",
+  "openPrice": 357.75
+ }
+]

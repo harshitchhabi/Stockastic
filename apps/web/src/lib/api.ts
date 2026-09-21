@@ -83,12 +83,14 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 
   /**
-   * POST that is safe to repeat because the body carries a client-generated idempotency key (orders:
-   * `clientOrderId`). On a network error, timeout or 502/503/504 it retries the SAME body, so a dropped
-   * connection mid-submit can never cause a duplicate order — the server returns the original result.
+   * POST that is safe to repeat because the body carries a client-generated idempotency key (trades:
+   * `clientTradeId`). On a network error, timeout or 502/503/504 it retries the SAME body, so a dropped
+   * connection mid-submit can never cause a duplicate trade — the server returns the original result.
    * Real rejections (4xx, 423 frozen, 429 rate limit) are not retried.
    */
   postIdempotent: async <T>(path: string, body: unknown, attempts = 4): Promise<T> => {

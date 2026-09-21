@@ -20,6 +20,7 @@ import (
 	"stockastic/api/internal/config"
 	"stockastic/api/internal/httpapi"
 	"stockastic/api/internal/rulebook"
+	"stockastic/api/internal/sim"
 	"stockastic/api/internal/store"
 	"stockastic/api/internal/universe"
 	"stockastic/api/internal/webui"
@@ -73,7 +74,24 @@ func run() error {
 		log.Warn("using the PLACEHOLDER company list; set UNIVERSE_PATH to the real one", "companies", len(companies))
 	}
 
-	wal, err := store.OpenFile(filepath.Join(cfg.DataDir, "stockastic.wal"))
+	scenario := sim.DefaultScenario()
+	if cfg.ScenarioPath != "" {
+		if scenario, err = sim.Load(cfg.ScenarioPath); err != nil {
+			return err
+		}
+	} else {
+		log.Warn("using the PLACEHOLDER price simulation (a plain random walk, no market events); set SCENARIO_PATH to the real scenario")
+	}
+
+	// Tidy the log before opening it: drop records a newer one replaced, so restarting any number of times
+	// never lets it grow without bound. Trades and the audit log are always kept in full.
+	walPath := filepath.Join(cfg.DataDir, "stockastic.wal")
+	if res, err := store.Compact(walPath, app.CompactRules()); err != nil {
+		return fmt.Errorf("compacting the data log: %w", err)
+	} else if res.Dropped > 0 {
+		log.Info("data log compacted", "droppedRecords", res.Dropped, "keptRecords", res.Kept, "beforeMB", res.BeforeBytes>>20, "afterMB", res.AfterBytes>>20)
+	}
+	wal, err := store.OpenFile(walPath)
 	if err != nil {
 		return fmt.Errorf("opening the data log: %w", err)
 	}
@@ -86,7 +104,8 @@ func run() error {
 		return err
 	}
 	a, err := app.New(app.Config{
-		Rulebook: rb, Log: log, WAL: wal, Universe: companies, Signer: signer,
+		Rulebook: rb, Log: log, WAL: wal, Universe: companies, Scenario: scenario, Signer: signer,
+		Disk:        &store.DiskGuard{Dir: cfg.DataDir, MinFree: uint64(cfg.DiskMinFreeMB) << 20},
 		AllowSignup: cfg.AllowSignup, AllowedOrigins: cfg.AllowedOrigins, Autostart: cfg.Autostart,
 	})
 	if err != nil {

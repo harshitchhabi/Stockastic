@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math"
 	"testing"
-	"time"
 
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/rulebook"
@@ -194,101 +193,9 @@ func TestAllocationCapsSec9And10(t *testing.T) {
 }
 
 func TestMandatoryFivePercentSec9(t *testing.T) {
-	var st MandatoryState
-	st = NextMandatoryState(st, false)
-	if st.Warnings != 1 || st.PrizeIneligible {
-		t.Fatalf("first breach: %+v", st)
-	}
-	st = NextMandatoryState(st, false)
-	if !st.PrizeIneligible {
-		t.Fatalf("consecutive breach must remove Prize 2/4 eligibility: %+v", st)
-	}
-	// The dump-a-token-5%-in-the-last-window gap stays closed.
-	st = NextMandatoryState(st, true)
-	if !st.PrizeIneligible {
-		t.Error("ineligibility must be permanent")
-	}
-	var rec MandatoryState
-	rec = NextMandatoryState(rec, false)
-	rec = NextMandatoryState(rec, true)
-	if rec.BelowAtLastCheckpoint || rec.PrizeIneligible || rec.Warnings != 1 {
-		t.Errorf("recovering clears the consecutive run: %+v", rec)
-	}
 	if !IsMandatoryCompliant(rs(1_000_000), rs(50_000), 5) || IsMandatoryCompliant(rs(1_000_000), rs(49_999), 5) {
 		t.Error("5% boundary wrong")
 	}
-}
-
-func TestManagementFeeSec12(t *testing.T) {
-	t0 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
-	t.Run("time-weighted average AUM", func(t *testing.T) {
-		samples := []AumSample{{t0, rs(1_000_000)}, {t0.Add(5 * time.Minute), rs(3_000_000)}}
-		avg, fee := ManagementFee(samples, t0, t0.Add(10*time.Minute), 1.5, 1)
-		if avg != rs(2_000_000) || fee != rs(30_000) {
-			t.Errorf("avg=%v fee=%v, want 2,000,000 / 30,000", avg, fee)
-		}
-	})
-	t.Run("AUM in force at period start comes from an earlier sample", func(t *testing.T) {
-		avg, _ := ManagementFee([]AumSample{{t0, rs(800_000)}}, t0.Add(time.Minute), t0.Add(2*time.Minute), 1, 1)
-		if avg != rs(800_000) {
-			t.Errorf("avg = %v", avg)
-		}
-	})
-	t.Run("short-handed fund prorated headcount/6", func(t *testing.T) {
-		_, fee := ManagementFee([]AumSample{{t0, rs(1_000_000)}}, t0, t0.Add(time.Second), 1.5, 4.0/6.0)
-		if fee != rs(10_000) {
-			t.Errorf("fee = %v, want 10,000", fee)
-		}
-	})
-	t.Run("empty and degenerate periods", func(t *testing.T) {
-		if a, f := ManagementFee(nil, t0, t0.Add(time.Minute), 1.5, 1); a != 0 || f != 0 {
-			t.Error("no samples must give zero")
-		}
-		if a, _ := ManagementFee([]AumSample{{t0, 1}}, t0, t0, 1.5, 1); a != 0 {
-			t.Error("zero-length period must give zero")
-		}
-	})
-}
-
-func TestPerformanceFeeClawbackSec12(t *testing.T) {
-	t0 := time.Now()
-	const units = 10_000.0
-	t.Run("fee starts from the launch NAV", func(t *testing.T) {
-		r := ProvisionalPerformanceFees([]NavCheckpoint{{t0, 104, units}}, 5, 100, 1)
-		near(t, "fee/unit", r[0].FeePerUnit, 0.2)
-	})
-	t.Run("Appendix A.4: an unsustained peak is clawed back at Final Settlement", func(t *testing.T) {
-		prov := ProvisionalPerformanceFees([]NavCheckpoint{{t0, 100, units}, {t0, 121.89, units}, {t0, 115.8, units}}, 5, 100, 1)
-		var provTotal money.Paise
-		for _, p := range prov {
-			provTotal += p.TotalFee
-		}
-		perUnit, final := FinalPerformanceFee(100, 115.8, units, 5, 1)
-		near(t, "provisional total (rupees)", provTotal.Rupees(), 0.05*21.89*units)
-		near(t, "final per unit", perUnit, 0.05*15.8)
-		near(t, "final total (rupees)", final.Rupees(), 0.05*15.8*units)
-		if final >= provTotal {
-			t.Errorf("clawback must reduce the fee: final %v >= provisional %v", final, provTotal)
-		}
-	})
-	t.Run("a mark that is not exceeded pays nothing more", func(t *testing.T) {
-		r := ProvisionalPerformanceFees([]NavCheckpoint{{t0, 120, 1}, {t0, 110, 1}, {t0, 115, 1}}, 5, 100, 1)
-		if r[1].FeePerUnit != 0 || r[2].FeePerUnit != 0 || r[2].HWMAfter != 120 {
-			t.Errorf("%+v", r)
-		}
-	})
-	t.Run("final fee is zero at or below launch NAV however high it peaked", func(t *testing.T) {
-		if _, total := FinalPerformanceFee(100, 97, 1000, 5, 1); total != 0 {
-			t.Errorf("total = %v", total)
-		}
-	})
-	t.Run("short-handed proration scales the profit basis", func(t *testing.T) {
-		_, full := FinalPerformanceFee(100, 110, 1000, 5, 1)
-		_, four := FinalPerformanceFee(100, 110, 1000, 5, 4.0/6.0)
-		if d := int64(four) - int64(math.Round(float64(full)*4/6)); d < -1 || d > 1 {
-			t.Errorf("4/6 proration: got %v, want about %v (within a paisa)", four, float64(full)*4/6)
-		}
-	})
 }
 
 func TestPrizeScoringSec16(t *testing.T) {

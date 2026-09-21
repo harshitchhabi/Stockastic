@@ -1,70 +1,58 @@
-# Stage 2 dashboards — Investors and Fund Managers
+# Phase 2: funds, investors and fund managers
 
-Source of truth: rulebook v1.1 (not final). Everything marked **[TBF]** or **[ASK]** depends on a value or
-decision the organisers have not fixed; those stay in `rulebook.json` and are never hardcoded.
+Everything here is built and covered by tests (`internal/funds`, `internal/scoring`,
+`internal/httpapi/funds_test.go`). The rule values are in `rulebook.json`, never in code.
 
-## What every Stage 2 user shares
+Standings are hidden from teams (`leaderboard.visibleToParticipants = false`); the organiser console shows them.
+Flip that one value and a Standings page appears for everyone, refreshed every `leaderboard.refreshSeconds`.
 
-Both roles keep the trading pages built for Stage 1: **Explore → Company → Holdings → Watchlist**, the live
-**wire** on the right, and the status strip. Only the extra pages below differ. The role comes from the
-verified JWT, never from the client, and the server enforces every rule the UI merely displays.
+## How Phase 2 starts (organiser)
 
-Standings are hidden from teams (`leaderboard.visibleToParticipants = false`); the organiser console shows
-them. If the final rulebook publishes them (Section 15 describes public boards), flip that one value and a
-**Standings** page appears for everyone, refreshed every `leaderboard.refreshSeconds` (5 minutes).
+1. The Phase 1 freeze takes a snapshot: every team's value at the freeze prices, its highest value, and its trade count.
+2. **Funds and prizes** shows the ranking, what decided each place, and where the cut falls. If the last qualifying place
+   is decided by the coin toss, the page says so, so it can be supervised.
+3. **Form the funds** ranks the teams, takes the top 20, pairs rank 1 with rank 20, 2 with 19 and so on, creates ten
+   funds and makes those 20 teams fund managers. Each fund is one shared account.
+4. Managers name their fund and publish its philosophy, risk profile and strategy on the **Fund desk**.
 
-## Individual Investor (~640–690 people, teams of 3, one shared account)
+## Individual investor
 
-The question this dashboard answers: *"Do I beat the fund managers myself, or give them part of my capital?"*
+| Page | What it shows |
+|---|---|
+| **Funds** | The ten funds: name, philosophy, risk, strategy, managers, NAV, return, AUM, and the investor's own position. The allocation window state, the mandatory 5% meter, and Invest, Withdraw and All buttons that work only while a window is open |
+| **Holdings** | Stocks, fund units at the current NAV, and the team's trades |
+| **Strategy log** (on Funds) | 2 to 3 sentences at a checkpoint, for Prize 3 |
 
-| Page | What it shows | Rulebook |
-| --- | --- | --- |
-| **Funds** | The 10 funds side by side. Each card: name, philosophy, risk profile, strategy, NAV/unit, % return, AUM, risk rating. Never a fund's holdings. | §8, §15 |
-| **Fund page** | NAV chart (sampled every `navSampleSeconds`), the five published profile fields, the management team, **Allocate / Redeem** form. | §8, §10 |
-| **Window banner** (every page) | Which allocation window is open, a countdown to its **hard close**, or "next window opens in…". After Window 3 closes: "fund positions locked". | §10 |
-| **Allocate form** | Live validation before submit: minimum `min(₹5,000, 5% of wallet)`, maximum 60% of wallet in one fund, units you would receive = amount ÷ NAV, fund cap remaining, and a clear refusal for your own team's fund. Disabled outside an open window. | §9, §10 [TBF numbers] |
-| **Holdings** (extended) | Stocks **and** fund units in one net-worth view, plus a wallet mix bar: cash / stocks / funds, always totalling 100%. | §10 |
-| **5% minimum meter** | Your fund allocation vs the mandatory 5%, the next checkpoint (close of each window), and any warning already issued. | §9 |
-| **Strategy log** | Submit the 2–3 short strategy notes at the fixed checkpoints; shows deadlines and what was submitted. | §16 Prize 3 |
-| **Trade limit meter** (ticket) | Your account's 2 trades per minute: trades used, seconds until one frees up. The whole team shares it. | §11, §14 |
-| **Disputes** | Raise a dispute (window `raiseWithinMinutes`), see the 3 expedited slots left this phase, and its status. | §22 |
+Rules the server enforces: minimum investment is the lower of 5,000 or 5% of the portfolio; at most 60% of the portfolio in
+one fund; money moves only in an open window; the equal-share cap (the mandatory pool is split equally across the funds, a
+full fund waits until every fund has reached the same level, then all rise); leaving a fund cannot drop the team below the
+mandatory 5%.
 
-## Fund Manager (60 people, 10 funds of 6, one shared fund account)
+## Fund manager
 
-The question this dashboard answers: *"How is my fund doing, and what do I do with the news I got first?"*
+| Page | What it shows |
+|---|---|
+| **Fund desk** | NAV, return, AUM, cash, investors, largest fall, capital kept, holdings, the profile form, and the fees at each checkpoint |
+| **Trading** | The same Explore and Company pages as investors, acting for the fund. The whole fund shares the two-trades-a-minute allowance |
+| **The wire, early** | News 60 seconds before the public |
 
-| Page | What it shows | Rulebook |
-| --- | --- | --- |
-| **Fund desk** | NAV/unit, return since launch, AUM, units outstanding, high-water mark, cap used vs cap allowed, investors in (count), net flow per window. NAV is **computed by the server** from the fund's holdings. | §9, §10, §12 |
-| **The wire · early** | News at T = 0 with a live countdown on each item: "public in 41 s". This is the institutional advantage, shown honestly as timing only. | §11 |
-| **Trading** | Explore / Company / Holdings exactly as investors have, but acting for the fund account. The 2-trades-per-minute meter is large: all 6 members share one cap. | §11 |
-| **Fees** | Management fee accrued (time-weighted AUM), provisional performance fee above the high-water mark, both labelled **provisional until final settlement** (clawback). Kept apart from investor-facing NAV, which is never reduced by fees. Short-team proration (headcount ÷ 6) applied and shown. | §12 |
-| **Fund profile** | Edit the five published fields (name, philosophy, risk profile, strategy) until Phase 2 starts; read-only after. Fictional names only. | §8 |
-| **Team** | The members, optional internal roles (equity analyst, macro analyst, risk, IR/PM), headcount and the proration factor. | §6, §17 |
-| **Windows** | Timeline of Windows 0–3 with hard closes, and the note that unused cap is forfeited at close. | §10 |
-| **Disputes** | Same as investors. | §22 |
+NAV is computed by the server from what the fund holds; nobody types it in. Fees are computed at each window close and at
+the final close (management fee on average AUM for the period, performance fee on new profit above the high-water mark)
+and are never taken from investors.
 
-## Issues found in the current code
+## Prizes
 
-1. **`FundManagerPanel` lets a manager type in the NAV.** The rulebook says NAV moves automatically with the
-   fund's portfolio (§10). That control must go; Stage 2 shows NAV read-only.
-2. **`FundBrowser` sends units, not an amount.** The rulebook allocates capital and issues units at the
-   current NAV. The form should take an amount and show the units.
-3. **The fund-manager breakdown lists each investor's units.** Section 15 only makes aggregate figures public.
-   **[ASK]** whether managers may see who invested; until answered, show counts and totals only.
+Shown live on **Funds and prizes**, and from the frozen figures once the final freeze has happened.
 
-## Needs an answer from the organisers
+| Prize | How it is decided |
+|---|---|
+| 1 Best fund | Score of 100 x (0.35 return + 0.25 risk management + 0.25 investor profitability + 0.15 capital kept), each scaled across the funds. Size is not an input |
+| 2 Best investor | Highest final value: cash, shares, and fund units at the final NAV |
+| 3 Creative investor | Judges score each criterion for investors who wrote logs at two or more checkpoints. Weights and scale are equal and out of 10 until the organisers publish the rubric |
+| 4 Best risk manager | Return over largest fall, drawdown control, and diversification across holdings including fund units |
 
-- **[ASK]** Liquidity: who supplies prices and market-making — still blocking Phase 1 trading.
-- **[ASK]** Should teams ever see the standings (Section 15 says yes; current setting says no)?
-- **[TBF]** Fee percentages and basis, minimum/maximum investment, window timings, cap size.
-- **[ASK]** The company universe: symbols, names, sectors and opening prices (the Explore filters and
-  day-change colouring are built for them and need no code change).
+## Still to decide with the organisers
 
-## Build order for Stage 2
-
-1. Server: `funds` package (units, NAV, windows, caps, self-investment ban, 5% checks), then its API.
-2. Investor: Funds → Fund page → allocate form → wallet mix and 5% meter.
-3. Fund manager: Fund desk → early wire countdown → Fees → Profile → Team.
-4. Shared: window banner, trade-limit meter, Disputes, Strategy log.
-5. Run the full-event rehearsal with real fund accounts, then the load test above 450 users.
+- Whether managers may see who invested in their fund (today they see counts and totals only).
+- The Prize 3 rubric scale and weights, and the exact fee percentages.
+- The wording used for the early and public wire.

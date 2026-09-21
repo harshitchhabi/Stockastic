@@ -1,18 +1,24 @@
 // Package dto is the JSON shape the web app and the Go server agree on. Money is held as integer paise
 // everywhere inside the server and converted to rupees (a JSON number) only here, at the boundary, so
-// the web app's existing rupee amounts keep working and no float ever takes part in accounting.
+// the web app's rupee amounts keep working and no float ever takes part in accounting.
 package dto
 
 import (
 	"time"
 
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/money"
+	"stockastic/api/internal/trading"
 )
 
 func Rupees(p money.Paise) float64 { return p.Rupees() }
 func Paise(r float64) money.Paise  { return money.FromRupees(r) }
-func ms(t time.Time) int64         { return t.UnixMilli() }
+
+func MS(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
 
 type Account struct {
 	ID          string  `json:"id"`
@@ -31,86 +37,35 @@ type Company struct {
 	OpenPrice   *float64 `json:"openPrice,omitempty"`
 }
 
-type Level struct {
-	Price      float64 `json:"price"`
-	Qty        int64   `json:"qty"`
-	OrderCount int     `json:"orderCount"`
-}
-
-type Depth struct {
-	Symbol string  `json:"symbol"`
-	Bids   []Level `json:"bids"`
-	Asks   []Level `json:"asks"`
-}
-
-func FromDepth(d engine.Depth) Depth {
-	conv := func(in []engine.Level) []Level {
-		out := make([]Level, len(in))
-		for i, l := range in {
-			out[i] = Level{Price: Rupees(l.Price), Qty: l.Qty, OrderCount: l.Orders}
-		}
-		return out
-	}
-	return Depth{Symbol: d.Symbol, Bids: conv(d.Bids), Asks: conv(d.Asks)}
-}
-
-type Order struct {
+// Trade is one executed trade, at the price it happened at.
+type Trade struct {
 	ID            string  `json:"id"`
-	ClientOrderID string  `json:"clientOrderId"`
-	AccountID     string  `json:"accountId"`
+	ClientTradeID string  `json:"clientTradeId"`
 	Symbol        string  `json:"symbol"`
 	Side          string  `json:"side"`
-	Type          string  `json:"type"`
-	Price         float64 `json:"price"`
 	Qty           int64   `json:"qty"`
-	RemainingQty  int64   `json:"remainingQty"`
-	Status        string  `json:"status"`
-	CreatedAt     int64   `json:"createdAt"`
-	Seq           uint64  `json:"seq"`
+	Price         float64 `json:"price"`
+	Value         float64 `json:"value"`
+	Timestamp     int64   `json:"timestamp"`
 }
 
-func FromOrder(o engine.Order) Order {
-	return Order{
-		ID: o.ID, ClientOrderID: o.ClientOrderID, AccountID: o.AccountID, Symbol: o.Symbol,
-		Side: o.Side.String(), Type: o.Type.String(), Price: Rupees(o.Price), Qty: o.Qty,
-		RemainingQty: o.Remaining, Status: string(o.Status), CreatedAt: ms(o.CreatedAt), Seq: o.Seq,
+func FromTrade(t trading.Trade) Trade {
+	return Trade{
+		ID: t.ID, ClientTradeID: t.ClientTradeID, Symbol: t.Symbol, Side: t.Side.String(), Qty: t.Qty,
+		Price: Rupees(t.Price), Value: Rupees(t.Notional()), Timestamp: MS(t.At),
 	}
 }
 
-type Fill struct {
-	ID             string  `json:"id"`
-	Symbol         string  `json:"symbol"`
-	Price          float64 `json:"price"`
-	Qty            int64   `json:"qty"`
-	TakerOrderID   string  `json:"takerOrderId"`
-	MakerOrderID   string  `json:"makerOrderId"`
-	TakerAccountID string  `json:"takerAccountId"`
-	MakerAccountID string  `json:"makerAccountId"`
-	TakerSide      string  `json:"takerSide"`
-	Timestamp      int64   `json:"timestamp"`
+// PriceTick is one company's price.
+type PriceTick struct {
+	Symbol string  `json:"symbol"`
+	Price  float64 `json:"price"`
 }
 
-func FromFill(f engine.Fill) Fill {
-	return Fill{
-		ID: f.ID, Symbol: f.Symbol, Price: Rupees(f.Price), Qty: f.Qty,
-		TakerOrderID: f.TakerOrderID, MakerOrderID: f.MakerOrderID,
-		TakerAccountID: f.TakerAccountID, MakerAccountID: f.MakerAccountID,
-		TakerSide: f.TakerSide.String(), Timestamp: ms(f.At),
-	}
-}
-
-// PublicFill is what every viewer of a symbol may see about a trade: who traded is never published.
-type PublicFill struct {
-	ID        string  `json:"id"`
-	Symbol    string  `json:"symbol"`
-	Price     float64 `json:"price"`
-	Qty       int64   `json:"qty"`
-	TakerSide string  `json:"takerSide"`
-	Timestamp int64   `json:"timestamp"`
-}
-
-func FromPublicFill(f engine.Fill) PublicFill {
-	return PublicFill{ID: f.ID, Symbol: f.Symbol, Price: Rupees(f.Price), Qty: f.Qty, TakerSide: f.TakerSide.String(), Timestamp: ms(f.At)}
+// PricesUpdate is pushed to every browser whenever prices change.
+type PricesUpdate struct {
+	At     int64       `json:"at"`
+	Prices []PriceTick `json:"prices"`
 }
 
 type Holding struct {
@@ -121,11 +76,24 @@ type Holding struct {
 	UnrealizedPnl float64 `json:"unrealizedPnl"`
 }
 
+// FundPosition is an investor's units in one fund at the current NAV.
+type FundPosition struct {
+	FundID      string  `json:"fundId"`
+	Name        string  `json:"name"`
+	Units       float64 `json:"units"`
+	NAV         float64 `json:"nav"`
+	Value       float64 `json:"value"`
+	Contributed float64 `json:"contributed"`
+	Pnl         float64 `json:"pnl"`
+}
+
 type Portfolio struct {
-	AccountID   string    `json:"accountId"`
-	CashBalance float64   `json:"cashBalance"`
-	Holdings    []Holding `json:"holdings"`
-	TotalValue  float64   `json:"totalValue"`
+	FundID        string         `json:"fundId,omitempty"` // set when this is a fund's portfolio
+	FundPositions []FundPosition `json:"fundPositions"`
+	AccountID     string         `json:"accountId"`
+	CashBalance   float64        `json:"cashBalance"`
+	Holdings      []Holding      `json:"holdings"`
+	TotalValue    float64        `json:"totalValue"`
 }
 
 type LeaderRow struct {
@@ -147,11 +115,4 @@ type NewsItem struct {
 type PricePoint struct {
 	Price     float64 `json:"price"`
 	Timestamp int64   `json:"timestamp"`
-}
-
-func MS(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return ms(t)
 }

@@ -3,13 +3,13 @@
  *
  * Contract with the Go backend (wsapi implements the server side):
  *   client -> server   {"t":"auth","d":{"token":"<jwt>"}}   first frame after open
- *                      {"t":"subscribe:symbol","d":"ACME"}   / "unsubscribe:symbol"
+ *                      {"t":"subscribe:symbol","d":"ACME"}   (accepted, no longer needed)
  *                      {"t":"ping"}                          every heartbeatMs
  *   server -> client   {"t":"ready"}                         auth accepted; the socket is now live
  *                      {"t":"pong"}
  *                      {"t":"error","d":{"code":"unauthenticated"}}   then close code 4401
- *                      {"t":"bookUpdate" | "trade" | "fill" | "orderAccepted" | "orderCancelled"
- *                        | "news" | "controlState" | ..., "d": ...}
+ *                      {"t":"prices" | "trade" | "news" | "controlState" | "portfolio" | "fundsFormed" | ..., "d": ...}
+ *                      `prices` carries every company whose price changed; `trade` is your own trade.
  *
  * Reliability, because laptops drop wifi during a 5-hour event and ~750 clients share one server:
  *  - A half-open TCP connection never errors, so a watchdog treats "no frame for watchdogMs" as dead

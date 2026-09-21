@@ -6,13 +6,13 @@ import { UniverseProvider, useUniverse } from "@/lib/universe";
 import { pagePath, useRoute, type Page } from "@/lib/router";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import type { Fill, PublicConfig } from "@/lib/types";
+import type { PublicConfig } from "@/lib/types";
 import { ExplorePage } from "./pages/ExplorePage";
 import { WatchlistPage } from "./pages/WatchlistPage";
 import { HoldingsPage } from "./pages/HoldingsPage";
 import { CompanyPage } from "./pages/CompanyPage";
-import { FundBrowser } from "./FundBrowser";
-import { FundManagerPanel } from "./FundManagerPanel";
+import { FundsPage } from "./pages/FundsPage";
+import { FundDeskPage } from "./pages/FundDeskPage";
 import { Leaderboard } from "./Leaderboard";
 import { NewsFeed } from "./NewsFeed";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -26,7 +26,7 @@ export function DashboardShell() {
 }
 
 function Shell() {
-  const { account, logout } = useSession();
+  const { account, logout, refresh } = useSession();
   const { tradingFrozen } = useControlState();
   const connection = useConnection();
   const route = useRoute();
@@ -44,12 +44,23 @@ function Shell() {
 
   useEffect(() => {
     const socket = getSocket();
-    const on = (_: Fill) => setLastTrade(Date.now());
-    socket.on("trade", on);
-    return () => {
-      socket.off("trade", on);
+    const onTrade = () => {
+      setLastTrade(Date.now());
+      void refresh(); // the cash in the header changes with every trade
     };
-  }, []);
+    // The funds are formed at the start of Phase 2: qualifying teams become fund managers, so reload who we are.
+    const onRole = () => void refresh();
+    socket.on("trade", onTrade);
+    socket.on("portfolio", onRole);
+    socket.on("fundsFormed", onRole);
+    socket.on("connect", onRole);
+    return () => {
+      socket.off("trade", onTrade);
+      socket.off("portfolio", onRole);
+      socket.off("fundsFormed", onRole);
+      socket.off("connect", onRole);
+    };
+  }, [refresh]);
 
   if (!account) return null;
 
@@ -85,7 +96,7 @@ function Shell() {
           {account.displayName} <span className="label">· {account.role.replace("_", " ")}</span>
         </span>
         <span>
-          <span className="label">Cash </span>
+          <span className="label">{account.role === "fund_manager" ? "Fund cash " : "Cash "}</span>
           <span className="mono">{account.cashBalance.toFixed(2)}</span>
         </span>
         {account.isAdmin && <a href="/admin">Console</a>}
@@ -96,7 +107,7 @@ function Shell() {
         <div role="status" className="banner">
           {connection === "unauthenticated"
             ? "Your session is no longer valid. Please sign in again."
-            : "Live connection lost, reconnecting. Prices and your orders may be out of date until it returns; orders you place are safe to retry."}
+            : "Live connection lost, reconnecting. Prices may be out of date until it returns. A trade you send is safe to retry: it can never happen twice."}
         </div>
       )}
 
@@ -107,16 +118,8 @@ function Shell() {
             {page === "watchlist" && <WatchlistPage />}
             {page === "holdings" && <HoldingsPage />}
             {page === "company" && route.symbol && <CompanyPage key={route.symbol} symbol={route.symbol} tradingFrozen={tradingFrozen} />}
-            {page === "funds" && (
-              <div className="page">
-                <FundBrowser />
-              </div>
-            )}
-            {page === "desk" && (
-              <div className="page">
-                <FundManagerPanel />
-              </div>
-            )}
+            {page === "funds" && <FundsPage />}
+            {page === "desk" && <FundDeskPage />}
             {page === "standings" && (
               <div className="page">
                 <Leaderboard />

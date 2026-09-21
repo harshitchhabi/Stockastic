@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { getSocket } from "./socket";
-import type { Fill, SymbolInfo } from "./types";
+import type { PricesUpdate, SymbolInfo } from "./types";
 
 /** A company with its live price and how far it has moved since the session's opening price. */
 export interface Company extends SymbolInfo {
@@ -38,7 +38,7 @@ const FLUSH_MS = 500;
 /**
  * One shared source of truth for every company's price. All ~250 symbols stream in, but updates are
  * buffered and applied at most every FLUSH_MS so a busy market cannot make the UI re-render on every
- * single trade.
+ * single price step.
  */
 export function UniverseProvider({ children }: { children: React.ReactNode }) {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
@@ -66,10 +66,12 @@ export function UniverseProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const socket = getSocket();
-    // Every trade for every company is pushed to every client (they are tiny), so prices need no
-    // per-company subscription. Only a company page subscribes, for its order book.
-    const onTrade = (f: Fill) => pending.current.set(f.symbol, f.price);
-    socket.on("trade", onTrade);
+    // The server pushes every price change to every client in one small `prices` event, so there is
+    // no per-company subscription.
+    const onPrices = (u: PricesUpdate) => {
+      for (const p of u.prices) pending.current.set(p.symbol, p.price);
+    };
+    socket.on("prices", onPrices);
     // After a reconnect the client's view may be stale: refetch the prices.
     socket.on("connect", load);
 
@@ -82,7 +84,7 @@ export function UniverseProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       clearInterval(timer);
-      socket.off("trade", onTrade);
+      socket.off("prices", onPrices);
       socket.off("connect", load);
     };
   }, [load]);

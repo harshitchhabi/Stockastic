@@ -24,7 +24,7 @@ func TestEveryAcknowledgedAppendIsOnDiskAndEachWritersOrderIsKept(t *testing.T) 
 		go func(w int) {
 			defer wg.Done()
 			for i := 0; i < each; i++ {
-				if err := l.Append(KindBatch, map[string]int{"w": w, "i": i}); err != nil {
+				if err := l.Append(KindTrade, map[string]int{"w": w, "i": i}); err != nil {
 					t.Error(err)
 					return
 				}

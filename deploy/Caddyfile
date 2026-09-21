@@ -2,6 +2,13 @@
 # Caddy gets and renews the certificate by itself, and passes WebSockets through.
 event.example.com {
 	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
 	reverse_proxy 127.0.0.1:8080 {
 		# Keep long-lived WebSocket connections open for the whole event.
 		transport http {

@@ -13,6 +13,8 @@ import { AdminStandings } from "./AdminStandings";
 import { AuditLog } from "./AuditLog";
 import { RulebookView } from "./RulebookView";
 import { TeamPage } from "./TeamPage";
+import { FundsAdmin } from "./FundsAdmin";
+import { MarketEvents } from "./MarketEvents";
 
 const PAGES = [
   { id: "control", label: "Control room", view: ControlRoom },
@@ -21,6 +23,8 @@ const PAGES = [
   { id: "wallets", label: "Wallets", view: Wallets },
   { id: "shares", label: "Shares", view: Shares },
   { id: "news", label: "News desk", view: NewsDesk },
+  { id: "events", label: "Market events", view: MarketEvents },
+  { id: "funds", label: "Funds and prizes", view: FundsAdmin },
   { id: "disputes", label: "Disputes", view: Disputes },
   { id: "standings", label: "Standings", view: AdminStandings },
   { id: "audit", label: "Audit log", view: AuditLog },

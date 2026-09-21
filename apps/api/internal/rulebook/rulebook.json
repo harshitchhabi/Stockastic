@@ -1,11 +1,11 @@
 {
-  "version": "1.1",
-  "source": "Live Financial Ecosystem — Official Event Rulebook v1.1",
+  "version": "final",
+  "source": "Live Financial Ecosystem — Official Event Rulebook (final)",
   "roles": ["investor", "fund_manager"],
 
   "event": {
     "totalMinutes": 300,
-    "participants": { "min": 700, "max": 750 },
+    "participants": { "min": 650, "max": 700 },
     "timeline": [
       { "id": "briefing", "label": "Registration verification, seating & Opening Briefing", "publicLabel": "Registration & Opening Briefing", "durationMin": 15, "stage": "phase1", "marketOpen": false, "allocationWindow": null },
       { "id": "login", "label": "Move to Phase 1 stations / login verification", "publicLabel": "Platform & team login verification", "durationMin": 5, "stage": "phase1", "marketOpen": false, "allocationWindow": null },
@@ -69,10 +69,8 @@
   },
 
   "disputes": {
-    "expeditedPerPhase": 3,
-    "overflowQueue": "standard",
     "raiseWithinMinutes": 10,
-    "expeditedTurnaroundMinutes": 15
+    "decisionTargetMinutes": 15
   },
 
   "prizes": {
@@ -105,7 +103,8 @@
     "leaderboard.visibleToParticipants": { "status": "assumption", "section": "15", "note": "Section 15 describes public boards; the organiser asked for standings to be hidden from teams. Flip to true to publish them." },
     "leaderboard.refreshSeconds": { "status": "recommended", "section": "15" },
     "disputes.raiseWithinMinutes": { "status": "recommended", "section": "22" },
-    "disputes.expeditedTurnaroundMinutes": { "status": "recommended", "section": "22" },
+    "disputes.decisionTargetMinutes": { "status": "recommended", "section": "22" },
+    "event.participants": { "status": "assumption", "section": "1/3", "note": "The rulebook gives 600-650, 650-700 and 700-750 in different places. 650-700 (its Section 1 and Section 3 table) is used; it only affects sizing checks." },
     "prizes.prize4.riskAdjustedReturn": { "status": "recommended", "section": "16", "note": "Prize 4 weights are a starting point; organisers may tune." },
     "prizes.prize4.drawdownControl": { "status": "recommended", "section": "16" },
     "prizes.prize4.diversification": { "status": "recommended", "section": "16" },

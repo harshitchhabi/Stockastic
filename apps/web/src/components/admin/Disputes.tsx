@@ -13,79 +13,11 @@ const CATEGORY: Record<string, string> = {
   other: "Other",
 };
 
-function Queue({ title, tickets, run, now }: { title: string; tickets: Ticket[]; run: ReturnType<typeof useDo>; now: number }) {
-  return (
-    <>
-      <h2 className="section">{title} <span className="dim mono" style={{ fontSize: 13 }}>{tickets.length}</span></h2>
-      <table className="roomy">
-        <thead>
-          <tr>
-            <th>Team</th>
-            <th>Issue</th>
-            <th>Raised</th>
-            <th>Due</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {tickets.map((t) => {
-            const left = t.dueBy ? t.dueBy - now : null;
-            return (
-              <tr key={t.id}>
-                <td>
-                  <strong>{t.accountName}</strong>
-                  <div className="dim" style={{ fontSize: 11 }}>dispute {t.sequence} this phase</div>
-                </td>
-                <td style={{ textAlign: "left", fontFamily: "var(--sans)", maxWidth: 380 }}>
-                  <span className="label">{CATEGORY[t.category] ?? t.category}</span>
-                  {t.late && <> <Badge tone="flag">Raised late</Badge></>}
-                  {t.platformWide && <> <Badge tone="down">Platform wide</Badge></>}
-                  <div>{t.summary}</div>
-                </td>
-                <td className="dim" style={{ fontFamily: "var(--sans)" }}>{ago(t.raisedAt, now)}</td>
-                <td>
-                  {left === null ? <span className="dim">no target</span> : left <= 0 ? <span className="down">overdue</span> : <span className={left < 120000 ? "down" : ""}>{fmtMinSec(left)}</span>}
-                </td>
-                <td>
-                  <span className="btn-row" style={{ justifyContent: "flex-end", margin: 0 }}>
-                    {!t.platformWide && t.queue === "standard" && (
-                      <ActionButton
-                        label="Mark platform wide"
-                        title="Mark this as a platform-wide issue"
-                        description="Moves it to the expedited queue whatever the team's allowance."
-                        run={() => run(`/api/admin/disputes/${t.id}/triage`, { platformWide: true }, "Marked platform wide")}
-                      />
-                    )}
-                    <ActionButton
-                      className="solid"
-                      label="Resolve"
-                      title="Resolve this dispute"
-                      description="Marks this dispute as resolved."
-                      run={() => run(`/api/admin/disputes/${t.id}/resolve`, {}, "Dispute resolved")}
-                    />
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-          {tickets.length === 0 && (
-            <tr>
-              <td colSpan={5} className="empty">
-                none waiting
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
 export function Disputes() {
   const { data, error, at, reload } = usePoll<Ticket[]>("/api/admin/disputes", 5000);
   const run = useDo(reload);
   const now = useNow(1000);
-  const open = (data ?? []).filter((t) => t.status === "open");
+  const open = (data ?? []).filter((t) => t.status === "open").sort((a, b) => a.dueBy - b.dueBy);
 
   const [fillId, setFillId] = useState("");
   const [note, setNote] = useState("");
@@ -97,8 +29,60 @@ export function Disputes() {
         <h1>Disputes</h1>
       </div>
 
-      <Queue title="Expedited" tickets={open.filter((t) => t.queue === "expedited").sort((a, b) => a.dueBy - b.dueBy)} run={run} now={now} />
-      <Queue title="Standard" tickets={open.filter((t) => t.queue === "standard")} run={run} now={now} />
+      <h2 className="section">
+        Waiting <span className="dim mono" style={{ fontSize: 13 }}>{open.length}</span>
+      </h2>
+      <table className="roomy">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Issue</th>
+            <th>Raised</th>
+            <th>Decide by</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {open.map((t) => {
+            const left = t.dueBy ? t.dueBy - now : null;
+            return (
+              <tr key={t.id}>
+                <td>
+                  <strong>{t.accountName}</strong>
+                </td>
+                <td style={{ textAlign: "left", fontFamily: "var(--sans)", maxWidth: 380 }}>
+                  <span className="label">{CATEGORY[t.category] ?? t.category}</span>
+                  {t.late && (
+                    <>
+                      {" "}
+                      <Badge tone="flag">Raised late</Badge>
+                    </>
+                  )}
+                  <div>{t.summary}</div>
+                </td>
+                <td className="dim" style={{ fontFamily: "var(--sans)" }}>{ago(t.raisedAt, now)}</td>
+                <td>{left === null ? <span className="dim">no target</span> : left <= 0 ? <span className="down">overdue</span> : <span className={left < 120000 ? "down" : ""}>{fmtMinSec(left)}</span>}</td>
+                <td>
+                  <ActionButton
+                    className="solid"
+                    label="Resolve"
+                    title="Resolve this dispute"
+                    description="Marks this dispute as resolved."
+                    run={() => run(`/api/admin/disputes/${t.id}/resolve`, {}, "Dispute resolved")}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+          {open.length === 0 && (
+            <tr>
+              <td colSpan={5} className="empty">
+                none waiting
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
 
       <h2 className="section">Correct a trade</h2>
       <p className="dim" style={{ marginTop: 0 }}>

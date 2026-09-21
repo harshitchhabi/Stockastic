@@ -55,7 +55,6 @@ export function Wallets() {
           <tr>
             <th>Team</th>
             <th>Cash</th>
-            <th>Held back</th>
             <th>In shares</th>
             <th>Net worth</th>
             <th>Positions</th>
@@ -75,7 +74,6 @@ export function Wallets() {
                   {a.locked && <span className="label"> locked</span>}
                 </td>
                 <td>{money(a.cashBalance)}</td>
-                <td>{a.reserved > 0 ? money(a.reserved) : "—"}</td>
                 <td>{money(a.portfolioValue - a.cashBalance)}</td>
                 <td>{money(a.portfolioValue)}</td>
                 <td>{a.positions}</td>
@@ -83,7 +81,7 @@ export function Wallets() {
             ))}
           {data && rows.length === 0 && (
             <tr>
-              <td colSpan={6} className="empty">
+              <td colSpan={5} className="empty">
                 no team matches
               </td>
             </tr>

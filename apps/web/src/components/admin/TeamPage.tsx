@@ -126,14 +126,6 @@ export function TeamPage({ id }: { id: string }) {
           <div className="label">Cash</div>
           <div className="v">{money(w.cash)}</div>
         </div>
-        <div className="figure">
-          <div className="label">Held back for orders</div>
-          <div className="v">{money(w.reserved)}</div>
-        </div>
-        <div className="figure">
-          <div className="label">Free to spend</div>
-          <div className="v">{money(w.available)}</div>
-        </div>
       </div>
 
       <h2 className="section">Wallet</h2>
@@ -161,7 +153,6 @@ export function TeamPage({ id }: { id: string }) {
               disabled={!amountOk}
               label="Apply"
               title={cashMode === "set" ? `Set ${a.displayName}'s cash to ₹${money(amt || 0)}` : `${amt > 0 ? "Add" : "Remove"} ₹${money(Math.abs(amt || 0))} ${amt > 0 ? "to" : "from"} ${a.displayName}`}
-              description="Cash held back for working orders cannot be taken away."
               run={() =>
                 run(`${base}/cash`, cashMode === "set" ? { setTo: amt } : { amount: amt }, `Cash updated for ${a.displayName}`).then(() => setAmount(""))
               }
@@ -214,18 +205,12 @@ export function TeamPage({ id }: { id: string }) {
             danger
             label="Disqualify"
             title={`Disqualify ${a.displayName}`}
-            description="Stops all trading and cancels every working order. You can reinstate the team later, but cancelled orders do not come back."
+            description="Stops all trading for this team. Trades already made stand. You can reinstate the team later."
             run={() => run(`${base}/disqualify`, {}, `${a.displayName} disqualified`)}
           />
         ) : (
           <ActionButton className="solid" label="Reinstate" title={`Reinstate ${a.displayName}`} run={() => run(`${base}/reinstate`, {}, `${a.displayName} reinstated`)} />
         )}
-        <ActionButton
-          label="Cancel all working orders"
-          disabled={data.orders.length === 0}
-          title={`Cancel all ${data.orders.length} working orders of ${a.displayName}`}
-          run={() => run(`${base}/cancel-orders`, {}, "Orders cancelled")}
-        />
         <ActionButton
           label="Sign out"
           title={`Sign ${a.displayName} out`}
@@ -292,46 +277,6 @@ export function TeamPage({ id }: { id: string }) {
         </tbody>
       </table>
 
-      <h2 className="section">Working orders</h2>
-      <table className="roomy">
-        <thead>
-          <tr>
-            <th>Company</th>
-            <th>Side</th>
-            <th>Price</th>
-            <th>Left</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.orders.map((o) => (
-            <tr key={o.id}>
-              <td>
-                <strong>{o.symbol}</strong>
-              </td>
-              <td className={o.side === "buy" ? "up" : "down"}>{o.side}</td>
-              <td>{money(o.price)}</td>
-              <td>{o.remainingQty}</td>
-              <td>
-                <ActionButton
-                  className="ghost"
-                  label="Cancel"
-                  title={`Cancel this ${o.side} order in ${o.symbol}`}
-                  run={() => run(`${base}/cancel-orders`, { orderId: o.id }, "Order cancelled")}
-                />
-              </td>
-            </tr>
-          ))}
-          {data.orders.length === 0 && (
-            <tr>
-              <td colSpan={5} className="empty">
-                nothing working
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
       <h2 className="section">Recent trades</h2>
       <table className="roomy">
         <thead>
@@ -344,23 +289,20 @@ export function TeamPage({ id }: { id: string }) {
           </tr>
         </thead>
         <tbody>
-          {data.fills.slice(0, 30).map((f) => {
-            const mine = f.takerAccountId === id ? f.takerSide : f.takerSide === "buy" ? "sell" : "buy";
-            return (
-              <tr key={f.id + mine}>
-                <td className="dim" style={{ fontFamily: "var(--sans)" }}>
-                  {ago(f.timestamp, now)}
-                </td>
-                <td>
-                  <strong>{f.symbol}</strong>
-                </td>
-                <td className={mine === "buy" ? "up" : "down"}>{mine}</td>
-                <td>{money(f.price)}</td>
-                <td>{f.qty}</td>
-              </tr>
-            );
-          })}
-          {data.fills.length === 0 && (
+          {data.trades.slice(0, 30).map((f) => (
+            <tr key={f.id}>
+              <td className="dim" style={{ fontFamily: "var(--sans)" }}>
+                {ago(f.timestamp, now)}
+              </td>
+              <td>
+                <strong>{f.symbol}</strong>
+              </td>
+              <td className={f.side === "buy" ? "up" : "down"}>{f.side}</td>
+              <td>{money(f.price)}</td>
+              <td>{f.qty}</td>
+            </tr>
+          ))}
+          {data.trades.length === 0 && (
             <tr>
               <td colSpan={5} className="empty">
                 no trades yet

@@ -144,32 +144,6 @@ func MandatoryPool(portfolioValues []money.Paise, mandatoryPercent float64) mone
 	return money.Paise(math.Round(total))
 }
 
-// MandatoryState tracks Sec 9's 5%-minimum enforcement for one team.
-type MandatoryState struct {
-	Warnings              int
-	BelowAtLastCheckpoint bool
-	// PrizeIneligible: lost Prize 2 and Prize 4 eligibility (not disqualified from the event).
-	PrizeIneligible bool
-}
-
-// NextMandatoryState runs at the close of Windows 0-3. Below the minimum at one checkpoint is one
-// formal warning; still below at the immediately following checkpoint removes Prize 2/4 eligibility.
-// (Sec 21 words the escalation more loosely as "a second violation"; Sec 9 is specific to the
-// 5% minimum, so its consecutive-checkpoint wording is used.)
-func NextMandatoryState(prev MandatoryState, compliantNow bool) MandatoryState {
-	if compliantNow {
-		prev.BelowAtLastCheckpoint = false
-		return prev
-	}
-	if prev.BelowAtLastCheckpoint {
-		prev.PrizeIneligible = true
-		return prev
-	}
-	prev.Warnings++
-	prev.BelowAtLastCheckpoint = true
-	return prev
-}
-
 // IsMandatoryCompliant reports whether valueInFunds is at least the mandatory share of the wallet.
 func IsMandatoryCompliant(wallet, valueInFunds money.Paise, mandatoryPercent float64) bool {
 	if wallet <= 0 {

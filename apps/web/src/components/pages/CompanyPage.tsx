@@ -6,8 +6,7 @@ import { useUniverse } from "@/lib/universe";
 import { pagePath } from "@/lib/router";
 import type { Portfolio } from "@/lib/types";
 import { PriceChart, type HistoryPoint } from "../PriceChart";
-import { OrderBookLadder } from "../OrderBookLadder";
-import { OrderTicket } from "../OrderTicket";
+import { TradeTicket } from "../TradeTicket";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Tick } from "../Tick";
 import { Change } from "../Change";
@@ -15,7 +14,7 @@ import { StarButton } from "../StarButton";
 
 const money = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** One company: its price and movement, chart, the day's range, the book, your position, and the ticket. */
+/** One company: its price and movement, chart, the day's range, your position, and the trade ticket. */
 export function CompanyPage({ symbol, tradingFrozen }: { symbol: string; tradingFrozen: boolean }) {
   const { account } = useSession();
   const { bySymbol, loaded } = useUniverse();
@@ -35,10 +34,12 @@ export function CompanyPage({ symbol, tradingFrozen }: { symbol: string; trading
   useEffect(loadPortfolio, [loadPortfolio]);
   useEffect(() => {
     const socket = getSocket();
-    socket.on("fill", loadPortfolio);
+    socket.on("trade", loadPortfolio);
+    socket.on("portfolio", loadPortfolio);
     socket.on("connect", loadPortfolio);
     return () => {
-      socket.off("fill", loadPortfolio);
+      socket.off("trade", loadPortfolio);
+      socket.off("portfolio", loadPortfolio);
       socket.off("connect", loadPortfolio);
     };
   }, [loadPortfolio]);
@@ -139,18 +140,11 @@ export function CompanyPage({ symbol, tradingFrozen }: { symbol: string; trading
               you don’t hold {company?.displayName ?? symbol} yet
             </div>
           )}
-
-          <h2 className="section">Order book</h2>
-          <div className="book-box">
-            <ErrorBoundary name="Order book">
-              <OrderBookLadder symbol={symbol} />
-            </ErrorBoundary>
-          </div>
         </div>
 
         <aside className="company-side">
-          <ErrorBoundary name="Order ticket">
-            <OrderTicket symbol={symbol} tradingFrozen={tradingFrozen} />
+          <ErrorBoundary name="Trade ticket">
+            <TradeTicket symbol={symbol} tradingFrozen={tradingFrozen} onTraded={loadPortfolio} />
           </ErrorBoundary>
         </aside>
       </div>

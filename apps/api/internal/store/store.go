@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"stockastic/api/internal/engine"
+	"stockastic/api/internal/trading"
 )
 
 // ErrLocked means another process already has this log open. Two servers writing one log would corrupt
@@ -30,7 +30,7 @@ var ErrLocked = errors.New("store: the data log is already in use by another run
 // Record kinds.
 const (
 	KindUser     = "user"
-	KindBatch    = "batch"
+	KindTrade    = "trade"
 	KindAudit    = "audit"
 	KindClock    = "clock"
 	KindNews     = "news"
@@ -39,6 +39,10 @@ const (
 	KindCash     = "cash"
 	KindAnnounce = "announce"
 	KindPause    = "pause"
+	KindPrices   = "prices"
+	KindSnapshot = "snapshot"
+	KindMove     = "move"
+	KindFund     = "fund" // a fund event: formation, profile, allocation, redemption, checkpoint, strategy log
 )
 
 // Log is an append-only, replayable record of everything durable.
@@ -268,16 +272,61 @@ func (m *MemLog) Replay(fn func(string, json.RawMessage) error) error {
 
 func (m *MemLog) Close() error { return nil }
 
-// Journal adapts a Log to engine.Journal: a matching step is acknowledged only once it is durable.
+// ErrDiskLow is returned instead of writing when the disk is nearly full. Refusing early keeps the log
+// intact: a write that fails halfway on a full disk is what corrupts a log.
+var ErrDiskLow = errors.New("store: not enough free disk space, so nothing new is being saved")
+
+// DiskGuard watches the free space on the volume holding the log.
+type DiskGuard struct {
+	Dir     string
+	MinFree uint64 // refuse writes below this many bytes free; 0 turns the guard off
+
+	mu   sync.Mutex
+	at   time.Time
+	free uint64
+	ok   bool
+}
+
+// Free is the free space, looked up at most every two seconds.
+func (g *DiskGuard) Free() (uint64, bool) {
+	if g == nil {
+		return 0, false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if time.Since(g.at) > 2*time.Second {
+		f, err := FreeBytes(g.Dir)
+		g.free, g.ok, g.at = f, err == nil, time.Now()
+	}
+	return g.free, g.ok
+}
+
+// Check returns ErrDiskLow if free space is below the minimum. If the space cannot be read it does not block.
+func (g *DiskGuard) Check() error {
+	if g == nil || g.MinFree == 0 {
+		return nil
+	}
+	if free, ok := g.Free(); ok && free < g.MinFree {
+		return ErrDiskLow
+	}
+	return nil
+}
+
+// Journal adapts a Log to trading.Journal: a trade is confirmed only once it is durable.
 type Journal struct {
 	Log Log
+	// Guard, if set, refuses to write when the disk is nearly full.
+	Guard *DiskGuard
 	// Observe, if set, is told how long each commit took and whether it failed (for the health page).
 	Observe func(d time.Duration, err error)
 }
 
-func (j Journal) Commit(_ context.Context, b engine.Batch) error {
+func (j Journal) Commit(_ context.Context, t trading.Trade) error {
 	start := time.Now()
-	err := j.Log.Append(KindBatch, b)
+	err := j.Guard.Check()
+	if err == nil {
+		err = j.Log.Append(KindTrade, t)
+	}
 	if j.Observe != nil {
 		j.Observe(time.Since(start), err)
 	}

@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -12,12 +10,13 @@ import (
 
 	"stockastic/api/internal/disputes"
 	"stockastic/api/internal/dto"
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/ids"
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/news"
 	"stockastic/api/internal/rulebook"
+	"stockastic/api/internal/sim"
 	"stockastic/api/internal/store"
+	"stockastic/api/internal/trading"
 )
 
 // ---- audit ----
@@ -140,11 +139,6 @@ func (a *App) SetFrozen(actor User, reason string, frozen bool) error {
 	}
 	return a.Do(actor, action, "all symbols", reason, func() error {
 		a.Clock.SetFrozen(frozen)
-		if frozen {
-			a.Engine.Freeze()
-		} else {
-			a.Engine.Unfreeze()
-		}
 		a.persistClock()
 		a.broadcastControl()
 		return nil
@@ -181,53 +175,6 @@ func overrideName(o *bool) string {
 	return "closed"
 }
 
-// ---- state rebuilt from the log (used to resume a stopped symbol) ----
-
-func (a *App) ordersFromLog(symbol string) ([]engine.Order, error) {
-	orders := map[string]engine.Order{}
-	err := a.wal.Replay(func(kind string, raw json.RawMessage) error {
-		if kind != store.KindBatch {
-			return nil
-		}
-		var b engine.Batch
-		if err := json.Unmarshal(raw, &b); err != nil {
-			return err
-		}
-		if b.Symbol != symbol {
-			return nil
-		}
-		orders[b.Order.ID] = b.Order
-		for _, m := range b.Makers {
-			orders[m.ID] = m
-		}
-		return nil
-	})
-	out := make([]engine.Order, 0, len(orders))
-	for _, o := range orders {
-		out = append(out, o)
-	}
-	return out, err
-}
-
-func (a *App) ResumeSymbol(ctx context.Context, actor User, reason, symbol string) error {
-	if !a.HasSymbol(symbol) {
-		return engine.ErrUnknownSymbol
-	}
-	return a.Do(actor, "Resumed a symbol", symbol, reason, func() error {
-		orders, err := a.ordersFromLog(symbol)
-		if err != nil {
-			return err
-		}
-		if err := a.Engine.Resume(ctx, symbol, orders); err != nil {
-			return err
-		}
-		a.haltMu.Lock()
-		delete(a.haltSince, symbol)
-		a.haltMu.Unlock()
-		return nil
-	})
-}
-
 // ---- accounts ----
 
 type AdminAccount struct {
@@ -240,7 +187,6 @@ type AdminAccount struct {
 	Warnings       int     `json:"warnings"`
 	CashBalance    float64 `json:"cashBalance"`
 	PortfolioValue float64 `json:"portfolioValue"`
-	Reserved       float64 `json:"reserved"`
 	Positions      int     `json:"positions"`
 	Locked         bool    `json:"locked"`
 	Online         bool    `json:"online"`
@@ -251,6 +197,7 @@ type AdminAccount struct {
 func (a *App) AdminAccounts() []AdminAccount {
 	users := a.users.all()
 	out := make([]AdminAccount, 0, len(users))
+	navs := a.navs()
 	for _, u := range users {
 		if u.IsAdmin {
 			continue
@@ -261,12 +208,9 @@ func (a *App) AdminAccounts() []AdminAccount {
 		row.Online, row.LastSeen = a.presenceOf(u.ID)
 		if snap, err := a.Ledger.Snapshot(u.ID); err == nil {
 			row.CashBalance = dto.Rupees(snap.Cash)
-			row.Reserved = dto.Rupees(snap.ReservedCash)
 			row.Positions = len(snap.Positions)
 		}
-		if v, err := a.Ledger.DirectValue(u.ID, a.Market.Traded); err == nil {
-			row.PortfolioValue = dto.Rupees(v)
-		}
+		row.PortfolioValue = dto.Rupees(a.totalValue(u.ID, navs))
 		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PortfolioValue > out[j].PortfolioValue })
@@ -301,23 +245,15 @@ func (a *App) Warn(actor User, reason, id string) error {
 	})
 }
 
-// Disqualify removes a team from trading and cancels every order it has resting in a book.
-func (a *App) Disqualify(ctx context.Context, actor User, reason, id string) error {
+// Disqualify removes a team from trading. Its trades so far stand (trades are final).
+func (a *App) Disqualify(actor User, reason, id string) error {
 	u, ok := a.users.get(id)
 	if !ok {
 		return ErrUnknownUser
 	}
 	return a.Do(actor, "Disqualified", u.DisplayName, reason, func() error {
-		if _, err := a.updateUser(id, func(x *User) error { x.Status = StatusDisqualified; return nil }); err != nil {
-			return err
-		}
-		var firstErr error
-		for _, o := range a.LiveOrders(id) {
-			if _, err := a.Engine.Cancel(ctx, o.Symbol, o.ID, id); err != nil && !errors.Is(err, engine.ErrAlreadyClosed) && firstErr == nil {
-				firstErr = err
-			}
-		}
-		return firstErr
+		_, err := a.updateUser(id, func(x *User) error { x.Status = StatusDisqualified; return nil })
+		return err
 	})
 }
 
@@ -380,7 +316,7 @@ func (a *App) PublishNews(actor User, reason, kind, headline, body string) error
 
 // ---- disputes ----
 
-// TicketRec is a dispute as stored: the tracker's ticket plus who raised it and how it ended.
+// TicketRec is a dispute as stored: the ticket plus who raised it and how it ended.
 type TicketRec struct {
 	Ticket      disputes.Ticket
 	AccountName string
@@ -388,67 +324,50 @@ type TicketRec struct {
 	Resolution  string
 }
 
-func (a *App) ticketList() []disputes.Ticket {
-	a.ticketMu.Lock()
-	defer a.ticketMu.Unlock()
-	out := make([]disputes.Ticket, 0, len(a.tickets))
-	for _, t := range a.tickets {
-		out = append(out, t.Ticket)
-	}
-	return out
-}
-
 func (a *App) saveTicket(t *TicketRec) error { return a.wal.Append(store.KindTicket, t) }
 
-// RaiseDispute lets a team file a dispute; the tracker decides which queue it goes to.
+// RaiseDispute lets a team file a dispute (Section 22). It is never refused for being late.
 func (a *App) RaiseDispute(u User, category, summary string, incidentAt time.Time) (TicketRec, error) {
 	summary = strings.TrimSpace(summary)
 	if n := len([]rune(summary)); n < 10 || n > 1000 {
 		return TicketRec{}, bad("invalid_summary", "Describe the issue in 10 to 1000 characters.")
 	}
 	cat := disputes.Category(category)
-	switch cat {
-	case disputes.CategoryIncorrectTransaction, disputes.CategoryMissedAnnouncement, disputes.CategoryFundAllocation,
-		disputes.CategoryNewsTiming, disputes.CategoryRuleViolation, disputes.CategoryFinalSettlement, disputes.CategoryOther:
-	default:
+	if !cat.Valid() {
 		return TicketRec{}, bad("invalid_category", "Unknown dispute category.")
 	}
 	now := a.now()
 	if incidentAt.IsZero() || incidentAt.After(now) {
 		incidentAt = now
 	}
-	tk := a.Disputes.Raise(u.ID, disputes.PhaseOf(a.stage()), cat, summary, incidentAt, now)
-	rec := &TicketRec{Ticket: tk, AccountName: u.DisplayName, Status: "open"}
+	rec := &TicketRec{Ticket: a.Dispute.Raise(u.ID, cat, summary, incidentAt, now), AccountName: u.DisplayName, Status: "open"}
 	if err := a.saveTicket(rec); err != nil {
 		return TicketRec{}, err
 	}
 	a.ticketMu.Lock()
-	a.tickets[tk.ID] = rec
+	a.tickets[rec.Ticket.ID] = rec
 	a.ticketMu.Unlock()
 	return *rec, nil
 }
 
 type AdminTicket struct {
-	ID           string `json:"id"`
-	AccountName  string `json:"accountName"`
-	Category     string `json:"category"`
-	Summary      string `json:"summary"`
-	Sequence     int    `json:"sequence"`
-	Queue        string `json:"queue"`
-	RaisedAt     int64  `json:"raisedAt"`
-	IncidentAt   int64  `json:"incidentAt"`
-	Late         bool   `json:"late"`
-	DueBy        int64  `json:"dueBy"`
-	PlatformWide bool   `json:"platformWide"`
-	Status       string `json:"status"`
-	Resolution   string `json:"resolution,omitempty"`
+	ID          string `json:"id"`
+	AccountName string `json:"accountName"`
+	Category    string `json:"category"`
+	Summary     string `json:"summary"`
+	RaisedAt    int64  `json:"raisedAt"`
+	IncidentAt  int64  `json:"incidentAt"`
+	Late        bool   `json:"late"`
+	DueBy       int64  `json:"dueBy"`
+	Status      string `json:"status"`
+	Resolution  string `json:"resolution,omitempty"`
 }
 
 func adminTicket(r *TicketRec) AdminTicket {
 	t := r.Ticket
-	return AdminTicket{ID: t.ID, AccountName: r.AccountName, Category: string(t.Category), Summary: t.Summary, Sequence: t.Sequence,
-		Queue: string(t.Queue), RaisedAt: dto.MS(t.RaisedAt), IncidentAt: dto.MS(t.IncidentAt), Late: t.Late,
-		DueBy: dto.MS(t.DueBy), PlatformWide: t.PlatformWide, Status: r.Status, Resolution: r.Resolution}
+	return AdminTicket{ID: t.ID, AccountName: r.AccountName, Category: string(t.Category), Summary: t.Summary,
+		RaisedAt: dto.MS(t.RaisedAt), IncidentAt: dto.MS(t.IncidentAt), Late: t.Late, DueBy: dto.MS(t.DueBy),
+		Status: r.Status, Resolution: r.Resolution}
 }
 
 func (a *App) AdminTickets() []AdminTicket {
@@ -463,42 +382,19 @@ func (a *App) AdminTickets() []AdminTicket {
 }
 
 func (a *App) TicketsOf(accountID string) []AdminTicket {
+	a.ticketMu.Lock()
+	defer a.ticketMu.Unlock()
 	var out []AdminTicket
-	for _, t := range a.AdminTickets() {
-		a.ticketMu.Lock()
-		rec := a.tickets[t.ID]
-		mine := rec != nil && rec.Ticket.Account == accountID
-		a.ticketMu.Unlock()
-		if mine {
-			out = append(out, t)
+	for _, t := range a.tickets {
+		if t.Ticket.Account == accountID {
+			out = append(out, adminTicket(t))
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].RaisedAt > out[j].RaisedAt })
 	return out
 }
 
 var ErrUnknownTicket = errors.New("unknown_ticket")
-
-func (a *App) TriageTicket(actor User, reason, id string, platformWide bool) error {
-	return a.Do(actor, "Marked a dispute platform wide", id, reason, func() error {
-		a.ticketMu.Lock()
-		defer a.ticketMu.Unlock()
-		rec := a.tickets[id]
-		if rec == nil {
-			return ErrUnknownTicket
-		}
-		tk, err := a.Disputes.Triage(id, platformWide)
-		if err != nil {
-			return err
-		}
-		next := *rec
-		next.Ticket = tk
-		if err := a.saveTicket(&next); err != nil {
-			return err
-		}
-		*rec = next
-		return nil
-	})
-}
 
 func (a *App) ResolveTicket(actor User, reason, id string) error {
 	return a.Do(actor, "Resolved a dispute", id, reason, func() error {
@@ -606,12 +502,6 @@ func (a *App) Overview() Overview {
 	return o
 }
 
-type Halted struct {
-	Symbol string `json:"symbol"`
-	Since  int64  `json:"since"`
-	Reason string `json:"reason"`
-}
-
 type ErrorRow struct {
 	At      int64  `json:"at"`
 	Message string `json:"message"`
@@ -621,44 +511,50 @@ type Systems struct {
 	UptimeSec     int64      `json:"uptimeSec"`
 	DBOK          bool       `json:"dbOk"`
 	Connected     int        `json:"connected"`
-	OpenOrders    int        `json:"openOrders"`
-	OrdersPerMin  int64      `json:"ordersPerMin"`
 	TradesPerMin  int64      `json:"tradesPerMin"`
 	CommitP50Ms   int64      `json:"commitP50Ms"`
 	CommitP99Ms   int64      `json:"commitP99Ms"`
 	JournalErrors int64      `json:"journalErrors"`
 	SymbolsTotal  int        `json:"symbolsTotal"`
-	Halted        []Halted   `json:"halted"`
+	PriceTicks    int        `json:"priceTicks"`
+	TickSeconds   int        `json:"tickSeconds"`
+	LastPriceAt   int64      `json:"lastPriceAt"`
+	DiskFreeMB    int64      `json:"diskFreeMb"`
+	DiskLow       bool       `json:"diskLow"`
 	RecentErrors  []ErrorRow `json:"recentErrors"`
 }
 
 func (a *App) Systems() Systems {
 	now := a.now()
 	p50, p99 := a.commits.Percentiles()
+	st := a.Sim.Status()
 	s := Systems{
-		UptimeSec: int64(now.Sub(a.started).Seconds()), DBOK: true, Connected: a.Hub.Count(), OpenOrders: a.openOrderCount(),
-		OrdersPerMin: a.ordersPM.Sum(now), TradesPerMin: a.tradesPM.Sum(now),
-		CommitP50Ms: p50.Milliseconds(), CommitP99Ms: p99.Milliseconds(), JournalErrors: a.journalErrors.Load(),
-		SymbolsTotal: len(a.symbols), Halted: []Halted{}, RecentErrors: []ErrorRow{},
+		UptimeSec: int64(now.Sub(a.started).Seconds()), DBOK: true, Connected: a.Hub.Count(),
+		TradesPerMin: a.tradesPM.Sum(now), CommitP50Ms: p50.Milliseconds(), CommitP99Ms: p99.Milliseconds(),
+		JournalErrors: a.journalErrors.Load(), SymbolsTotal: len(a.symbols), PriceTicks: st.Ticks, TickSeconds: st.TickSeconds,
+		LastPriceAt: a.lastTick.Load(), RecentErrors: []ErrorRow{},
 	}
-	a.haltMu.Lock()
-	for _, sym := range a.symbols {
-		if a.Engine.Halted(sym) {
-			since, ok := a.haltSince[sym]
-			if !ok {
-				since = now
-				a.haltSince[sym] = now
-			}
-			s.Halted = append(s.Halted, Halted{Symbol: sym, Since: dto.MS(since), Reason: "matching fault, recovered automatically; see the server log"})
-		} else {
-			delete(a.haltSince, sym)
-		}
+	if free, ok := a.cfg.Disk.Free(); ok {
+		s.DiskFreeMB = int64(free >> 20)
+		s.DiskLow = a.cfg.Disk.Check() != nil
 	}
-	a.haltMu.Unlock()
 	for _, e := range a.errs.recent(20) {
 		s.RecentErrors = append(s.RecentErrors, ErrorRow{At: dto.MS(e.At), Message: e.Message})
 	}
 	return s
+}
+
+// SimStatus is what the price simulation is doing and which events are scheduled.
+func (a *App) SimStatus() sim.Status { return a.Sim.Status() }
+
+// FireSimEvent releases a scheduled market event (or bull/bear run) right now.
+func (a *App) FireSimEvent(actor User, reason, id string) error {
+	return a.Do(actor, "Released a market event early", id, reason, func() error {
+		if err := a.Sim.FireEvent(id, a.now()); err != nil {
+			return bad("cannot_release", err.Error())
+		}
+		return nil
+	})
 }
 
 type ProvenanceRow struct {
@@ -699,7 +595,7 @@ type Grant struct {
 // teams were credited.
 func (a *App) GrantShares(actor User, reason, accountID, symbol string, qty int64, priceRupees float64) (int, error) {
 	if !a.HasSymbol(symbol) {
-		return 0, engine.ErrUnknownSymbol
+		return 0, trading.ErrUnknownSymbol
 	}
 	if qty < 1 || qty > maxQty {
 		return 0, bad("invalid_quantity", "Quantity must be a whole number of at least 1.")
@@ -781,3 +677,6 @@ func (a *App) PublicSchedule() ([]rulebook.PublicBlock, int) {
 	}
 	return out, int(math.Round(total.Minutes()))
 }
+
+// DiskLow reports whether the disk is too full to keep accepting trades.
+func (a *App) DiskLow() bool { return a.cfg.Disk.Check() != nil }

@@ -19,6 +19,7 @@ import (
 
 	"stockastic/api/internal/disputes"
 	"stockastic/api/internal/eventclock"
+	"stockastic/api/internal/funds"
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/news"
 	"stockastic/api/internal/ratelimit"
@@ -79,14 +80,16 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 			sub(m, "fees")["managementFeePercent"] = 2.0
 			sub(m, "fees")["performanceFeePercent"] = 10.0
 		})
-		t0 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
-		_, fee := scoring.ManagementFee([]scoring.AumSample{{At: t0, AUM: money.FromRupees(1_000_000)}}, t0, t0.Add(time.Minute), rb.Fees.ManagementFeePercent, 1)
-		if fee != money.FromRupees(20_000) {
-			t.Errorf("management fee = %v, want 20,000 at 2%%", fee)
+		book := funds.NewBook(rb.Fund.LaunchNav)
+		_ = book.Apply(funds.Event{Op: funds.OpFormed, Funds: []funds.Formed{{ID: "F1", Number: 1, Account: "fund:F1"}}})
+		_ = book.Apply(funds.Event{Op: funds.OpAlloc, FundID: "F1", Investor: "x", Amount: 100_000_000, Units: 1000})
+		_ = book.Apply(funds.Event{Op: funds.OpSeries, AUMs: map[string]int64{"F1": 100_000_000}})
+		cp := book.PlanCheckpoint("w0", 0, map[string]float64{"F1": 110}, map[string]int64{"F1": 100_000_000}, rb.Fees.ManagementFeePercent, rb.Fees.PerformanceFeePercent)
+		if fee := cp.Funds[0].MgmtFee; fee != int64(money.FromRupees(20_000)) {
+			t.Errorf("management fee = %v paise, want 20,000 rupees at 2%% of an AUM of 10 lakh", fee)
 		}
-		_, perf := scoring.FinalPerformanceFee(100, 110, 1000, rb.Fees.PerformanceFeePercent, 1)
-		if perf != money.FromRupees(1000) {
-			t.Errorf("performance fee = %v, want 1,000 at 10%% of a 10 gain on 1000 units", perf)
+		if perf := cp.Funds[0].PerfFee; perf != int64(money.FromRupees(1000)) {
+			t.Errorf("performance fee = %v paise, want 1,000 rupees at 10%% of a 10 gain on 1000 units", perf)
 		}
 	})
 
@@ -131,22 +134,19 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		}
 	})
 
-	t.Run("news lead and dispute limits", func(t *testing.T) {
+	t.Run("news lead and dispute times", func(t *testing.T) {
 		rb := mustEdit(t, func(m map[string]any) {
 			sub(m, "news")["fundManagerLeadSeconds"] = 90
-			sub(m, "disputes")["expeditedPerPhase"] = 5
+			sub(m, "disputes")["decisionTargetMinutes"] = 30
 		})
 		if rb.News.Lead() != 90*time.Second {
 			t.Errorf("lead = %v", rb.News.Lead())
 		}
 		_ = news.Config{Lead: rb.News.Lead()}
-		tr := disputes.New(disputes.FromRulebook(rb.Disputes))
-		var q disputes.Queue
-		for i := 0; i < 5; i++ {
-			q = tr.Raise("a", disputes.Phase2, disputes.CategoryOther, "", time.Time{}, time.Now()).Queue
-		}
-		if q != disputes.QueueExpedited || tr.Raise("a", disputes.Phase2, disputes.CategoryOther, "", time.Time{}, time.Now()).Queue != disputes.QueueStandard {
-			t.Error("5 expedited then standard")
+		now := time.Now()
+		tk := disputes.FromRulebook(rb.Disputes).Raise("a", disputes.CategoryOther, "", time.Time{}, now)
+		if !tk.DueBy.Equal(now.Add(30 * time.Minute)) {
+			t.Errorf("DueBy = %v, want 30 minutes after it was raised", tk.DueBy)
 		}
 	})
 

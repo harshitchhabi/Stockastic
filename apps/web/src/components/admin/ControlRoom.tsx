@@ -199,7 +199,7 @@ export function ControlRoom() {
         <div className="switch killswitch">
           <div>
             <div className="label">Kill switch</div>
-            <div className="dim">{control.tradingFrozen ? "All order entry is stopped." : "Stops all order entry immediately, including orders already queued."}</div>
+            <div className="dim">{control.tradingFrozen ? "All trading is stopped." : "Stops all trading immediately."}</div>
           </div>
           <ActionButton
             className={control.tradingFrozen ? "solid" : "solid danger"}
@@ -208,8 +208,8 @@ export function ControlRoom() {
             title={control.tradingFrozen ? "Resume trading" : "Freeze all trading"}
             description={
               control.tradingFrozen
-                ? "Order entry opens again, subject to the schedule and your other overrides."
-                : "Every participant's order entry stops at once. Use it for a fault or a ruling. It is recorded against your name."
+                ? "Trading opens again, subject to the schedule and your other overrides."
+                : "Every participant's trading stops at once. Use it for a fault or a ruling. It is recorded against your name."
             }
             run={() =>
               run("/api/admin/control/freeze", { frozen: !control.tradingFrozen }, control.tradingFrozen ? "Trading resumed" : "Trading frozen")
@@ -250,7 +250,7 @@ export function ControlRoom() {
 
       <h2 className="section">Pause one company</h2>
       <p className="dim" style={{ marginTop: 0 }}>
-        Stops new orders in a single company while everything else keeps trading. Orders already in its book stay there and can still be cancelled.
+        Stops trading in a single company while everything else keeps trading.
       </p>
       <div className="row-field" style={{ maxWidth: 520 }}>
         <select value={pauseSym} onChange={(e) => setPauseSym(e.target.value)} aria-label="Company to pause">

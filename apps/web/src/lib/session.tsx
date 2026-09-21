@@ -73,9 +73,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAccount(null);
   }, []);
 
+  // A refresh after a trade or a role change must never sign anyone out because of a hiccup: only a 401
+  // does that (the api client handles it), so any other failure just keeps what is on screen.
   const refresh = useCallback(async () => {
-    await loadMe();
-  }, [loadMe]);
+    try {
+      setAccount(await api.get<Account>("/api/auth/me"));
+    } catch {
+      /* keep the current account */
+    }
+  }, []);
 
   return (
     <SessionContext.Provider value={{ account, loading, signup, login, logout, refresh }}>

@@ -24,8 +24,12 @@ type Config struct {
 	AllowedOrigins []string
 	RulebookPath   string
 	UniversePath   string
-	Autostart      bool
-	LogLevel       string
+	// ScenarioPath is the price simulation scenario (volatility, market events, bull and bear runs).
+	ScenarioPath string
+	// DiskMinFreeMB stops new trades being accepted when free disk space falls below it.
+	DiskMinFreeMB int
+	Autostart     bool
+	LogLevel      string
 	// WebDir, if set, serves the built web app from disk instead of the copy embedded in the binary.
 	WebDir string
 }
@@ -89,6 +93,7 @@ func FromEnv() (Config, error) {
 		AdminName:     get("ADMIN_NAME", "Organiser"),
 		RulebookPath:  get("RULEBOOK_PATH", ""),
 		UniversePath:  get("UNIVERSE_PATH", ""),
+		ScenarioPath:  get("SCENARIO_PATH", ""),
 		LogLevel:      get("LOG_LEVEL", "info"),
 		WebDir:        get("WEB_DIR", ""),
 	}
@@ -109,6 +114,10 @@ func FromEnv() (Config, error) {
 		return c, errors.New("config: TOKEN_TTL_HOURS must be a whole number from 1 to 72")
 	}
 	c.TokenTTL = time.Duration(hours) * time.Hour
+	c.DiskMinFreeMB, err = strconv.Atoi(get("DISK_MIN_FREE_MB", "200"))
+	if err != nil || c.DiskMinFreeMB < 0 || c.DiskMinFreeMB > 100000 {
+		return c, errors.New("config: DISK_MIN_FREE_MB must be a whole number of megabytes from 0 to 100000")
+	}
 	if len(c.JWTSecret) < 32 {
 		return c, errors.New("config: JWT_SECRET is required and must be at least 32 characters")
 	}

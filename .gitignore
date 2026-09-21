@@ -19,3 +19,7 @@ Live_Financial_Ecosystem_Rulebook_v1.1.pdf
 # Runtime data (the durable log) and local secrets
 apps/api/data/
 *.wal
+
+# The organisers' rulebook and master data are kept out of the repository
+Live Financial Ecosystem*.docx
+Stockastic_Master*.xlsx

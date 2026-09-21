@@ -1,6 +1,6 @@
-// Package app is the platform core. It owns every component (matching engine, ledger, event clock, news,
-// rate limiter, disputes, price tracker, WebSocket hub, durable log) and is the only place they are
-// wired together, so the HTTP layer stays a thin translation of requests into calls on App.
+// Package app is the platform core. It owns every component (trade executor, ledger, event clock, news,
+// price simulation, rate limiter, WebSocket hub, durable log) and is the only place they are wired
+// together, so the HTTP layer stays a thin translation of requests into calls on App.
 package app
 
 import (
@@ -17,15 +17,17 @@ import (
 	"stockastic/api/internal/auth"
 	"stockastic/api/internal/disputes"
 	"stockastic/api/internal/dto"
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/eventclock"
+	"stockastic/api/internal/funds"
 	"stockastic/api/internal/ledger"
 	"stockastic/api/internal/market"
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/news"
 	"stockastic/api/internal/ratelimit"
 	"stockastic/api/internal/rulebook"
+	"stockastic/api/internal/sim"
 	"stockastic/api/internal/store"
+	"stockastic/api/internal/trading"
 	"stockastic/api/internal/universe"
 	"stockastic/api/internal/wsapi"
 )
@@ -35,12 +37,15 @@ type Config struct {
 	Log            *slog.Logger
 	WAL            store.Log
 	Universe       []universe.Company
+	Scenario       sim.Scenario
 	Signer         *auth.Signer
 	AllowSignup    bool
 	AllowedOrigins []string
 	// Autostart starts the event clock on boot if it has never been started (development only).
 	Autostart bool
-	Now       func() time.Time
+	// Disk, if set, refuses new trades while the disk is nearly full and is reported on the Systems page.
+	Disk *store.DiskGuard
+	Now  func() time.Time
 }
 
 type App struct {
@@ -50,25 +55,23 @@ type App struct {
 	wal store.Log
 	now func() time.Time
 
-	Engine   *engine.Engine
-	Ledger   *ledger.Ledger
-	Clock    *eventclock.Clock
-	News     *news.Dispatcher
-	Limiter  *ratelimit.Limiter
-	Disputes *disputes.Tracker
-	Market   *market.Tracker
-	Hub      *wsapi.Hub
-	Signer   *auth.Signer
+	Exec    *trading.Executor
+	Ledger  *ledger.Ledger
+	Clock   *eventclock.Clock
+	News    *news.Dispatcher
+	Limiter *ratelimit.Limiter
+	Dispute disputes.Config
+	Market  *market.Prices
+	Sim     *sim.Engine
+	Funds   *funds.Book
+	Hub     *wsapi.Hub
+	Signer  *auth.Signer
 
 	users     *userStore
 	companies map[string]universe.Company
 	symbols   []string
 	started   time.Time
 	dummyHash string
-
-	// live indexes every working order by account, kept current from committed matching steps.
-	liveMu sync.RWMutex
-	live   map[string]map[string]engine.Order
 
 	auditMu sync.Mutex
 	audit   []AuditEntry
@@ -79,17 +82,13 @@ type App struct {
 	// persistMu serialises writes of the event clock's state so an older snapshot cannot overwrite a newer one.
 	persistMu sync.Mutex
 
-	ordersPM, tradesPM perMinute
-	commits            *durations
-	journalErrors      atomic.Int64
-	errs               *errRing
-
-	haltMu    sync.Mutex
-	haltSince map[string]time.Time
-
-	// recentFills keeps each team's latest trades for the organiser's team page.
-	fillMu      sync.Mutex
-	recentFills map[string][]engine.Fill
+	// per-team records kept for the organiser: recent trades, Phase 1 trade counts and peak portfolio value
+	// (the qualification tie-breaks), and the frozen results taken at each freeze block.
+	statMu    sync.Mutex
+	recent    map[string][]trading.Trade
+	p1Trades  map[string]int
+	peaks     map[string]money.Paise
+	snapshots map[string]FreezeSnapshot
 
 	annMu         sync.Mutex
 	announcements []Announcement
@@ -97,18 +96,28 @@ type App struct {
 	pauseMu sync.RWMutex
 	paused  map[string]bool
 
+	// fundMu serialises fund operations (allocations, redemptions, checkpoints) so units and NAV stay consistent.
+	fundMu sync.Mutex
+
 	presMu sync.Mutex
 	pres   map[string]presence
+
+	tradesPM      perMinute
+	commits       *durations
+	journalErrors atomic.Int64
+	lastTick      atomic.Int64
+	errs          *errRing
 
 	lbMu    sync.Mutex
 	lbAt    time.Time
 	lbCache []dto.LeaderRow
 
+	simState  *sim.State
 	cancelRun context.CancelFunc
 	runDone   chan struct{}
 }
 
-// New builds the platform and rebuilds its state from the durable log. It does not start matching.
+// New builds the platform and rebuilds its state from the durable log. It does not start the clocks.
 func New(cfg Config) (*App, error) {
 	if cfg.Rulebook == nil || cfg.WAL == nil || cfg.Signer == nil {
 		return nil, errors.New("app: Rulebook, WAL and Signer are required")
@@ -122,9 +131,9 @@ func New(cfg Config) (*App, error) {
 	a := &App{
 		cfg: cfg, RB: cfg.Rulebook, wal: cfg.WAL, now: cfg.Now, Signer: cfg.Signer,
 		users: newUserStore(), companies: map[string]universe.Company{}, started: cfg.Now(),
-		live: map[string]map[string]engine.Order{}, tickets: map[string]*TicketRec{},
-		commits: newDurations(1000), errs: &errRing{}, haltSince: map[string]time.Time{},
-		recentFills: map[string][]engine.Fill{}, paused: map[string]bool{}, pres: map[string]presence{},
+		tickets: map[string]*TicketRec{}, commits: newDurations(1000), errs: &errRing{},
+		recent: map[string][]trading.Trade{}, p1Trades: map[string]int{}, peaks: map[string]money.Paise{},
+		snapshots: map[string]FreezeSnapshot{}, paused: map[string]bool{}, pres: map[string]presence{},
 	}
 	base := cfg.Log
 	if base == nil {
@@ -144,19 +153,18 @@ func New(cfg Config) (*App, error) {
 
 	a.Limiter = ratelimit.FromRulebook(a.RB.RateLimits)
 	a.Ledger = ledger.New(a.log)
+	a.Funds = funds.NewBook(a.RB.Fund.LaunchNav)
 	a.Market = market.New(cfg.Universe, cfg.Now())
 	a.Clock = eventclock.New(a.RB, cfg.Now, a.log)
-	a.Disputes = disputes.New(disputes.FromRulebook(a.RB.Disputes))
+	a.Dispute = disputes.FromRulebook(a.RB.Disputes)
 	a.News = news.New(news.Config{Lead: a.RB.News.Lead(), Now: cfg.Now, Stage: a.stage, Log: a.log})
 	a.Hub = wsapi.New(a.log, a.wsAuth, cfg.AllowedOrigins, a.onWSReady)
 	a.Hub.OnPresence(a.onPresence)
+	a.Exec = trading.New(a.Ledger, a.Market, store.Journal{Log: a.wal, Guard: cfg.Disk, Observe: a.observeCommit}, cfg.Now)
 
-	a.Engine, err = engine.New(engine.Config{
-		Symbols: a.symbols,
-		Journal: store.Journal{Log: a.wal, Observe: a.observeCommit},
-		Sink:    sink{a},
-		Prices:  a.Market,
-		Log:     a.log,
+	a.Sim, err = sim.New(cfg.Scenario, sim.Deps{
+		Prices: a.Market, Companies: cfg.Universe, Clock: clockView{a}, News: a.News, Lead: a.newsLead,
+		Save: a.saveSim, OnPrices: a.onPrices, Log: a.log,
 	})
 	if err != nil {
 		return nil, err
@@ -168,6 +176,40 @@ func New(cfg Config) (*App, error) {
 	a.News.Subscribe(a.onNews)
 	a.Clock.OnTransition(a.onTransition)
 	return a, nil
+}
+
+// CompactRules say which log records a newer one replaces, so the log can be tidied at every start without
+// losing anything: only superseded copies of accounts, clock state, news, disputes, company pauses and old
+// price records are dropped. Trades, grants, cash changes, announcements, snapshots and the audit log are
+// always kept in full.
+func CompactRules() map[string]store.Rule {
+	field := func(path ...string) func(json.RawMessage) string {
+		return func(raw json.RawMessage) string {
+			var m map[string]any
+			if json.Unmarshal(raw, &m) != nil {
+				return ""
+			}
+			var cur any = m
+			for _, p := range path {
+				mm, ok := cur.(map[string]any)
+				if !ok {
+					return ""
+				}
+				cur = mm[p]
+			}
+			s, _ := cur.(string)
+			return s
+		}
+	}
+	return map[string]store.Rule{
+		store.KindUser:   {Latest: 1, Key: field("ID")},
+		store.KindClock:  {Latest: 1},
+		store.KindNews:   {Latest: 1, Key: field("Item", "ID")},
+		store.KindTicket: {Latest: 1, Key: field("Ticket", "ID")},
+		store.KindPause:  {Latest: 1, Key: field("symbol")},
+		// The price history the charts show only needs the most recent records.
+		store.KindPrices: {Latest: market.MaxHistory},
+	}
 }
 
 func (a *App) observeCommit(d time.Duration, err error) {
@@ -190,18 +232,136 @@ func (a *App) stage() rulebook.Stage {
 	return rulebook.StagePhase1
 }
 
-// state is what the log says happened, folded into current values.
-type state struct {
-	orders map[string]engine.Order
-	fills  []engine.Fill
+// newsLead is how long after fund managers the public sees news: only in Phase 2 (Section 11).
+func (a *App) newsLead() time.Duration {
+	if a.stage() == rulebook.StagePhase2 {
+		return a.RB.News.Lead()
+	}
+	return 0
 }
 
-// restore replays the log in the order things happened, so every fill, grant and correction lands on
-// the ledger exactly as it did live (average cost depends on that order).
+// clockView shows the event clock to the price simulation.
+type clockView struct{ a *App }
+
+func (c clockView) Elapsed() (time.Duration, bool) {
+	p := c.a.Clock.Position()
+	return p.Elapsed, p.Started
+}
+func (c clockView) MarketOpen() bool      { return c.a.Clock.MarketOpen() }
+func (c clockView) Stage() rulebook.Stage { return c.a.stage() }
+
+// ---- prices ----
+
+func (a *App) saveSim(s sim.State) error { return a.wal.Append(store.KindPrices, s) }
+
+// onPrices runs after every price change: it tells every browser and keeps the peak values current.
+func (a *App) onPrices(at time.Time, changed map[string]money.Paise) {
+	a.lastTick.Store(at.UnixMilli())
+	up := dto.PricesUpdate{At: dto.MS(at), Prices: make([]dto.PriceTick, 0, len(changed))}
+	syms := make([]string, 0, len(changed))
+	for s := range changed {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	for _, s := range syms {
+		up.Prices = append(up.Prices, dto.PriceTick{Symbol: s, Price: dto.Rupees(changed[s])})
+	}
+	a.Hub.ToAll("prices", up)
+	a.updatePeaks()
+}
+
+// ---- freeze snapshots and peak values ----
+
+// FreezeSnapshot is every team's result at a freeze block, taken from the freeze-time prices so the
+// ranking cannot drift afterwards (Sections 4 and 24).
+type FreezeSnapshot struct {
+	Name    string
+	At      time.Time
+	Prices  map[string]int64
+	Values  map[string]int64   // portfolio value per team, fund units included
+	FundNAV map[string]float64 // each fund's NAV per unit at the freeze
+	Peaks   map[string]int64   // highest portfolio value seen so far (a tie-break)
+	Trades  map[string]int     // trades made in Phase 1 (a tie-break)
+}
+
+func (a *App) teamIDs() []string {
+	var ids []string
+	for _, u := range a.users.all() {
+		if !u.IsAdmin {
+			ids = append(ids, u.ID)
+		}
+	}
+	return ids
+}
+
+// updatePeaks records each team's highest portfolio value so far.
+func (a *App) updatePeaks() {
+	for _, id := range a.teamIDs() {
+		a.updatePeakFor(id)
+	}
+}
+
+func (a *App) takeSnapshot(name string) {
+	a.statMu.Lock()
+	_, done := a.snapshots[name]
+	a.statMu.Unlock()
+	if done {
+		return
+	}
+	a.updatePeaks()
+	navs := a.navs()
+	snap := FreezeSnapshot{FundNAV: navs, Name: name, At: a.now(), Prices: map[string]int64{}, Values: map[string]int64{}, Peaks: map[string]int64{}, Trades: map[string]int{}}
+	for k, v := range a.Market.All() {
+		snap.Prices[k] = int64(v)
+	}
+	for _, id := range a.teamIDs() {
+		snap.Values[id] = int64(a.totalValue(id, navs))
+	}
+	a.statMu.Lock()
+	for id, p := range a.peaks {
+		snap.Peaks[id] = int64(p)
+	}
+	for id, n := range a.p1Trades {
+		snap.Trades[id] = n
+	}
+	a.snapshots[name] = snap
+	a.statMu.Unlock()
+	if err := a.wal.Append(store.KindSnapshot, snap); err != nil {
+		a.log.Error("could not save a freeze snapshot", "name", name, "err", err)
+		return
+	}
+	a.log.Info("freeze snapshot taken", "name", name, "teams", len(snap.Values))
+}
+
+// Snapshot returns a freeze snapshot by name ("phase1" or "final"), if one has been taken.
+func (a *App) Snapshot(name string) (FreezeSnapshot, bool) {
+	a.statMu.Lock()
+	defer a.statMu.Unlock()
+	s, ok := a.snapshots[name]
+	return s, ok
+}
+
+func (a *App) recordTrade(t trading.Trade) {
+	a.statMu.Lock()
+	l := append(a.recent[t.AccountID], t)
+	if len(l) > 100 {
+		l = append(l[:0], l[len(l)-100:]...)
+	}
+	a.recent[t.AccountID] = l
+	if t.Stage == string(rulebook.StagePhase1) {
+		a.p1Trades[t.AccountID]++
+	}
+	a.statMu.Unlock()
+}
+
+// ---- restore ----
+
+// restore replays the log in the order things happened, so every trade, grant and correction lands on the
+// ledger exactly as it did live (average cost depends on that order).
 func (a *App) restore() error {
-	st := state{orders: map[string]engine.Order{}}
 	var clockState *eventclock.State
 	releases := map[string]news.Release{}
+	trades := 0
 
 	openAccount := func(u User) error {
 		if u.IsAdmin {
@@ -213,36 +373,60 @@ func (a *App) restore() error {
 		}
 		return err
 	}
+	decode := func(raw json.RawMessage, v any) error { return json.Unmarshal(raw, v) }
 
 	err := a.wal.Replay(func(kind string, raw json.RawMessage) error {
 		switch kind {
 		case store.KindUser:
 			var u User
-			if err := json.Unmarshal(raw, &u); err != nil {
+			if err := decode(raw, &u); err != nil {
 				return err
 			}
 			if err := a.users.put(u); err != nil {
 				return err
 			}
 			return openAccount(u)
-		case store.KindBatch:
-			var b engine.Batch
-			if err := json.Unmarshal(raw, &b); err != nil {
+		case store.KindTrade:
+			var t trading.Trade
+			if err := decode(raw, &t); err != nil {
 				return err
 			}
-			st.orders[b.Order.ID] = b.Order
-			for _, m := range b.Makers {
-				st.orders[m.ID] = m
+			if err := a.Ledger.ReplayTrade(t.AccountID, t.Symbol, t.Side == trading.Buy, t.Qty, t.Price); err != nil {
+				return fmt.Errorf("replaying trade %s: %w", t.ID, err)
 			}
-			for _, f := range b.Fills {
-				a.Ledger.ReplayFill(f)
-				a.Market.PriceUpdate(f.Symbol, f.Price, f.At)
-				a.recordFill(f)
+			a.Exec.Seed(t)
+			a.recordTrade(t)
+			trades++
+		case store.KindPrices:
+			var s sim.State
+			if err := decode(raw, &s); err != nil {
+				return err
 			}
-			st.fills = append(st.fills, b.Fills...)
+			p := make(map[string]money.Paise, len(s.Prices))
+			for k, v := range s.Prices {
+				p[k] = money.Paise(v)
+			}
+			a.Market.SetAll(p, s.At)
+			a.updatePeaks()
+			st := s
+			a.simState = &st
+		case store.KindFund:
+			var ev funds.Event
+			if err := decode(raw, &ev); err != nil {
+				return err
+			}
+			if err := a.applyFundEvent(ev, true); err != nil {
+				return fmt.Errorf("replaying a fund event (%s): %w", ev.Op, err)
+			}
+		case store.KindSnapshot:
+			var s FreezeSnapshot
+			if err := decode(raw, &s); err != nil {
+				return err
+			}
+			a.snapshots[s.Name] = s
 		case store.KindGrant:
 			var g Grant
-			if err := json.Unmarshal(raw, &g); err != nil {
+			if err := decode(raw, &g); err != nil {
 				return err
 			}
 			if g.Qty > 0 {
@@ -251,19 +435,19 @@ func (a *App) restore() error {
 			return a.Ledger.Revoke(g.AccountID, g.Symbol, -g.Qty, true)
 		case store.KindCash:
 			var c CashAdjustment
-			if err := json.Unmarshal(raw, &c); err != nil {
+			if err := decode(raw, &c); err != nil {
 				return err
 			}
 			return a.Ledger.AdjustCash(c.AccountID, money.Paise(c.Delta), true)
 		case store.KindAnnounce:
 			var n Announcement
-			if err := json.Unmarshal(raw, &n); err != nil {
+			if err := decode(raw, &n); err != nil {
 				return err
 			}
 			a.announcements = append(a.announcements, n)
 		case store.KindPause:
 			var p SymbolPause
-			if err := json.Unmarshal(raw, &p); err != nil {
+			if err := decode(raw, &p); err != nil {
 				return err
 			}
 			if p.Paused {
@@ -273,25 +457,25 @@ func (a *App) restore() error {
 			}
 		case store.KindAudit:
 			var e AuditEntry
-			if err := json.Unmarshal(raw, &e); err != nil {
+			if err := decode(raw, &e); err != nil {
 				return err
 			}
 			a.audit = append(a.audit, e)
 		case store.KindClock:
 			var s eventclock.State
-			if err := json.Unmarshal(raw, &s); err != nil {
+			if err := decode(raw, &s); err != nil {
 				return err
 			}
 			clockState = &s
 		case store.KindNews:
 			var r news.Release
-			if err := json.Unmarshal(raw, &r); err != nil {
+			if err := decode(raw, &r); err != nil {
 				return err
 			}
 			releases[r.Item.ID] = r
 		case store.KindTicket:
 			var t TicketRec
-			if err := json.Unmarshal(raw, &t); err != nil {
+			if err := decode(raw, &t); err != nil {
 				return err
 			}
 			a.tickets[t.Ticket.ID] = &t
@@ -301,45 +485,25 @@ func (a *App) restore() error {
 	if err != nil {
 		return err
 	}
-
-	var liveOrders, allOrders []engine.Order
-	for _, o := range st.orders {
-		allOrders = append(allOrders, o)
-		if o.Status.Live() {
-			liveOrders = append(liveOrders, o)
-			a.indexLive(o)
-		}
+	if a.simState != nil {
+		a.Sim.Adopt(*a.simState)
 	}
-	a.Ledger.RestoreReservations(liveOrders)
-	byTaker := map[string][]engine.Fill{}
-	for _, f := range st.fills {
-		byTaker[f.TakerOrderID] = append(byTaker[f.TakerOrderID], f)
-	}
-	if err := a.Engine.Restore(allOrders, byTaker); err != nil {
-		return err
-	}
-
 	if clockState != nil {
 		if err := a.Clock.Restore(*clockState); err != nil {
 			return err
 		}
-	}
-	if a.Clock.Overrides().Frozen {
-		a.Engine.Freeze()
 	}
 	rel := make([]news.Release, 0, len(releases))
 	for _, r := range releases {
 		rel = append(rel, r)
 	}
 	a.News.Recover(rel)
-	a.Disputes.Restore(a.ticketList())
-	a.log.Info("state rebuilt from the log", "users", len(a.users.all()), "orders", len(allOrders), "live", len(liveOrders), "fills", len(st.fills))
+	a.log.Info("state rebuilt from the log", "users", len(a.users.all()), "trades", trades)
 	return nil
 }
 
-// Start begins matching and the event clock.
+// Start begins the event clock and the price simulation.
 func (a *App) Start() error {
-	a.Engine.Start()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelRun = cancel
 	a.runDone = make(chan struct{})
@@ -347,6 +511,8 @@ func (a *App) Start() error {
 		defer close(a.runDone)
 		a.Clock.Run(ctx, time.Second)
 	}()
+	go a.Sim.Run(ctx)
+	go a.fundLoop(ctx)
 	if a.cfg.Autostart && !a.Clock.Position().Started {
 		if err := a.Clock.Start(); err != nil {
 			return err
@@ -357,96 +523,15 @@ func (a *App) Start() error {
 	return nil
 }
 
-// Close stops matching (finishing what is queued), closes sockets and the log.
+// Close stops the clocks, closes sockets and the log.
 func (a *App) Close(ctx context.Context) error {
 	if a.cancelRun != nil {
 		a.cancelRun()
 		<-a.runDone
 	}
 	a.Hub.Shutdown()
-	err := a.Engine.Stop(ctx)
 	a.News.Stop()
-	if cerr := a.wal.Close(); err == nil {
-		err = cerr
-	}
-	return err
-}
-
-// ---- live-order index ----
-
-func (a *App) indexLive(o engine.Order) {
-	a.liveMu.Lock()
-	defer a.liveMu.Unlock()
-	if !o.Status.Live() {
-		if m := a.live[o.AccountID]; m != nil {
-			delete(m, o.ID)
-			if len(m) == 0 {
-				delete(a.live, o.AccountID)
-			}
-		}
-		return
-	}
-	if a.live[o.AccountID] == nil {
-		a.live[o.AccountID] = map[string]engine.Order{}
-	}
-	a.live[o.AccountID][o.ID] = o
-}
-
-// LiveOrders are an account's working orders, oldest first.
-func (a *App) LiveOrders(accountID string) []engine.Order {
-	a.liveMu.RLock()
-	out := make([]engine.Order, 0, len(a.live[accountID]))
-	for _, o := range a.live[accountID] {
-		out = append(out, o)
-	}
-	a.liveMu.RUnlock()
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
-}
-
-func (a *App) openOrderCount() (n int) {
-	a.liveMu.RLock()
-	defer a.liveMu.RUnlock()
-	for _, m := range a.live {
-		n += len(m)
-	}
-	return n
-}
-
-// ---- engine sink: what happens after a matching step is durable ----
-
-type sink struct{ a *App }
-
-func (s sink) OnApplied(ap engine.Applied) {
-	a := s.a
-	a.Ledger.OnApplied(ap)
-	now := a.now()
-
-	a.indexLive(ap.Order)
-	for _, m := range ap.Makers {
-		a.indexLive(m)
-	}
-
-	switch ap.Kind {
-	case engine.KindSubmit:
-		a.ordersPM.Add(1, now)
-		a.Hub.ToAccount(ap.Order.AccountID, "orderAccepted", dto.FromOrder(ap.Order))
-		for _, f := range ap.Fills {
-			a.tradesPM.Add(1, now)
-			a.recordFill(f)
-			// Trades are tiny and everyone needs them for prices, so they go to all clients; the much bigger
-			// order book below goes only to people looking at that company.
-			a.Hub.ToAll("trade", dto.FromPublicFill(f))
-			private := dto.FromFill(f)
-			a.Hub.ToAccount(f.TakerAccountID, "fill", private)
-			if f.MakerAccountID != f.TakerAccountID {
-				a.Hub.ToAccount(f.MakerAccountID, "fill", private)
-			}
-		}
-	case engine.KindCancel:
-		a.Hub.ToAccount(ap.Order.AccountID, "orderCancelled", dto.FromOrder(ap.Order))
-	}
-	a.Hub.ToSymbol(ap.Symbol, "bookUpdate", dto.FromDepth(ap.Depth))
+	return a.wal.Close()
 }
 
 // ---- websocket ----
@@ -492,6 +577,18 @@ func (a *App) broadcastControl() { a.Hub.ToAll("controlState", a.ControlState())
 
 func (a *App) onTransition(t eventclock.Transition) {
 	a.log.Info("event block", "index", t.Index, "block", t.Block.ID)
+	if t.Block.FreezeSnapshot != "" {
+		a.takeSnapshot(t.Block.FreezeSnapshot)
+	}
+	if t.Index > 0 {
+		// A window that has just closed is a checkpoint (Section 12), and so is the final close.
+		if prev := a.RB.Event.Timeline[t.Index-1]; prev.AllocationWindow != nil {
+			a.takeCheckpoint(fmt.Sprintf("window %d", *prev.AllocationWindow))
+		}
+	}
+	if t.Block.FreezeSnapshot == "final" {
+		a.takeCheckpoint("final")
+	}
 	a.persistClock()
 	a.broadcastControl()
 }

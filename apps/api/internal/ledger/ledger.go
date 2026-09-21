@@ -1,9 +1,12 @@
-// Package ledger owns accounts, cash, holdings and open-order reservations. Pre-trade checks
-// forbid shorting and leverage (an order must be covered by unreserved cash or unreserved shares),
-// fills are applied to both counterparties, and portfolios can be valued at any set of prices.
+// Package ledger is the source of truth for every account's cash and share holdings.
 //
-// State here is a pure fold over durable events (fills, cash movements), so the store rebuilds it
-// exactly at startup by replaying them; nothing in this package is the system of record.
+// Invariants it enforces itself, whatever the caller does:
+//   - cash and share counts never go negative (no leverage, no short selling);
+//   - a trade is checked, made durable through the caller's commit function, and applied as one step on
+//     one account, so a failed commit changes nothing;
+//   - money is integer paise throughout.
+//
+// Each account has its own lock, so trades by different teams never wait for each other.
 package ledger
 
 import (
@@ -13,23 +16,14 @@ import (
 	"sort"
 	"sync"
 
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/money"
 )
 
-// Kind is the type of account.
 type Kind uint8
 
 const (
-	// KindTeam is a login team of up to 3 (an individual investor team, or a Phase-1 team).
 	KindTeam Kind = iota + 1
-	// KindFund is a Fund Management Team's shared trading account (one account, one rate limit,
-	// however many members — Sec 11).
 	KindFund
-	// KindMarketMaker is a system liquidity account. SCAFFOLD ONLY: whether it is exempt from the
-	// no-shorting / cash-cover checks, how it is seeded, and who drives it are open organiser
-	// decisions, so today it is checked exactly like every other account.
-	KindMarketMaker
 )
 
 func (k Kind) String() string {
@@ -38,8 +32,6 @@ func (k Kind) String() string {
 		return "team"
 	case KindFund:
 		return "fund"
-	case KindMarketMaker:
-		return "market_maker"
 	}
 	return "unknown"
 }
@@ -55,6 +47,7 @@ var (
 	ErrAccountExists      = errors.New("account_exists")
 	ErrInsufficientCash   = errors.New("insufficient_cash")
 	ErrInsufficientShares = errors.New("insufficient_shares")
+	ErrInvalid            = errors.New("invalid_amount")
 )
 
 // Position is a long holding with its total cost basis (average cost = Cost/Qty).
@@ -64,305 +57,134 @@ type Position struct {
 	Cost   money.Paise
 }
 
-type reservation struct {
-	side      engine.Side
-	symbol    string
-	price     money.Paise
-	remaining int64
-}
-
-type account struct {
+type acct struct {
+	mu sync.Mutex
 	Account
 	cash money.Paise
 	pos  map[string]*Position
-	// res is keyed by clientOrderID: the reservation exists from before submission until the order is
-	// no longer live.
-	res map[string]reservation
 }
 
 type Ledger struct {
-	mu        sync.RWMutex
-	accts     map[string]*account
-	anomalies int
-	log       *slog.Logger
+	mu    sync.RWMutex // guards the account map only
+	accts map[string]*acct
+	log   *slog.Logger
 }
 
 func New(log *slog.Logger) *Ledger {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Ledger{accts: make(map[string]*account), log: log}
+	return &Ledger{accts: make(map[string]*acct), log: log}
 }
 
 // Open creates an account with an opening cash balance.
 func (l *Ledger) Open(a Account, cash money.Paise) error {
+	if a.ID == "" {
+		return errors.New("ledger: account id is empty")
+	}
+	if cash < 0 {
+		return fmt.Errorf("%w: opening cash %d", ErrInvalid, cash)
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.accts[a.ID]; ok {
 		return fmt.Errorf("%w: %s", ErrAccountExists, a.ID)
 	}
-	l.accts[a.ID] = &account{Account: a, cash: cash, pos: map[string]*Position{}, res: map[string]reservation{}}
+	l.accts[a.ID] = &acct{Account: a, cash: cash, pos: map[string]*Position{}}
 	return nil
 }
 
-func (l *Ledger) get(id string) (*account, error) {
+func (l *Ledger) get(id string) (*acct, error) {
+	l.mu.RLock()
 	a, ok := l.accts[id]
+	l.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownAccount, id)
 	}
 	return a, nil
 }
 
-func (a *account) reservedCash() (total money.Paise) {
-	for _, r := range a.res {
-		if r.side == engine.Buy {
-			total += r.price * money.Paise(r.remaining)
-		}
-	}
-	return total
-}
+// Has reports whether the account exists.
+func (l *Ledger) Has(id string) bool { _, err := l.get(id); return err == nil }
 
-func (a *account) reservedShares(symbol string) (total int64) {
-	for _, r := range a.res {
-		if r.side == engine.Sell && r.symbol == symbol {
-			total += r.remaining
-		}
+// Trade buys or sells qty shares of symbol at price for one account. It checks the account can afford
+// it, calls commit (which must make the trade durable), and only if commit succeeds changes the
+// balances. If the check or the commit fails nothing changes.
+func (l *Ledger) Trade(id, symbol string, buy bool, qty int64, price money.Paise, commit func() error) error {
+	if qty <= 0 || price <= 0 || symbol == "" {
+		return ErrInvalid
 	}
-	return total
-}
-
-// Reserve is the pre-trade check. A buy must be covered by unreserved cash at its limit price; a
-// sell by unreserved shares (no shorting). It reserves atomically with the check, so concurrent
-// orders can never jointly overspend. It returns created=false if this clientOrderID already holds
-// a reservation (a retry), in which case nothing new was reserved.
-//
-// Call Release if the order is then not processed (rejected, frozen, journal failure, or a deduped
-// replay of an already-finished order and created is true).
-func (l *Ledger) Reserve(n engine.NewOrder) (created bool, err error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	a, err := l.get(n.AccountID)
+	a, err := l.get(id)
 	if err != nil {
-		return false, err
+		return err
 	}
-	if _, dup := a.res[n.ClientOrderID]; dup {
-		return false, nil
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	notional := price * money.Paise(qty)
+	if buy {
+		if a.cash < notional {
+			return ErrInsufficientCash
+		}
+	} else if p := a.pos[symbol]; p == nil || p.Qty < qty {
+		return ErrInsufficientShares
 	}
-	switch n.Side {
-	case engine.Buy:
-		need := n.Price * money.Paise(n.Qty)
-		if a.cash-a.reservedCash() < need {
-			return false, ErrInsufficientCash
+	if commit != nil {
+		if err := commit(); err != nil {
+			return err
 		}
-	case engine.Sell:
-		have := int64(0)
-		if p := a.pos[n.Symbol]; p != nil {
-			have = p.Qty
-		}
-		if have-a.reservedShares(n.Symbol) < n.Qty {
-			return false, ErrInsufficientShares
-		}
-	default:
-		return false, engine.ErrInvalidOrder
 	}
-	a.res[n.ClientOrderID] = reservation{side: n.Side, symbol: n.Symbol, price: n.Price, remaining: n.Qty}
-	return true, nil
+	a.applyTrade(symbol, buy, qty, price)
+	return nil
 }
 
-// Release drops a reservation that will not be followed by a live order.
-func (l *Ledger) Release(accountID, clientOrderID string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if a, ok := l.accts[accountID]; ok {
-		delete(a.res, clientOrderID)
+// ReplayTrade applies a trade that was already accepted, while rebuilding state from the log. It does
+// not refuse: the log is the record of what happened.
+func (l *Ledger) ReplayTrade(id, symbol string, buy bool, qty int64, price money.Paise) error {
+	a, err := l.get(id)
+	if err != nil {
+		return err
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.applyTrade(symbol, buy, qty, price)
+	return nil
 }
 
-// OnApplied implements engine.Sink: it applies committed fills to both counterparties and shrinks
-// or releases reservations to match each order's post-match state.
-func (l *Ledger) OnApplied(ap engine.Applied) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if ap.Kind == engine.KindSubmit {
-		for _, f := range ap.Fills {
-			l.applyFillLocked(f)
-		}
-		l.syncReservationLocked(ap.Order)
-		for _, m := range ap.Makers {
-			l.syncReservationLocked(m)
-		}
-		return
-	}
-	l.syncReservationLocked(ap.Order) // cancel: no longer live -> released
-}
-
-func (l *Ledger) syncReservationLocked(o engine.Order) {
-	a, ok := l.accts[o.AccountID]
-	if !ok {
-		return
-	}
-	r, ok := a.res[o.ClientOrderID]
-	if !ok {
-		return
-	}
-	if !o.Status.Live() {
-		delete(a.res, o.ClientOrderID)
-		return
-	}
-	r.remaining = o.Remaining
-	a.res[o.ClientOrderID] = r
-}
-
-func (l *Ledger) applyFillLocked(f engine.Fill) {
-	l.applyLegLocked(f.TakerAccountID, f.TakerSide, f)
-	maker := engine.Sell
-	if f.TakerSide == engine.Sell {
-		maker = engine.Buy
-	}
-	l.applyLegLocked(f.MakerAccountID, maker, f)
-}
-
-func (l *Ledger) applyLegLocked(accountID string, side engine.Side, f engine.Fill) {
-	a, ok := l.accts[accountID]
-	if !ok {
-		// A committed fill for an account we do not know is a data-integrity problem, not something to
-		// paper over: count it and log loudly so it fails health checks and tests.
-		l.anomalies++
-		l.log.Error("ledger: committed fill references unknown account", "account", accountID, "fill", f.ID)
-		return
-	}
-	notional := f.Notional()
-	p := a.pos[f.Symbol]
+func (a *acct) applyTrade(symbol string, buy bool, qty int64, price money.Paise) {
+	notional := price * money.Paise(qty)
+	p := a.pos[symbol]
 	if p == nil {
-		p = &Position{Symbol: f.Symbol}
-		a.pos[f.Symbol] = p
+		p = &Position{Symbol: symbol}
+		a.pos[symbol] = p
 	}
-	if side == engine.Buy {
+	if buy {
 		a.cash -= notional
-		p.Qty += f.Qty
+		p.Qty += qty
 		p.Cost += notional
 		return
 	}
 	a.cash += notional
 	if p.Qty > 0 {
-		p.Cost -= money.Paise(int64(p.Cost) * f.Qty / p.Qty) // remove the sold shares at average cost
+		p.Cost -= money.Paise(int64(p.Cost) * min(qty, p.Qty) / p.Qty) // sold shares leave at average cost
 	}
-	p.Qty -= f.Qty
+	p.Qty -= qty
 	if p.Qty <= 0 {
-		if p.Qty < 0 {
-			l.anomalies++
-			l.log.Error("ledger: position went negative (shorting)", "account", accountID, "symbol", f.Symbol, "qty", p.Qty)
-		}
-		p.Cost = 0
+		p.Qty, p.Cost = 0, 0
 	}
 }
 
-// Anomalies counts integrity violations seen while applying committed events (should stay 0).
-func (l *Ledger) Anomalies() int {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.anomalies
-}
-
-// Transfer moves cash between two accounts atomically (fund allocations/redemptions). It fails,
-// changing nothing, if the source lacks unreserved cash.
-func (l *Ledger) Transfer(from, to string, amount money.Paise) error {
-	if amount <= 0 {
-		return errors.New("ledger: transfer amount must be positive")
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	src, err := l.get(from)
-	if err != nil {
-		return err
-	}
-	dst, err := l.get(to)
-	if err != nil {
-		return err
-	}
-	if src.cash-src.reservedCash() < amount {
-		return ErrInsufficientCash
-	}
-	src.cash -= amount
-	dst.cash += amount
-	return nil
-}
-
-// Restore rebuilds live-order reservations from durable state. Call it after replaying fills,
-// with every order that is still live.
-func (l *Ledger) Restore(fills []engine.Fill, live []engine.Order) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, f := range fills {
-		l.applyFillLocked(f)
-	}
-	for _, o := range live {
-		if a, ok := l.accts[o.AccountID]; ok && o.Status.Live() {
-			a.res[o.ClientOrderID] = reservation{side: o.Side, symbol: o.Symbol, price: o.Price, remaining: o.Remaining}
-		}
-	}
-}
-
-type Snapshot struct {
-	Account       Account
-	Cash          money.Paise
-	ReservedCash  money.Paise
-	AvailableCash money.Paise
-	Positions     []Position
-}
-
-func (l *Ledger) Snapshot(accountID string) (Snapshot, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	a, err := l.get(accountID)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	s := Snapshot{Account: a.Account, Cash: a.cash, ReservedCash: a.reservedCash()}
-	s.AvailableCash = s.Cash - s.ReservedCash
-	for _, p := range a.pos {
-		if p.Qty != 0 {
-			s.Positions = append(s.Positions, *p)
-		}
-	}
-	sort.Slice(s.Positions, func(i, j int) bool { return s.Positions[i].Symbol < s.Positions[j].Symbol })
-	return s, nil
-}
-
-// PriceFn returns the price to mark a symbol at (last trade, or the freeze price at a snapshot).
-type PriceFn func(symbol string) (money.Paise, bool)
-
-// DirectValue is cash + holdings at the given prices. A holding with no price is carried at cost so a
-// symbol that has not traded yet does not read as worthless.
-func (l *Ledger) DirectValue(accountID string, price PriceFn) (money.Paise, error) {
-	s, err := l.Snapshot(accountID)
-	if err != nil {
-		return 0, err
-	}
-	total := s.Cash
-	for _, p := range s.Positions {
-		if px, ok := price(p.Symbol); ok {
-			total += px * money.Paise(p.Qty)
-		} else {
-			total += p.Cost
-		}
-	}
-	return total, nil
-}
-
-// Grant credits shares to an account with no cash movement. It is the only way inventory enters the
-// system (an initial allocation, or a market-maker's stock); every other change of holdings comes from a
-// matched trade. price is the cost basis per share.
-func (l *Ledger) Grant(accountID, symbol string, qty int64, price money.Paise) error {
+// Grant credits shares to an account with no cash movement (an organiser's initial allocation or
+// correction). price is the cost basis per share.
+func (l *Ledger) Grant(id, symbol string, qty int64, price money.Paise) error {
 	if qty <= 0 || price < 0 {
-		return engine.ErrInvalidOrder
+		return ErrInvalid
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	a, err := l.get(accountID)
+	a, err := l.get(id)
 	if err != nil {
 		return err
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	p := a.pos[symbol]
 	if p == nil {
 		p = &Position{Symbol: symbol}
@@ -373,45 +195,19 @@ func (l *Ledger) Grant(accountID, symbol string, qty int64, price money.Paise) e
 	return nil
 }
 
-// AdjustCash changes an account's cash by delta, positive or negative (an organiser correction). A
-// live adjustment is refused if it would leave less cash than is held back for working orders. force
-// skips that check and is for replaying the durable log, where the same change was already accepted.
-func (l *Ledger) AdjustCash(accountID string, delta money.Paise, force bool) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	a, err := l.get(accountID)
-	if err != nil {
-		return err
-	}
-	if !force && delta < 0 && a.cash+delta < a.reservedCash() {
-		return ErrInsufficientCash
-	}
-	a.cash += delta
-	return nil
-}
-
-// Revoke takes qty shares of symbol back from an account (an organiser correction) at its average
-// cost. A live revoke is refused if the account does not hold that many unreserved shares; force is
-// for replaying the durable log.
-func (l *Ledger) Revoke(accountID, symbol string, qty int64, force bool) error {
+// Revoke takes qty shares back at average cost. force skips the check and is for replaying the log.
+func (l *Ledger) Revoke(id, symbol string, qty int64, force bool) error {
 	if qty <= 0 {
-		return engine.ErrInvalidOrder
+		return ErrInvalid
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	a, err := l.get(accountID)
+	a, err := l.get(id)
 	if err != nil {
 		return err
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	p := a.pos[symbol]
-	have := int64(0)
-	if p != nil {
-		have = p.Qty
-	}
-	if !force && have-a.reservedShares(symbol) < qty {
-		return ErrInsufficientShares
-	}
-	if p == nil {
+	if p == nil || (!force && p.Qty < qty) {
 		return ErrInsufficientShares
 	}
 	if p.Qty > 0 {
@@ -419,28 +215,132 @@ func (l *Ledger) Revoke(accountID, symbol string, qty int64, force bool) error {
 	}
 	p.Qty -= qty
 	if p.Qty <= 0 {
-		p.Qty, p.Cost = max(p.Qty, 0), 0
+		p.Qty, p.Cost = 0, 0
 	}
 	return nil
 }
 
-// ReplayFill applies one committed fill while rebuilding state from the log, in the order it happened.
-func (l *Ledger) ReplayFill(f engine.Fill) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.applyFillLocked(f)
+// AdjustCash changes an account's cash by delta (an organiser's correction). A live change cannot take
+// cash below zero; force is for replaying the log.
+func (l *Ledger) AdjustCash(id string, delta money.Paise, force bool) error {
+	a, err := l.get(id)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !force && a.cash+delta < 0 {
+		return ErrInsufficientCash
+	}
+	a.cash += delta
+	return nil
 }
 
-// RestoreReservations rebuilds the cash and shares held back for working orders, after everything else
-// has been replayed.
-func (l *Ledger) RestoreReservations(live []engine.Order) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, o := range live {
-		if a, ok := l.accts[o.AccountID]; ok && o.Status.Live() {
-			a.res[o.ClientOrderID] = reservation{side: o.Side, symbol: o.Symbol, price: o.Price, remaining: o.Remaining}
+// Move takes amount of cash from one account and gives it to another as one step, calling commit first
+// so it is durable. Both accounts are locked (in a fixed order, so two moves can never deadlock).
+func (l *Ledger) Move(from, to string, amount money.Paise, commit func() error) error {
+	if amount <= 0 || from == to {
+		return ErrInvalid
+	}
+	src, err := l.get(from)
+	if err != nil {
+		return err
+	}
+	dst, err := l.get(to)
+	if err != nil {
+		return err
+	}
+	first, second := src, dst
+	if from > to {
+		first, second = dst, src
+	}
+	first.mu.Lock()
+	defer first.mu.Unlock()
+	second.mu.Lock()
+	defer second.mu.Unlock()
+	if src.cash < amount {
+		return ErrInsufficientCash
+	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return err
 		}
 	}
+	src.cash -= amount
+	dst.cash += amount
+	return nil
+}
+
+// ReplayMove applies a move that was already accepted.
+func (l *Ledger) ReplayMove(from, to string, amount money.Paise) error {
+	src, err := l.get(from)
+	if err != nil {
+		return err
+	}
+	dst, err := l.get(to)
+	if err != nil {
+		return err
+	}
+	first, second := src, dst
+	if from > to {
+		first, second = dst, src
+	}
+	first.mu.Lock()
+	defer first.mu.Unlock()
+	second.mu.Lock()
+	defer second.mu.Unlock()
+	src.cash -= amount
+	dst.cash += amount
+	return nil
+}
+
+type Snapshot struct {
+	Account   Account
+	Cash      money.Paise
+	Positions []Position
+}
+
+func (l *Ledger) Snapshot(id string) (Snapshot, error) {
+	a, err := l.get(id)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := Snapshot{Account: a.Account, Cash: a.cash}
+	for _, p := range a.pos {
+		if p.Qty > 0 {
+			s.Positions = append(s.Positions, *p)
+		}
+	}
+	sort.Slice(s.Positions, func(i, j int) bool { return s.Positions[i].Symbol < s.Positions[j].Symbol })
+	return s, nil
+}
+
+// PriceFn returns the price to value a company at.
+type PriceFn func(symbol string) (money.Paise, bool)
+
+// Value is cash plus every holding at the given prices. A holding with no price is carried at cost so a
+// company without a price yet does not read as worthless.
+func (s Snapshot) Value(price PriceFn) money.Paise {
+	total := s.Cash
+	for _, p := range s.Positions {
+		if px, ok := price(p.Symbol); ok {
+			total += px * money.Paise(p.Qty)
+		} else {
+			total += p.Cost
+		}
+	}
+	return total
+}
+
+// DirectValue is an account's cash plus its holdings at the given prices.
+func (l *Ledger) DirectValue(id string, price PriceFn) (money.Paise, error) {
+	s, err := l.Snapshot(id)
+	if err != nil {
+		return 0, err
+	}
+	return s.Value(price), nil
 }
 
 // Accounts lists every account id (sorted).
@@ -453,4 +353,24 @@ func (l *Ledger) Accounts() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Total is the cash of every account and the number of shares of each company held, for reconciliation.
+func (l *Ledger) Total() (cash money.Paise, shares map[string]int64) {
+	shares = map[string]int64{}
+	l.mu.RLock()
+	all := make([]*acct, 0, len(l.accts))
+	for _, a := range l.accts {
+		all = append(all, a)
+	}
+	l.mu.RUnlock()
+	for _, a := range all {
+		a.mu.Lock()
+		cash += a.cash
+		for s, p := range a.pos {
+			shares[s] += p.Qty
+		}
+		a.mu.Unlock()
+	}
+	return cash, shares
 }

@@ -17,11 +17,16 @@ What the organiser console (`apps/web/src/components/admin/`) calls. Implemented
 | Route | Poll | Returns |
 | --- | --- | --- |
 | `GET /api/admin/overview` | 2 s | `clock` (status, elapsed, total, block index, time left), the `timeline`, and `control` (freeze, market override, window overrides, and what is actually open) |
-| `GET /api/admin/systems` | 3 s | uptime, db reachable, connected people, open orders, orders and trades per minute, order save time p50 and p99, failed saves, stopped symbols, recent errors |
-| `GET /api/admin/accounts` | 4 s | every account with role, status, warnings, locked, cash, held-back cash, positions, portfolio value, and whether it is online now (`online`, `sockets`, `lastSeen`) |
+| `GET /api/admin/systems` | 3 s | uptime, log writable, connected people, trades per minute, trade save time p50 and p99, failed saves, free disk space, price update count and time, recent errors |
+| `GET /api/admin/accounts` | 4 s | every account with role, status, warnings, locked, cash, positions, portfolio value (fund units included), and whether it is online now (`online`, `sockets`, `lastSeen`) |
 | `GET /api/admin/news` | 3 s | `publicDelaySeconds` and every release with its fund-manager and public delivery times (`0` = not yet) |
-| `GET /api/admin/disputes` | 5 s | tickets with queue, category, due time, late flag, platform-wide flag, status |
+| `GET /api/admin/disputes` | 5 s | tickets with category, decide-by time, late flag, status |
 | `GET /api/admin/audit` | 5 s | the audit log |
+| `GET /api/admin/sim` | 4 s | the price simulation: every scheduled event and bull or bear run with its time, type (REAL, FAKE, DENIAL), whether it has fired, and how many prices it moves |
+| `GET /api/admin/qualification` | 5 s | the Phase 1 ranking with what decided each place, the cut, and whether the funds are formed |
+| `GET /api/admin/funds` | 5 s | every fund: NAV, return, AUM, investors, largest fall, capital kept, share of investors in profit, checkpoint fees |
+| `GET /api/admin/prizes` | 8 s | Prizes 1 to 4 ranked (live until the final freeze, then from the frozen figures) |
+| `GET /api/admin/strategy-logs` | 10 s | the rubric and every investor's strategy log entries and judges' scores |
 | `GET /api/admin/rulebook` | 60 s | version, source, the provenance list (tbf / recommended / assumption) and every value |
 
 The schedule length is the sum of the blocks as they stand now, not a fixed five hours.
@@ -37,22 +42,24 @@ so a rulebook with five windows shows five switches with no console change.
 | `POST /api/admin/clock/resume` | `compressBlockId?` | `Clock.Resume` |
 | `POST /api/admin/clock/nudge` | `minutes` (±) | `Clock.Nudge` |
 | `POST /api/admin/clock/jump` | `blockId` | `Clock.JumpTo` |
-| `POST /api/admin/control/freeze` | `frozen: bool` | `Clock.SetFrozen` and the engine freeze |
+| `POST /api/admin/control/freeze` | `frozen: bool` | `Clock.SetFrozen`: every trade is refused while frozen |
 | `POST /api/admin/control/market` | `override: "open" / "closed" / null` | `Clock.SetMarketOverride` |
 | `POST /api/admin/control/windows/{i}` | `override: "open" / "closed" / null` | `Clock.SetWindowOverride` |
-| `POST /api/admin/symbols/{symbol}/resume` | | `Engine.Resume` |
+| `POST /api/admin/sim/{id}/fire` | | releases a scheduled market event or run now; it will not fire again |
+| `POST /api/admin/qualification/run` | | ranks Phase 1 from the freeze snapshot and forms the funds (top teams paired first with last). Once only |
+| `POST /api/admin/funds/{id}/disqualify` | | removes a fund from Prize 1 |
+| `POST /api/admin/strategy-logs/{account}/score` | `scores: { criterion: number }` | a judge's Prize 3 scores |
 | `POST /api/admin/accounts/{id}/promote` | | move a team into the fund manager role |
 | `POST /api/admin/accounts/{id}/warn` | | formal warning (rulebook Section 21) |
-| `POST /api/admin/accounts/{id}/disqualify` | | disqualify: stops trading and cancels every working order (a fund is frozen at its current NAV) |
+| `POST /api/admin/accounts/{id}/disqualify` | | disqualify: stops all trading. Trades already made stand |
 | `POST /api/admin/grants` | `accountId` (or `"*"` for every team), `symbol`, `qty`, `price` | `Ledger.Grant`: gives shares with no cash movement. This is the only way inventory enters the market |
-| `GET /api/admin/accounts/{id}` | | A team's wallet, holdings, working orders, recent trades and history |
-| `POST /api/admin/accounts/{id}/cash` | `amount` (rupees, negative to remove) or `setTo` (exact balance) | `Ledger.AdjustCash`. Refused if it would reach into cash held back for working orders |
-| `POST /api/admin/accounts/{id}/shares` | `direction: "give" / "take" / "set"`, `symbol`, `qty` (the exact total for `set`), `price` (give only) | `Ledger.Grant` or `Ledger.Revoke`. Taking is refused for shares held back for a working sell |
-| `POST /api/admin/accounts/{id}/cancel-orders` | `orderId?` (all orders if omitted) | cancels working orders on the team's behalf |
+| `GET /api/admin/accounts/{id}` | | A team's wallet, holdings, recent trades and history |
+| `POST /api/admin/accounts/{id}/cash` | `amount` (rupees, negative to remove) or `setTo` (exact balance) | `Ledger.AdjustCash`. Refused if it would take cash below zero |
+| `POST /api/admin/accounts/{id}/shares` | `direction: "give" / "take" / "set"`, `symbol`, `qty` (the exact total for `set`), `price` (give only) | `Ledger.Grant` or `Ledger.Revoke`. Taking more than the team holds is refused |
 | `POST /api/admin/accounts/{id}/reinstate` | | lets a disqualified team trade again |
 | `POST /api/admin/accounts/{id}/reset-password` | `password` | sets a new password. The password is never written to the audit log |
 | `POST /api/admin/accounts/{id}/role` | `role: "investor" / "fund_manager"` | moves a team either way |
-| `POST /api/admin/control/symbols/{symbol}` | `paused: bool` | stops or resumes new orders in one company. Cancels still work |
+| `POST /api/admin/control/symbols/{symbol}` | `paused: bool` | stops or resumes trading in one company |
 | `POST /api/admin/announce` | `text` | shows a desk notice on every participant's news column, and keeps it |
 | `POST /api/admin/clock/block-duration` | `blockId`, `minutes` | `Clock.SetBlockDuration`: makes a block shorter or longer; everything after it moves. A finished block is refused (409) |
 | `POST /api/admin/clock/end` | | `Clock.End`: finishes the event now |
@@ -60,16 +67,29 @@ so a rulebook with five windows shows five switches with no console change.
 | `POST /api/admin/accounts/{id}/lock` and `/unlock` | | a locked team cannot log in and has no valid sessions |
 | `POST /api/admin/sign-out-all` | | signs every team out (organisers stay in) |
 | `POST /api/admin/news` | `kind: "news" / "regime"`, `headline`, `body?` | `news.Dispatcher.Publish` |
-| `POST /api/admin/disputes/{id}/triage` | `platformWide: bool` | `disputes.Tracker.Triage` |
 | `POST /api/admin/disputes/{id}/resolve` | | resolves; `reason` is the resolution shown to the team |
 | `POST /api/admin/trade-adjustments` | `fillId`, `adjustment` | records a correction; the trade is never changed |
 
 Publishing news for the two feeds and the public delay is entirely the server's job (`news.Dispatcher`); the
 console only displays the resulting times.
 
-## Not built yet
+## Phase 2 routes for participants
 
-- **Funds** admin page (fund list, NAV, AUM, freeze, the 5% compliance status per team). It needs the Stage 2
-  `funds` package first.
-- **Qualification preview** (the Top 20 line and the mirror pairing). It should come from the `scoring`
-  package on the server, not be recomputed in the browser.
+| Route | Who | What |
+| --- | --- | --- |
+| `GET /api/funds` | anyone signed in | the funds with profile, NAV, return, AUM, investors, the caller's own position, and how much each can take now under the equal-share cap; also whether an allocation window is open |
+| `POST /api/funds/{id}/allocate` | investors | `amount` in rupees. Units = amount / NAV at that moment. Refused unless a window is open, and for: below the minimum (lower of 5,000 or 5% of the portfolio), above 60% of the portfolio in one fund, not enough cash, or the fund is at its share for the window |
+| `POST /api/funds/{id}/redeem` | investors | `amount` or `all: true`. If the fund is short of cash it sells a slice of every holding at current prices. Refused if it would leave less than the mandatory share (5%) in funds |
+| `GET /api/funds/mine`, `PUT /api/funds/mine/profile` | fund managers | the fund's cash, holdings, checkpoints and fees; publish the name, philosophy, risk profile and strategy |
+| `POST /api/strategy-log` | investors | 2 to 3 sentences at a checkpoint (Prize 3) |
+| `POST /api/trades` | anyone | a fund manager's trade uses the fund's cash and holdings, and the whole fund shares one two-trades-a-minute allowance |
+
+## Choices made where the rulebook is silent
+
+These are recorded so they can be changed in one place if the organisers decide otherwise.
+
+- Capital retention (Prize 1) is the share of units ever issued that are still invested, so NAV moves do not change it.
+- A fund's investor profitability counts investors whose current units plus what they took out exceed what they put in.
+- The equal-share cap is counted per allocation window on money put in (withdrawals do not reduce it), and applies whatever the size of the investor.
+- The 5% mandatory share is enforced when leaving a fund. It is reported, not penalised, when a team is below it: warnings and disqualification stay with the organisers (Section 21).
+- Fees are computed at each window close and at the final close, per period, and are never deducted from investors.

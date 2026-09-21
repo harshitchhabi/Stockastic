@@ -2,6 +2,10 @@
 Description=Stockastic event platform
 After=network-online.target
 Wants=network-online.target
+# A crash loop must not run forever and fill the disk with logs: stop trying after 20 starts in 5 minutes and
+# wait for an organiser. A single crash or reboot restarts by itself within seconds.
+StartLimitIntervalSec=300
+StartLimitBurst=20
 
 [Service]
 User=stockastic
@@ -11,8 +15,8 @@ EnvironmentFile=/etc/stockastic/env
 ExecStart=/opt/stockastic/api
 # If the server ever stops, bring it back within seconds. It rebuilds everything from its log.
 Restart=always
-RestartSec=2
-# Give a clean shutdown time to finish queued orders before systemd gives up.
+RestartSec=3
+# Give a clean shutdown time to finish saving trades before systemd gives up.
 TimeoutStopSec=30
 # One open connection per browser, plus the log and a margin.
 LimitNOFILE=65535

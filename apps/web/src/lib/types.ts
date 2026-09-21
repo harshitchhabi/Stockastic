@@ -5,47 +5,24 @@ export interface PublicConfig {
   leaderboard: { refreshSeconds: number; visibleToParticipants?: boolean };
 }
 
-// Wire types for the order book and trades. Placeholder until the Go API contract defines them.
-export type OrderSide = "buy" | "sell";
-export type OrderStatus = "open" | "partially_filled" | "filled" | "cancelled" | "rejected";
+export type TradeSide = "buy" | "sell";
 
-export interface Order {
+/** One executed trade: shares bought or sold at the price at that moment. Trades are final. */
+export interface Trade {
   id: string;
-  clientOrderId: string;
-  accountId: string;
+  clientTradeId: string;
   symbol: string;
-  side: OrderSide;
-  price: number;
+  side: TradeSide;
   qty: number;
-  remainingQty: number;
-  status: OrderStatus;
-  createdAt: number;
-  seq: number;
-}
-
-export interface Fill {
-  id: string;
-  symbol: string;
   price: number;
-  qty: number;
-  takerOrderId: string;
-  makerOrderId: string;
-  takerAccountId: string;
-  makerAccountId: string;
-  takerSide: OrderSide;
+  value: number;
   timestamp: number;
 }
 
-export interface PriceLevel {
-  price: number;
-  qty: number;
-  orderCount: number;
-}
-
-export interface BookDepth {
-  symbol: string;
-  bids: PriceLevel[];
-  asks: PriceLevel[];
+/** The `prices` event: every company whose price changed in one step. */
+export interface PricesUpdate {
+  at: number;
+  prices: { symbol: string; price: number }[];
 }
 
 export interface Account {
@@ -65,10 +42,23 @@ export interface Holding {
   unrealizedPnl: number;
 }
 
+export interface FundPosition {
+  fundId: string;
+  name: string;
+  units: number;
+  nav: number;
+  value: number;
+  contributed: number;
+  pnl: number;
+}
+
 export interface Portfolio {
   accountId: string;
+  /** Set when this is a fund's portfolio (a fund manager's view). */
+  fundId?: string;
   cashBalance: number;
   holdings: Holding[];
+  fundPositions: FundPosition[];
   totalValue: number;
 }
 
@@ -99,12 +89,61 @@ export interface NewsItem {
   createdAt: number;
 }
 
-export interface Fund {
+export interface FundInfo {
   id: string;
-  managerAccountId: string;
+  number: number;
   name: string;
-  pitch: string;
-  riskProfile: string;
-  navPerUnit: number;
-  totalUnits: number;
+  philosophy: string;
+  risk: string;
+  strategy: string;
+  managers: string[];
+  nav: number;
+  returnPct: number;
+  aum: number;
+  investors: number;
+  disqualified: boolean;
+  /** How much more this fund can take right now under the equal-share rule. */
+  room: number;
+  myUnits: number;
+  myValue: number;
+  myContributed: number;
+}
+
+export interface FundsView {
+  formed: boolean;
+  windowOpen: boolean;
+  window: number;
+  mandatoryPercent: number;
+  minAbsolute: number;
+  minWalletPercent: number;
+  maxWalletPercent: number;
+  myValueInFunds: number;
+  myWallet: number;
+  compliant: boolean;
+  funds: FundInfo[];
+}
+
+export interface FundCheckpoint {
+  name: string;
+  nav: number;
+  aum: number;
+  avgAum: number;
+  mgmtFee: number;
+  perfFee: number;
+}
+
+export interface MyFund {
+  fund: FundInfo;
+  cash: number;
+  holdings: Holding[];
+  checkpoints: FundCheckpoint[];
+  maxDrawdown: number;
+  retention: number;
+}
+
+export interface StrategyLogEntry {
+  account: string;
+  checkpoint: number;
+  text: string;
+  at: number;
 }

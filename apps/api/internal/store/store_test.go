@@ -53,7 +53,7 @@ func TestATornFinalRecordFromACrashIsDiscardedAndAppendingContinues(t *testing.T
 	path := filepath.Join(t.TempDir(), "wal")
 	l, _ := store.OpenFile(path)
 	for i := 0; i < 5; i++ {
-		_ = l.Append(store.KindBatch, map[string]int{"n": i})
+		_ = l.Append(store.KindTrade, map[string]int{"n": i})
 	}
 	_ = l.Close()
 
@@ -73,7 +73,7 @@ func TestATornFinalRecordFromACrashIsDiscardedAndAppendingContinues(t *testing.T
 		t.Fatalf("replayed %d records, want the 5 acknowledged ones", len(kinds))
 	}
 	// New records land cleanly after the good ones, not glued onto the torn fragment.
-	if err := l2.Append(store.KindBatch, map[string]int{"n": 6}); err != nil {
+	if err := l2.Append(store.KindTrade, map[string]int{"n": 6}); err != nil {
 		t.Fatal(err)
 	}
 	_ = l2.Close()

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import type { Fill } from "@/lib/types";
+import type { PricesUpdate } from "@/lib/types";
 import { cssVar } from "@/lib/theme";
 import type { ColorType } from "lightweight-charts";
 
@@ -53,20 +53,16 @@ export function PriceChart({ symbol, onHistory }: { symbol: string; onHistory?: 
       window.addEventListener("resize", resize);
 
       const socket = getSocket();
-      socket.emit("subscribe:symbol", symbol);
-      const onTrade = (fill: Fill) => {
-        if (fill.symbol !== symbol || !series) return;
-        series.update({
-          time: Math.floor(fill.timestamp / 1000) as import("lightweight-charts").UTCTimestamp,
-          value: fill.price,
-        });
+      const onPrices = (u: PricesUpdate) => {
+        const p = u.prices.find((x) => x.symbol === symbol);
+        if (!p || !series) return;
+        series.update({ time: Math.floor(u.at / 1000) as import("lightweight-charts").UTCTimestamp, value: p.price });
       };
-      socket.on("trade", onTrade);
+      socket.on("prices", onPrices);
 
       return () => {
         window.removeEventListener("resize", resize);
-        socket.off("trade", onTrade);
-        socket.emit("unsubscribe:symbol", symbol);
+        socket.off("prices", onPrices);
       };
     }
 

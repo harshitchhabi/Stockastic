@@ -1,6 +1,8 @@
 # Stockastic
 
-Live financial-market simulation event platform. Governing spec: the organisers' Live Financial Ecosystem rulebook v1.1 (not final, values change). It is not stored in this repository; every rule value lives in `apps/api/internal/rulebook/rulebook.json`.
+Live financial-market simulation event platform. Governing spec: the organisers' final Live Financial Ecosystem rulebook. It is not stored in this repository; every rule value lives in `apps/api/internal/rulebook/rulebook.json`.
+
+The market is a **price simulation**, not an order book. Teams buy or sell a number of shares at the company's current simulated price (two trades a minute, trades are final). Prices come from a scenario file that the organisers supply.
 
 ## Shape of the system
 
@@ -23,11 +25,13 @@ Node exists only on a developer machine to build the frontend.
 
 | Path | What |
 |---|---|
-| `apps/api` | Go backend (`stockastic/api`). **Built and tested:** `app` (wiring), `httpapi` (Gin), `wsapi`, `auth`, `store` (durable log), `config`, `market`, `universe`, `dto`, `rulebook`, `scoring`, `engine`, `ledger`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui`. **Not built yet:** `funds` (Stage 2), a Postgres `store.Log` |
+| `apps/api` | Go backend (`stockastic/api`): `app` (wiring), `httpapi` (Gin), `wsapi`, `auth`, `store` (durable log), `config`, `market` (current prices), `sim` (price simulation), `trading` (buy and sell at the current price), `ledger`, `funds` (Phase 2 funds, units, NAV, checkpoints), `scoring` (ranking, pairing, caps, prizes), `universe`, `dto`, `rulebook`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui` |
 | `apps/api/internal/rulebook/rulebook.json` | **Every rulebook value**, embedded in the binary. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
 | `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
-| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `stage2-dashboards.md` (Stage 2 plan) |
+| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `data-files.md` (how the master data becomes the game), `stage2-dashboards.md` (Phase 2 screens) |
 | `deploy/` | Ready-to-use server files: systemd unit, Caddy config, backup script, kernel settings, env template |
+| `tools/import_master.py` | Turns the master workbook into the two data files the server loads (see `docs/data-files.md`) |
+| `apps/api/scenarios/mock` | Mock data made from `Stockastic_Master.xlsx`: 150 companies, 62 market events, 3 bull or bear runs. Replace with the real data |
 | `apps/api/cmd/loadsim` | Load simulator: hundreds of teams sign up, log in together, trade over live sockets, then stampede one company |
 
 The previous TypeScript backend lives only on the `archive/ts-backend` branch.
@@ -58,13 +62,19 @@ Settings are environment variables (a `.env.local` next to where you run the ser
 | `ALLOW_SIGNUP` | `true` | Let teams register themselves |
 | `ALLOWED_ORIGINS` | localhost:3000 | Extra browser origins allowed to open the WebSocket |
 | `RULEBOOK_PATH` | embedded | An edited copy of `rulebook.json` |
-| `UNIVERSE_PATH` | placeholder list | The real company list (see `internal/universe`) |
+| `UNIVERSE_PATH` | placeholder list | The company list and opening prices (see `docs/data-files.md`) |
+| `SCENARIO_PATH` | plain random walk | The price simulation: volatility, price limits, scheduled events, bull and bear runs |
+| `DISK_MIN_FREE_MB` | `200` | New trades are refused below this much free disk space |
 | `AUTOSTART` | `false` | Start the event clock on boot. Development only |
 | `WEB_DIR` | embedded | Serve the built web app from a folder instead |
 
-**Nobody can trade until shares exist.** Teams start with cash only and short selling is not allowed. As an organiser,
-open **Shares** in the console and give teams some (or open a team from **Participants** to give it shares or change its cash). Then start the event in the **Control room** (start, then jump to
-"Phase 1, live trading").
+Run with the mock data:
+
+```bash
+cd apps/api && UNIVERSE_PATH=scenarios/mock/universe.json SCENARIO_PATH=scenarios/mock/scenario.json go run ./cmd/api
+```
+
+**Nobody can sell until they hold shares.** Teams start with cash only and short selling is not allowed. Buying works from the start. To give teams shares, open **Shares** in the console (or open a team from **Participants**). Then start the event in the **Control room**: start, then jump to "Phase 1 live trading". After the Phase 1 freeze, open **Funds and prizes** and form the funds.
 
 ## Commands
 
@@ -72,7 +82,7 @@ open **Shares** in the console and give teams some (or open a team from **Partic
 # backend
 cd apps/api && go vet ./... && go test -race ./...
 
-# load test against a running server (use a throwaway DATA_DIR; it creates accounts and orders)
+# load test against a running server (use a throwaway DATA_DIR; it creates accounts and trades)
 cd apps/api && go run ./cmd/loadsim -url http://127.0.0.1:8080 -admin-email <email> -admin-password <password> -users 300
 
 # frontend
@@ -94,31 +104,23 @@ to be consciously public or organiser-only.
 
 ## Reliability design
 
-**Durability** — every accepted order is on disk before the team is told it was accepted. Start-up rebuilds accounts,
-holdings, cash, the order books, working orders, the event clock, news and disputes from the log. A hard kill mid-session
-loses nothing that was acknowledged; a half-written final record is discarded on the next start. A retry of an order sent
-before the crash returns the original result instead of trading twice.
+**Durability** - every accepted trade, fund allocation and organiser change is on disk before the person is told it happened. Start-up rebuilds accounts, holdings, cash, prices, the simulation's position, funds and units, the event clock, news and disputes from the log. A hard kill mid-session loses nothing that was acknowledged; a half-written final record is discarded on the next start. A retry of a trade sent before the crash returns the original result instead of trading twice.
 
-**One server only** — the durable log is locked while a server uses it, so a second server started by mistake refuses to run
-instead of corrupting it. Orders that finish at the same moment share one disk sync.
+**The log cannot grow without bound** - at every start the server tidies the log: superseded copies of accounts, clock state, news and old price records are dropped, while trades, grants, cash changes, fund events, snapshots and the audit log are always kept in full. Restarting any number of times leaves the file the same size (tested). New trades are refused when free disk space falls below `DISK_MIN_FREE_MB`, and `/readyz` and the Systems page say so. `deploy/stockastic.service` stops restarting after 20 starts in 5 minutes, and `deploy/journald-stockastic.conf` caps the system log.
 
-**Slow clients** — each WebSocket has a bounded send queue and broadcasts never wait, so one stuck browser cannot slow
-anyone else; it is disconnected and reconnects.
+**One server only** - the durable log is locked while a server uses it, so a second server started by mistake refuses to run instead of corrupting it. Writes that finish at the same moment share one disk sync.
 
-**Security** — passwords are bcrypt-hashed (with a cap on concurrent hashing), tokens are HS256 and name only the account
-(role, promotion and disqualification are read live), organiser routes are checked on the server, logins are rate limited
-per email, the WebSocket rejects foreign browser origins, and every organiser action asks for confirmation and is audited
-(who, what, when). Organisers can sign a team out or lock its account; that cancels its open pages and old logins at once.
+**Slow clients** - each WebSocket has a bounded send queue and broadcasts never wait, so one stuck browser cannot slow anyone else; it is disconnected and reconnects.
 
-**Engine** — one goroutine per symbol on a buffered channel; symbols run in parallel, orders within a symbol are serial.
-- *Write-before-ack*: a match is planned read-only, committed to the journal, and only then applied. A failed commit changes nothing.
-- Idempotent on `(account, clientOrderId)`, including concurrent duplicates and post-restart retries.
-- A panic halts only that symbol until `Resume` rebuilds it from durable state.
-- Money is integer paise end to end (`internal/money`).
+**Security** - passwords are bcrypt-hashed (with a cap on concurrent hashing), tokens are HS256 and carry a per-account session version (signing a team out cancels its tokens), role, promotion and disqualification are read live, organiser routes are checked on the server, logins are rate limited per email, the WebSocket rejects foreign browser origins, and every organiser action asks for confirmation and is audited (who, what, when). Prices come only from the server: a trade names a company and a number of shares, never a price, so a participant cannot alter what they pay. Use HTTPS in production (`deploy/Caddyfile`).
+
+**Trading** - one lock per account. Cash and shares can never go negative, money is integer paise end to end (`internal/money`), and a trade is written to the log before it is applied (write before acknowledge). Trades are idempotent on `(account, clientTradeId)`, including concurrent duplicates and post-restart retries. An optional `expectedPrice` makes the server refuse a trade if the price moved since the person saw it.
+
+**Price simulation** (`internal/sim`) - deterministic from a seed, so a restarted server continues exactly where it was. Prices change once per tick while the market is open: random movement scaled by each company's volatility, market events that move a sector or one company over a few minutes, and bull or bear runs. In Phase 2 the price reaction to news waits for the public release, so fund managers, who see the news 60 seconds earlier, have that window to act.
 
 **Frontend connection** (`apps/web/src/lib/socket.ts`) — plain JSON-over-WebSocket with a watchdog for silently dead connections,
 full-jitter exponential backoff (no thundering herd after a server restart), immediate retry on `online`/tab-visible,
-automatic subscription replay, and a stop on auth rejection. Order submissions are retried with the same idempotency key.
+automatic subscription replay, and a stop on auth rejection. Trades are retried with the same idempotency key.
 Each panel is wrapped in an error boundary so one crash cannot blank the terminal.
 
 **Static assets** (`internal/webui`) — read, hashed and gzip-compressed once at startup; served from memory. No per-request

@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -11,56 +9,22 @@ import (
 
 	"stockastic/api/internal/auth"
 	"stockastic/api/internal/dto"
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/ids"
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/store"
+	"stockastic/api/internal/trading"
 )
-
-// ---- recent trades per team ----
-
-const maxRecentFills = 100
-
-func (a *App) recordFill(f engine.Fill) {
-	a.fillMu.Lock()
-	defer a.fillMu.Unlock()
-	add := func(id string) {
-		l := append(a.recentFills[id], f)
-		if len(l) > maxRecentFills {
-			l = append(l[:0], l[len(l)-maxRecentFills:]...)
-		}
-		a.recentFills[id] = l
-	}
-	add(f.TakerAccountID)
-	if f.MakerAccountID != f.TakerAccountID {
-		add(f.MakerAccountID)
-	}
-}
-
-func (a *App) fillsOf(id string) []dto.Fill {
-	a.fillMu.Lock()
-	src := append([]engine.Fill(nil), a.recentFills[id]...)
-	a.fillMu.Unlock()
-	out := make([]dto.Fill, 0, len(src))
-	for i := len(src) - 1; i >= 0; i-- { // newest first
-		out = append(out, dto.FromFill(src[i]))
-	}
-	return out
-}
 
 // ---- a team's wallet, as the organiser sees it ----
 
 type TeamDetail struct {
 	Account AdminAccount `json:"account"`
 	Wallet  struct {
-		Cash      float64 `json:"cash"`
-		Reserved  float64 `json:"reserved"`
-		Available float64 `json:"available"`
-		NetWorth  float64 `json:"netWorth"`
+		Cash     float64 `json:"cash"`
+		NetWorth float64 `json:"netWorth"`
 	} `json:"wallet"`
 	Holdings []dto.Holding `json:"holdings"`
-	Orders   []dto.Order   `json:"orders"`
-	Fills    []dto.Fill    `json:"fills"`
+	Trades   []dto.Trade   `json:"trades"`
 	History  []AuditEntry  `json:"history"`
 }
 
@@ -77,18 +41,11 @@ func (a *App) Team(id string) (TeamDetail, error) {
 	if err != nil {
 		return TeamDetail{}, err
 	}
-	snap, _ := a.Ledger.Snapshot(id)
-	d.Wallet.Cash, d.Wallet.Reserved, d.Wallet.Available, d.Wallet.NetWorth =
-		pf.CashBalance, dto.Rupees(snap.ReservedCash), dto.Rupees(snap.AvailableCash), pf.TotalValue
+	d.Wallet.Cash, d.Wallet.NetWorth = pf.CashBalance, pf.TotalValue
 	d.Account.CashBalance, d.Account.PortfolioValue = pf.CashBalance, pf.TotalValue
+	d.Account.Positions = len(pf.Holdings)
 	d.Holdings = pf.Holdings
-	for _, o := range a.LiveOrders(id) {
-		d.Orders = append(d.Orders, dto.FromOrder(o))
-	}
-	if d.Orders == nil {
-		d.Orders = []dto.Order{}
-	}
-	d.Fills = a.fillsOf(id)
+	d.Trades = a.MyTrades(id)
 	d.History = []AuditEntry{}
 	for _, e := range a.AuditLog() {
 		if e.Target == u.DisplayName || strings.HasPrefix(e.Target, u.DisplayName+" ") || strings.Contains(e.Target, u.ID) {
@@ -178,7 +135,7 @@ func (a *App) RevokeShares(actor User, reason, id, symbol string, qty int64) err
 		return err
 	}
 	if !a.HasSymbol(symbol) {
-		return engine.ErrUnknownSymbol
+		return trading.ErrUnknownSymbol
 	}
 	if qty < 1 || qty > maxQty {
 		return bad("invalid_quantity", "Quantity must be a whole number of at least 1.")
@@ -222,7 +179,7 @@ func (a *App) SetShares(actor User, reason, id, symbol string, qty int64) error 
 		return err
 	}
 	if !a.HasSymbol(symbol) {
-		return engine.ErrUnknownSymbol
+		return trading.ErrUnknownSymbol
 	}
 	if qty < 0 || qty > maxQty {
 		return bad("invalid_quantity", "Enter a whole number of shares from 0 up.")
@@ -240,7 +197,7 @@ func (a *App) SetShares(actor User, reason, id, symbol string, qty int64) error 
 		}
 		switch {
 		case qty > cur:
-			price, _ := a.Market.Last(symbol)
+			price, _ := a.Market.Price(symbol)
 			return a.giveShares(id, symbol, qty-cur, price)
 		case qty < cur:
 			return a.takeShares(id, symbol, cur-qty)
@@ -251,37 +208,7 @@ func (a *App) SetShares(actor User, reason, id, symbol string, qty int64) error 
 
 // ---- orders, standing, credentials ----
 
-// CancelTeamOrders cancels one working order (when orderID is given) or all of a team's working orders.
-func (a *App) CancelTeamOrders(ctx context.Context, actor User, reason, id, orderID string) error {
-	u, err := a.team(id)
-	if err != nil {
-		return err
-	}
-	action, target := "Cancelled all working orders", u.DisplayName
-	if orderID != "" {
-		action = "Cancelled a working order"
-	}
-	return a.Do(actor, action, target, reason, func() error {
-		orders := a.LiveOrders(id)
-		found := false
-		var firstErr error
-		for _, o := range orders {
-			if orderID != "" && o.ID != orderID {
-				continue
-			}
-			found = true
-			if _, err := a.Engine.Cancel(ctx, o.Symbol, o.ID, id); err != nil && !errors.Is(err, engine.ErrAlreadyClosed) && firstErr == nil {
-				firstErr = err
-			}
-		}
-		if orderID != "" && !found {
-			return engine.ErrNotFound
-		}
-		return firstErr
-	})
-}
-
-// Reinstate lets a disqualified team trade again. Its cancelled orders are not brought back.
+// Reinstate lets a disqualified team trade again.
 func (a *App) Reinstate(actor User, reason, id string) error {
 	u, err := a.team(id)
 	if err != nil {
@@ -389,7 +316,7 @@ func (a *App) PausedSymbols() []string {
 // still be cancelled.
 func (a *App) PauseSymbol(actor User, reason, symbol string, paused bool) error {
 	if !a.HasSymbol(symbol) {
-		return engine.ErrUnknownSymbol
+		return trading.ErrUnknownSymbol
 	}
 	action := "Resumed trading in a company"
 	if paused {

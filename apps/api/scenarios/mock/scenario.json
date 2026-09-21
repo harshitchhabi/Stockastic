@@ -1,0 +1,1054 @@
+{
+ "seed": 20260921,
+ "tickSeconds": 60,
+ "volatility": {
+  "defaultPct": 0.3,
+  "bySymbol": {
+   "SMZK": 0.2,
+   "MHMH": 0.2,
+   "MAMO": 0.2,
+   "AJAU": 0.2,
+   "EICH": 0.3,
+   "TVXM": 0.3,
+   "BOSC": 0.3,
+   "ZERO": 0.3,
+   "ASLY": 0.3,
+   "BLKN": 0.4,
+   "APTY": 0.4,
+   "HPFB": 0.2,
+   "ICEB": 0.2,
+   "SBBH": 0.2,
+   "AJAF": 0.2,
+   "MOKR": 0.2,
+   "AJFS": 0.2,
+   "BOBA": 0.3,
+   "CHOL": 0.3,
+   "SHRF": 0.3,
+   "PNBK": 0.3,
+   "MUTF": 0.3,
+   "HPAM": 0.3,
+   "SBBC": 0.3,
+   "AYSF": 0.4,
+   "IDFD": 0.4,
+   "FEDB": 0.4,
+   "LCIH": 0.4,
+   "KRVB": 0.4,
+   "LNDE": 0.2,
+   "ABDI": 0.3,
+   "SEAM": 0.3,
+   "CMNG": 0.3,
+   "BHEE": 0.3,
+   "AIEE": 0.4,
+   "TMKN": 0.4,
+   "GRWN": 0.4,
+   "KRLS": 0.4,
+   "ULTC": 0.2,
+   "AMBJ": 0.3,
+   "SHRC": 0.3,
+   "JLCM": 0.4,
+   "ACDC": 0.4,
+   "DLMY": 0.4,
+   "RMKO": 0.4,
+   "BRLA": 0.4,
+   "ASNP": 0.3,
+   "PDLT": 0.3,
+   "SRGC": 0.3,
+   "CRMD": 0.4,
+   "DPKN": 0.4,
+   "DTCH": 0.4,
+   "NVFL": 0.4,
+   "ARTI": 0.4,
+   "TITO": 0.2,
+   "AVNW": 0.2,
+   "TOMA": 0.2,
+   "INGA": 0.3,
+   "TRNR": 0.3,
+   "INHO": 0.3,
+   "JUBF": 0.4,
+   "DVYN": 0.4,
+   "HUNL": 0.2,
+   "ITDL": 0.2,
+   "MSTL": 0.3,
+   "TRNB": 0.3,
+   "BRTN": 0.3,
+   "GDRG": 0.3,
+   "DTCN": 0.3,
+   "DABR": 0.3,
+   "MRKO": 0.3,
+   "CLGT": 0.4,
+   "EMAM": 0.4,
+   "DCSV": 0.2,
+   "INFS": 0.2,
+   "HCMT": 0.2,
+   "WHIP": 0.2,
+   "LTMT": 0.3,
+   "TCMH": 0.3,
+   "PRST": 0.3,
+   "KOFJ": 0.4,
+   "EMPH": 0.4,
+   "DELX": 0.4,
+   "ZENZ": 0.4,
+   "SYNT": 0.4,
+   "DLXR": 0.3,
+   "MCTK": 0.3,
+   "GMXA": 0.3,
+   "GDPR": 0.4,
+   "OBRA": 0.4,
+   "PRSG": 0.4,
+   "FNXM": 0.4,
+   "IRDI": 0.4,
+   "BRGD": 0.4,
+   "NDPT": 0.2,
+   "CNCR": 0.4,
+   "HELV": 0.4,
+   "BLKT": 0.4,
+   "TPCP": 0.4,
+   "VRML": 0.4,
+   "MHLG": 0.4,
+   "JSXS": 0.2,
+   "KOLI": 0.2,
+   "DSTL": 0.3,
+   "HZNK": 0.3,
+   "VDNT": 0.3,
+   "HNDL": 0.3,
+   "JNDL": 0.3,
+   "NMDX": 0.4,
+   "SAEL": 0.4,
+   "APLT": 0.4,
+   "REAL": 0.2,
+   "CNGC": 0.2,
+   "INDO": 0.3,
+   "BPCE": 0.3,
+   "GAEL": 0.3,
+   "HPCE": 0.3,
+   "OYLI": 0.3,
+   "PTNT": 0.4,
+   "GJGS": 0.4,
+   "IPGS": 0.4,
+   "CSTL": 0.4,
+   "MHGS": 0.4,
+   "SUNN": 0.2,
+   "DIVY": 0.3,
+   "CIPA": 0.3,
+   "TRNT": 0.3,
+   "DRDL": 0.3,
+   "ZYDA": 0.3,
+   "LOOP": 0.3,
+   "AROB": 0.3,
+   "ALKM": 0.4,
+   "LRUS": 0.4,
+   "NTPD": 0.2,
+   "PWGR": 0.2,
+   "NDNP": 0.3,
+   "DTPW": 0.3,
+   "JSXE": 0.3,
+   "NHPD": 0.3,
+   "TRPW": 0.4,
+   "SJVM": 0.4,
+   "CESD": 0.4,
+   "BHAT": 0.2,
+   "INDT": 0.3,
+   "GPID": 0.3,
+   "DTCM": 0.4,
+   "SNTV": 0.4,
+   "ZENT": 0.4,
+   "PVXI": 0.4,
+   "SRGM": 0.4
+  }
+ },
+ "priceFloor": 50.0,
+ "priceCap": 2500.0,
+ "roundTo": 0.05,
+ "events": [
+  {
+   "id": "e01",
+   "atMinute": 23.1167,
+   "headline": "Central Bank holds the policy rate steady but softens its language on future tightening.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 0.7,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e02",
+   "atMinute": 25.5667,
+   "headline": "Weather bureau upgrades the monsoon forecast to above-normal for the full season.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 1.4,
+     "rampMinutes": 3,
+     "sector": "Banking & Financial Services"
+    }
+   ]
+  },
+  {
+   "id": "e03",
+   "atMinute": 27.8333,
+   "headline": "Global crude benchmark jumps 7% overnight after a supply disruption at a major export terminal.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": 1.05,
+     "rampMinutes": 3,
+     "sector": "Infrastructure & Realty"
+    }
+   ]
+  },
+  {
+   "id": "e04",
+   "atMinute": 29.5833,
+   "headline": "Government clears a Rs 40,000 cr highway expansion tranche with immediate tendering.",
+   "body": "",
+   "type": "REAL",
+   "category": "POLICY",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e05",
+   "atMinute": 31.1,
+   "headline": "Unconfirmed: a sovereign wealth fund is said to be building a large strategic stake in Tomato.",
+   "body": "",
+   "type": "FAKE",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e06",
+   "atMinute": 32.9,
+   "headline": "Import duty on finished steel raised to 12% to protect domestic producers.",
+   "body": "",
+   "type": "REAL",
+   "category": "POLICY",
+   "impacts": [
+    {
+     "shockPct": 1.05,
+     "rampMinutes": 3,
+     "sector": "Consumer Services & Retail"
+    }
+   ]
+  },
+  {
+   "id": "e07",
+   "atMinute": 35.1,
+   "headline": "Denied: Tomato states no such discussions have taken place with any investor.",
+   "body": "",
+   "type": "DENIAL",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e08",
+   "atMinute": 36.55,
+   "headline": "Data Consultancy Services guides next-quarter revenue below street expectations on deal delays.",
+   "body": "",
+   "type": "REAL",
+   "category": "CORPORATE",
+   "impacts": [
+    {
+     "shockPct": -1.4,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e09",
+   "atMinute": 38.85,
+   "headline": "Rupee weakens 1.2% against the dollar in early trade.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": -2.1,
+     "rampMinutes": 3,
+     "sector": "Chemicals & Fertilisers"
+    }
+   ]
+  },
+  {
+   "id": "e10",
+   "atMinute": 40.1,
+   "headline": "Regulator caps unsecured lending growth for non-bank lenders with immediate effect.",
+   "body": "",
+   "type": "REAL",
+   "category": "REGULATORY",
+   "impacts": [
+    {
+     "shockPct": -2.45,
+     "rampMinutes": 3,
+     "sector": "Logistics & Transportation"
+    }
+   ]
+  },
+  {
+   "id": "e12",
+   "atMinute": 48.0833,
+   "headline": "Unconfirmed: the market regulator is said to be examining accounting practices at HPFC Bank.",
+   "body": "",
+   "type": "FAKE",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e13",
+   "atMinute": 52.2833,
+   "headline": "Cement makers push through a Rs 20/bag price hike across southern markets.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 2.1,
+     "rampMinutes": 3,
+     "sector": "Capital Goods & Engineering"
+    }
+   ]
+  },
+  {
+   "id": "e14",
+   "atMinute": 55.0833,
+   "headline": "Denied: the market regulator confirms no examination of HPFC Bank is underway.",
+   "body": "",
+   "type": "DENIAL",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e15",
+   "atMinute": 55.8333,
+   "headline": "Two-wheeler retail volumes rise 18% year-on-year in the festive month.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 3.5,
+     "rampMinutes": 3,
+     "sector": "Infrastructure & Realty"
+    }
+   ]
+  },
+  {
+   "id": "e16",
+   "atMinute": 57.0,
+   "headline": "Peak power demand hits a record as a heatwave spreads; grid operators flag strain.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.4,
+     "rampMinutes": 3,
+     "sector": "Metals & Mining"
+    }
+   ]
+  },
+  {
+   "id": "e17",
+   "atMinute": 104.3667,
+   "headline": "Central Bank cuts the policy rate by 25 bps, earlier than markets had priced in.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": -1.75,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e18",
+   "atMinute": 106.4167,
+   "headline": "A global chipmaker announces a domestic fabrication partnership with local engineering majors.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": -1.4,
+     "rampMinutes": 3,
+     "sector": "Capital Goods & Engineering"
+    }
+   ]
+  },
+  {
+   "id": "e19",
+   "atMinute": 109.6,
+   "headline": "Overseas regulator clears a wave of generic drug approvals for domestic manufacturers.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": -1.05,
+     "rampMinutes": 3,
+     "sector": "Cement & Construction Materials"
+    }
+   ]
+  },
+  {
+   "id": "e20",
+   "atMinute": 111.2333,
+   "headline": "Unconfirmed: merger talks are reported between Ambooja Cements and UltraTeck Cement.",
+   "body": "",
+   "type": "FAKE",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e21",
+   "atMinute": 115.9667,
+   "headline": "Telecom operators push through an 11% tariff increase across prepaid plans.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": -1.75,
+     "rampMinutes": 3,
+     "sector": "Information Technology"
+    }
+   ]
+  },
+  {
+   "id": "e22",
+   "atMinute": 117.15,
+   "headline": "Container freight rates spike as shipping reroutes around a major trade corridor persist.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": -3.85,
+     "rampMinutes": 3,
+     "symbol": "DCSV"
+    }
+   ]
+  },
+  {
+   "id": "e23",
+   "atMinute": 118.8167,
+   "headline": "Two large states announce stamp duty cuts on residential property registration.",
+   "body": "",
+   "type": "REAL",
+   "category": "POLICY",
+   "impacts": [
+    {
+     "shockPct": -1.05,
+     "rampMinutes": 3,
+     "sector": "Consumer Services & Retail"
+    }
+   ]
+  },
+  {
+   "id": "e24",
+   "atMinute": 119.4833,
+   "headline": "Denied: both Ambooja Cements and UltraTeck Cement call the merger report baseless.",
+   "body": "",
+   "type": "DENIAL",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e25",
+   "atMinute": 120.2833,
+   "headline": "Crude slips 5% as global demand forecasts are trimmed.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": -1.4,
+     "rampMinutes": 3,
+     "sector": "Oil, Gas & Energy"
+    }
+   ]
+  },
+  {
+   "id": "e26",
+   "atMinute": 124.0833,
+   "headline": "Mama Motors reports a record electric vehicle order book and raises capacity guidance.",
+   "body": "",
+   "type": "REAL",
+   "category": "CORPORATE",
+   "impacts": [
+    {
+     "shockPct": 1.4,
+     "rampMinutes": 3,
+     "sector": "Pharmaceuticals & Healthcare"
+    }
+   ]
+  },
+  {
+   "id": "e27",
+   "atMinute": 126.4667,
+   "headline": "Base metal prices soften after weak industrial demand data from a major importer.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": -1.05,
+     "rampMinutes": 3,
+     "sector": "Banking & Financial Services"
+    }
+   ]
+  },
+  {
+   "id": "e28",
+   "atMinute": 128.5,
+   "headline": "Rural consumption data shows volume growth accelerating to 9%.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": -4.2,
+     "rampMinutes": 3,
+     "symbol": "AJAF"
+    }
+   ]
+  },
+  {
+   "id": "e29",
+   "atMinute": 131.0,
+   "headline": "Regulator tightens disclosure norms for listing-bound companies and their bankers.",
+   "body": "",
+   "type": "REAL",
+   "category": "REGULATORY",
+   "impacts": [
+    {
+     "shockPct": -3.5,
+     "rampMinutes": 3,
+     "symbol": "CHOL"
+    }
+   ]
+  },
+  {
+   "id": "e30",
+   "atMinute": 148.5333,
+   "headline": "A global bank flags rising credit stress across emerging market lenders.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": -2.8,
+     "rampMinutes": 3,
+     "symbol": "MUTF"
+    }
+   ]
+  },
+  {
+   "id": "e32",
+   "atMinute": 152.2333,
+   "headline": "Foreign investors pull a record monthly sum out of domestic equities.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e33",
+   "atMinute": 153.4167,
+   "headline": "Unconfirmed: the government is said to be considering a full rollback of the windfall levy on refiners.",
+   "body": "",
+   "type": "FAKE",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e34",
+   "atMinute": 155.8333,
+   "headline": "Crude spikes 9% following a geopolitical escalation near a key shipping strait.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Capital Goods & Engineering"
+    }
+   ]
+  },
+  {
+   "id": "e35",
+   "atMinute": 157.8667,
+   "headline": "Defensive rotation underway as investors move into pharma and staples.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Cement & Construction Materials"
+    }
+   ]
+  },
+  {
+   "id": "e36",
+   "atMinute": 159.2333,
+   "headline": "Power tariff revision deferred by the regulator pending further review.",
+   "body": "",
+   "type": "REAL",
+   "category": "REGULATORY",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Chemicals & Fertilisers"
+    }
+   ]
+  },
+  {
+   "id": "e37",
+   "atMinute": 160.4167,
+   "headline": "Denied: the Finance Ministry says no change to the windfall levy is under consideration.",
+   "body": "",
+   "type": "DENIAL",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e38",
+   "atMinute": 161.4833,
+   "headline": "A major overseas client announces a freeze on discretionary technology spending.",
+   "body": "",
+   "type": "REAL",
+   "category": "CORPORATE",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "FMCG & Consumer Goods"
+    }
+   ]
+  },
+  {
+   "id": "e39",
+   "atMinute": 163.2333,
+   "headline": "Import curbs on specialty chemicals lifted, reopening cheaper overseas supply.",
+   "body": "",
+   "type": "REAL",
+   "category": "POLICY",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Information Technology"
+    }
+   ]
+  },
+  {
+   "id": "e40",
+   "atMinute": 166.2833,
+   "headline": "Volatility index spikes; safe-haven and precious metal names catch a bid.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Infrastructure & Realty"
+    }
+   ]
+  },
+  {
+   "id": "e41",
+   "atMinute": 170.3333,
+   "headline": "Housing finance delinquencies tick higher in the latest supervisory data.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Logistics & Transportation"
+    }
+   ]
+  },
+  {
+   "id": "e42",
+   "atMinute": 171.9167,
+   "headline": "Semiconductor shortage resurfaces; carmakers cut near-term production guidance.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Metals & Mining"
+    }
+   ]
+  },
+  {
+   "id": "e43",
+   "atMinute": 173.9833,
+   "headline": "Central Bank injects liquidity through an unscheduled operation; markets steady.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Oil, Gas & Energy"
+    }
+   ]
+  },
+  {
+   "id": "e45",
+   "atMinute": 189.5167,
+   "headline": "Engineering order inflows hit a multi-year high on public capex execution.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Power & Utilities"
+    }
+   ]
+  },
+  {
+   "id": "e46",
+   "atMinute": 191.8,
+   "headline": "Unconfirmed: a leading pharma manufacturer is said to be facing an import alert at a key plant.",
+   "body": "",
+   "type": "FAKE",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e47",
+   "atMinute": 194.2,
+   "headline": "Festive season retail spending comes in well ahead of estimates.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 2.8,
+     "rampMinutes": 3,
+     "sector": "Cement & Construction Materials"
+    }
+   ]
+  },
+  {
+   "id": "e48",
+   "atMinute": 196.8,
+   "headline": "Denied: the manufacturer confirms all plants remain in good standing with the regulator.",
+   "body": "",
+   "type": "DENIAL",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e49",
+   "atMinute": 198.7333,
+   "headline": "Renewable capacity auction closes heavily oversubscribed at record-low tariffs.",
+   "body": "",
+   "type": "REAL",
+   "category": "POLICY",
+   "impacts": [
+    {
+     "shockPct": 1.4,
+     "rampMinutes": 3,
+     "symbol": "RMKO"
+    }
+   ]
+  },
+  {
+   "id": "e50",
+   "atMinute": 202.7667,
+   "headline": "Rupee recovers 0.9%, easing imported input costs.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 1.4,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e51",
+   "atMinute": 204.0333,
+   "headline": "Coal production target raised; thermal fuel supply constraints ease.",
+   "body": "",
+   "type": "REAL",
+   "category": "POLICY",
+   "impacts": [
+    {
+     "shockPct": 3.85,
+     "rampMinutes": 3,
+     "symbol": "TVXM"
+    }
+   ]
+  },
+  {
+   "id": "e52",
+   "atMinute": 205.4333,
+   "headline": "Telecom regulator opens a review of spectrum pricing and renewal terms.",
+   "body": "",
+   "type": "REAL",
+   "category": "REGULATORY",
+   "impacts": [
+    {
+     "shockPct": 4.2,
+     "rampMinutes": 3,
+     "symbol": "ZERO"
+    }
+   ]
+  },
+  {
+   "id": "e53",
+   "atMinute": 206.9667,
+   "headline": "Port throughput hits a record; inland logistics volumes surge with it.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.05,
+     "rampMinutes": 3,
+     "sector": "Oil, Gas & Energy"
+    }
+   ]
+  },
+  {
+   "id": "e54",
+   "atMinute": 209.45,
+   "headline": "Global generic pricing pressure eases as a large overseas buyer consolidates contracts.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": 2.8,
+     "rampMinutes": 3,
+     "sector": "Power & Utilities"
+    }
+   ]
+  },
+  {
+   "id": "e55",
+   "atMinute": 213.2833,
+   "headline": "New effluent discharge norms notified for water-intensive industries.",
+   "body": "",
+   "type": "REAL",
+   "category": "REGULATORY",
+   "impacts": [
+    {
+     "shockPct": 2.45,
+     "rampMinutes": 3,
+     "symbol": "KOLI"
+    }
+   ]
+  },
+  {
+   "id": "e56",
+   "atMinute": 217.0,
+   "headline": "Lenders report a broad improvement in asset quality and lower slippages.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 2.45,
+     "rampMinutes": 3,
+     "sector": "Automobile & Auto Components"
+    }
+   ]
+  },
+  {
+   "id": "e57",
+   "atMinute": 233.0667,
+   "headline": "Index rebalance announced; passive flows expected into large-cap constituents.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 3.5,
+     "rampMinutes": 3,
+     "sector": "Banking & Financial Services"
+    }
+   ]
+  },
+  {
+   "id": "e58",
+   "atMinute": 235.8333,
+   "headline": "Cement demand outlook raised for the second half on housing and infrastructure pull.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 1.4,
+     "rampMinutes": 3,
+     "sector": "Cement & Construction Materials"
+    }
+   ]
+  },
+  {
+   "id": "e59",
+   "atMinute": 237.7833,
+   "headline": "Global growth forecast trimmed by a major multilateral body.",
+   "body": "",
+   "type": "REAL",
+   "category": "GLOBAL",
+   "impacts": [
+    {
+     "shockPct": 1.75,
+     "rampMinutes": 3,
+     "sector": "Consumer Services & Retail"
+    }
+   ]
+  },
+  {
+   "id": "e60",
+   "atMinute": 239.0333,
+   "headline": "Unconfirmed: a sovereign fund is said to be exiting its domestic infrastructure portfolio.",
+   "body": "",
+   "type": "FAKE",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e61",
+   "atMinute": 241.7833,
+   "headline": "Vehicle exports jump 22% on strong demand from overseas markets.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 2.8,
+     "rampMinutes": 3,
+     "sector": "Capital Goods & Engineering"
+    }
+   ]
+  },
+  {
+   "id": "e62",
+   "atMinute": 243.0333,
+   "headline": "Denied: the fund confirms its domestic infrastructure allocation is unchanged.",
+   "body": "",
+   "type": "DENIAL",
+   "category": "RUMOUR",
+   "impacts": []
+  },
+  {
+   "id": "e63",
+   "atMinute": 246.4333,
+   "headline": "Chemical input costs fall sharply as feedstock supply normalises.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 2.8,
+     "rampMinutes": 3,
+     "symbol": "ABDI"
+    }
+   ]
+  },
+  {
+   "id": "e64",
+   "atMinute": 248.85,
+   "headline": "Consumer credit growth beats estimates with stable delinquency rates.",
+   "body": "",
+   "type": "REAL",
+   "category": "SECTOR",
+   "impacts": [
+    {
+     "shockPct": 3.5,
+     "rampMinutes": 3,
+     "symbol": "SEAM"
+    }
+   ]
+  },
+  {
+   "id": "e65",
+   "atMinute": 251.0,
+   "headline": "Broad profit-booking noted as the session approaches its close.",
+   "body": "",
+   "type": "REAL",
+   "category": "MACRO",
+   "impacts": [
+    {
+     "shockPct": 3.15,
+     "rampMinutes": 3,
+     "sector": "Pharmaceuticals & Healthcare"
+    }
+   ]
+  }
+ ],
+ "regimes": [
+  {
+   "id": "e11",
+   "kind": "bull",
+   "atMinute": 43.5167,
+   "durationMinutes": 16.4833,
+   "driftPctPerTick": 0.05,
+   "breadth": 0.7,
+   "headline": "BULL RUN DECLARED — broad risk appetite returns, buying interest across the board.",
+   "body": ""
+  },
+  {
+   "id": "e31",
+   "kind": "bear",
+   "atMinute": 149.85,
+   "durationMinutes": 28.15,
+   "driftPctPerTick": 0.1,
+   "breadth": 0.7,
+   "headline": "BEAR RUN DECLARED — broad risk-off across the market, selling pressure in every sector.",
+   "body": ""
+  },
+  {
+   "id": "e44",
+   "kind": "bull",
+   "atMinute": 188.2,
+   "durationMinutes": 32.8,
+   "driftPctPerTick": 0.05,
+   "breadth": 0.7,
+   "headline": "BULL RUN DECLARED — liquidity support works through the system and risk appetite returns.",
+   "body": ""
+  }
+ ]
+}

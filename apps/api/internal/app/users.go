@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"stockastic/api/internal/auth"
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/ids"
 	"stockastic/api/internal/ledger"
 	"stockastic/api/internal/store"
@@ -242,5 +241,3 @@ func (u User) orderable() error {
 	}
 	return nil
 }
-
-var _ = engine.Buy // engine is used by the other files of this package

@@ -4,7 +4,7 @@
 //
 //	go run ./cmd/loadsim -url http://127.0.0.1:8099 -admin-email a@b.c -admin-password ... -users 300
 //
-// It creates accounts and orders on the server it is pointed at: use a throwaway data directory.
+// It creates accounts and trades on the server it is pointed at: use a throwaway data directory.
 package main
 
 import (
@@ -13,7 +13,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -58,7 +57,7 @@ var (
 	adminMail = flag.String("admin-email", "", "organiser email")
 	adminPass = flag.String("admin-password", "", "organiser password")
 	nUsers    = flag.Int("users", 300, "teams to simulate")
-	perMin    = flag.Float64("orders-per-min", 2, "orders each team sends per minute (the rulebook allows 2)")
+	perMin    = flag.Float64("orders-per-min", 2, "trades each team sends per minute (the rulebook allows 2)")
 	steady    = flag.Duration("steady", 60*time.Second, "how long to trade at the steady pace")
 	subs      = flag.Int("subs", 1, "companies each browser has open (order book subscriptions)")
 	storm     = flag.Int("storm", 200, "most teams logging in at the very same instant (a venue rarely exceeds this)")
@@ -261,7 +260,7 @@ func main() {
 				var f struct {
 					T string `json:"t"`
 					D struct {
-						ClientOrderID string `json:"clientOrderId"`
+						ClientTradeID string `json:"clientTradeId"`
 					} `json:"d"`
 				}
 				if json.Unmarshal(data, &f) != nil {
@@ -271,8 +270,8 @@ func main() {
 					first = false
 					statReady.add(now.Sub(t0))
 				}
-				if f.T == "orderAccepted" && f.D.ClientOrderID != "" {
-					if v, ok := sent.LoadAndDelete(f.D.ClientOrderID); ok {
+				if f.T == "trade" && f.D.ClientTradeID != "" {
+					if v, ok := sent.LoadAndDelete(f.D.ClientTradeID); ok {
 						statWSLag.add(now.Sub(v.(time.Time)))
 					}
 				}
@@ -285,11 +284,10 @@ func main() {
 		if rand.Intn(2) == 0 {
 			side = "sell"
 		}
-		price := math.Round(open*(1+rand.NormFloat64()*0.004)*20) / 20
 		cid := fmt.Sprintf("u%d-%d-%d", u.idx, n, time.Now().UnixNano())
 		t0 := time.Now()
 		sent.Store(cid, t0)
-		st, body, err := callC(u.c, "POST", "/api/orders", u.token, map[string]any{"clientOrderId": cid, "symbol": sym, "side": side, "price": price, "qty": 1 + rand.Intn(10)})
+		st, body, err := callC(u.c, "POST", "/api/trades", u.token, map[string]any{"clientTradeId": cid, "symbol": sym, "side": side, "qty": 1 + rand.Intn(10)})
 		d := time.Since(t0)
 		if err != nil || st != 200 {
 			var e struct {
@@ -321,7 +319,7 @@ func main() {
 	}
 
 	// ---- 5. steady trading ----
-	fmt.Printf("trading steadily for %s (%.1f orders per team per minute) ...\n", *steady, *perMin)
+	fmt.Printf("trading steadily for %s (%.1f trades per team per minute) ...\n", *steady, *perMin)
 	deadline := time.Now().Add(*steady)
 	var tw sync.WaitGroup
 	interval := time.Duration(float64(time.Minute) / *perMin)
@@ -338,7 +336,7 @@ func main() {
 				// a team also looks at its book and portfolio now and then
 				if true {
 					t0 := time.Now()
-					callC(u.c, "GET", "/api/symbols/"+s.Symbol+"/depth", u.token, nil)
+					callC(u.c, "GET", "/api/symbols/"+s.Symbol+"/history", u.token, nil)
 					statDepth.add(time.Since(t0))
 					t0 = time.Now()
 					callC(u.c, "GET", "/api/portfolio/me", u.token, nil)
@@ -352,7 +350,7 @@ func main() {
 
 	// ---- 6. the worst moment: every team hits the same company in the same instant ----
 	time.Sleep(2 * time.Second)
-	fmt.Printf("burst: all %d teams order the same company at the same instant ...\n", *nUsers)
+	fmt.Printf("burst: all %d teams trade the same company at the same instant ...\n", *nUsers)
 	hot := syms[0]
 	var bw sync.WaitGroup
 	var g2 sync.WaitGroup
@@ -372,7 +370,7 @@ func main() {
 	// ---- report ----
 	var sys struct {
 		Connected                  int
-		OpenOrders                 int
+		OpenOrders                 int // no longer reported by the server; kept so old field names still decode
 		CommitP50Ms, CommitP99Ms   int64
 		JournalErrors              int64
 		OrdersPerMin, TradesPerMin int64
@@ -383,16 +381,16 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("================ RESULTS ================")
-	fmt.Printf("teams %d, steady pace %.1f orders/team/min, total run %.0fs\n\n", *nUsers, *perMin, secs)
+	fmt.Printf("teams %d, steady pace %.1f trades/team/min, total run %.0fs\n\n", *nUsers, *perMin, secs)
 	fmt.Println(statSignup.line("sign up (bcrypt)"))
 	fmt.Println(statLogin.line("log in, all at once (bcrypt)"))
 	fmt.Println(statReady.line("WebSocket connect to ready"))
-	fmt.Println(statOrder.line("place order, steady"))
-	fmt.Println(statBurst.line("place order, burst on one company"))
-	fmt.Println(statWSLag.line("order to live update on own socket"))
-	fmt.Println(statDepth.line("read order book"))
+	fmt.Println(statOrder.line("trade, steady"))
+	fmt.Println(statBurst.line("trade, burst on one company"))
+	fmt.Println(statWSLag.line("trade to confirmation on own socket"))
+	fmt.Println(statDepth.line("read price history"))
 	fmt.Println(statPortfolio.line("read portfolio"))
-	fmt.Printf("\norders accepted %d, refused by the trade limit %d, errors %d\n", orderOK.Load(), orderRate.Load(), orderErr.Load())
+	fmt.Printf("\ntrades accepted %d, refused by the trade limit %d, errors %d\n", orderOK.Load(), orderRate.Load(), orderErr.Load())
 	statusMu.Lock()
 	for k, v := range statuses {
 		fmt.Printf("    not accepted: %-40s x%d\n", k, v)
@@ -401,7 +399,7 @@ func main() {
 	fmt.Printf("sockets connected %d, dropped %d, messages received %d (%.1f per socket per second, %.1f KB/s per socket)\n",
 		wsConnected.Load(), wsDropped.Load(), wsMsgs.Load(),
 		float64(wsMsgs.Load())/float64(max(1, int(wsConnected.Load())))/secs, float64(wsBytes.Load())/1024/float64(max(1, int(wsConnected.Load())))/secs)
-	fmt.Printf("server view: connected %d, open orders %d, save time p50 %dms p99 %dms, failed saves %d, stopped companies %d\n",
+	fmt.Printf("server view: connected %d, (unused %d), save time p50 %dms p99 %dms, failed saves %d, stopped companies %d\n",
 		sys.Connected, sys.OpenOrders, sys.CommitP50Ms, sys.CommitP99Ms, sys.JournalErrors, len(sys.Halted))
 	close(stop)
 	fmt.Println("(closing sockets)")

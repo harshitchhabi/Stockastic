@@ -39,14 +39,16 @@ export interface Systems {
   uptimeSec: number;
   dbOk: boolean;
   connected: number;
-  openOrders: number;
-  ordersPerMin: number;
   tradesPerMin: number;
   commitP50Ms: number;
   commitP99Ms: number;
   journalErrors: number;
   symbolsTotal: number;
-  halted: { symbol: string; since: number; reason: string }[];
+  priceTicks: number;
+  tickSeconds: number;
+  lastPriceAt: number;
+  diskFreeMb: number;
+  diskLow: boolean;
   recentErrors: { at: number; message: string }[];
 }
 
@@ -62,8 +64,6 @@ export interface AdminAccount {
   warnings: number;
   cashBalance: number;
   portfolioValue: number;
-  /** Cash held back for working orders. */
-  reserved: number;
   positions: number;
   locked: boolean;
   online: boolean;
@@ -94,14 +94,11 @@ export interface Ticket {
   accountName: string;
   category: string;
   summary: string;
-  sequence: number;
-  queue: "expedited" | "standard";
   raisedAt: number;
   incidentAt: number;
   late: boolean;
-  /** 0 for the standard queue (no SLA). */
+  /** When the committee should have decided by. */
   dueBy: number;
-  platformWide: boolean;
   status: "open" | "resolved";
   resolution?: string;
 }
@@ -125,9 +122,106 @@ export interface RulebookStatus {
 
 export interface TeamDetail {
   account: AdminAccount;
-  wallet: { cash: number; reserved: number; available: number; netWorth: number };
+  wallet: { cash: number; netWorth: number };
   holdings: { symbol: string; qty: number; avgPrice: number; marketValue: number; unrealizedPnl: number }[];
-  orders: { id: string; symbol: string; side: "buy" | "sell"; price: number; remainingQty: number }[];
-  fills: { id: string; symbol: string; price: number; qty: number; takerAccountId: string; takerSide: "buy" | "sell"; timestamp: number }[];
+  trades: { id: string; symbol: string; side: "buy" | "sell"; price: number; qty: number; value: number; timestamp: number }[];
   history: AuditEntry[];
+}
+
+// ---- market events (the price simulation) ----
+
+export interface SimItem {
+  id: string;
+  kind: "news" | "bull" | "bear";
+  atMinute: number;
+  headline: string;
+  fired: boolean;
+  /** REAL, FAKE or DENIAL. Organiser only: teams are never told which news is fake. */
+  type?: string;
+  category?: string;
+  impacts: number;
+}
+
+export interface SimStatus {
+  tickSeconds: number;
+  ticks: number;
+  activeShocks: number;
+  pendingShocks: number;
+  scriptedCompanies: number;
+  items: SimItem[];
+}
+
+// ---- Phase 2: qualification, funds, prizes ----
+
+export interface QualRow {
+  rank: number;
+  accountId: string;
+  team: string;
+  value: number;
+  peak: number;
+  trades: number;
+  decidedBy: string;
+  qualifies: boolean;
+  fund?: string;
+}
+
+export interface Qualification {
+  ready: boolean;
+  done: boolean;
+  cutoff: number;
+  rows: QualRow[];
+  boundaryTie: boolean;
+  coinToss: boolean;
+}
+
+export interface AdminFund {
+  id: string;
+  number: number;
+  name: string;
+  philosophy: string;
+  risk: string;
+  strategy: string;
+  managers: string[];
+  nav: number;
+  returnPct: number;
+  aum: number;
+  investors: number;
+  disqualified: boolean;
+  cash: number;
+  maxDrawdown: number;
+  retention: number;
+  profitability: number;
+  ranks: [number, number];
+  checkpoints: { name: string; nav: number; aum: number; avgAum: number; mgmtFee: number; perfFee: number }[];
+}
+
+export interface PrizeRow {
+  id: string;
+  name: string;
+  score: number;
+  rank: number;
+  note?: string;
+}
+
+export interface Prizes {
+  final: boolean;
+  prize1: PrizeRow[];
+  prize2: PrizeRow[];
+  prize3: PrizeRow[];
+  prize4: PrizeRow[];
+}
+
+export interface LogEntrant {
+  accountId: string;
+  team: string;
+  logs: { checkpoint: number; text: string; at: number }[];
+  checkpoints: number;
+  eligible: boolean;
+  scores: Record<string, number>;
+  total: number | null;
+}
+
+export interface StrategyLogs {
+  rubric: { criterion: string; weight: number; maxScore: number }[];
+  entrants: LogEntrant[];
 }

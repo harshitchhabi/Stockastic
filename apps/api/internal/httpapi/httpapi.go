@@ -16,12 +16,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"stockastic/api/internal/app"
-	"stockastic/api/internal/disputes"
 	"stockastic/api/internal/dto"
-	"stockastic/api/internal/engine"
 	"stockastic/api/internal/eventclock"
+	"stockastic/api/internal/funds"
 	"stockastic/api/internal/ledger"
 	"stockastic/api/internal/rulebook"
+	"stockastic/api/internal/store"
+	"stockastic/api/internal/trading"
 	"stockastic/api/internal/webui"
 )
 
@@ -67,15 +68,12 @@ func New(opt Options) (http.Handler, error) {
 	me.GET("/auth/me", s.me)
 	me.GET("/config", s.config)
 	me.GET("/symbols", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Companies()) })
-	me.GET("/symbols/:symbol/depth", s.depth)
 	me.GET("/symbols/:symbol/history", s.history)
 	me.GET("/portfolio/me", s.portfolio)
-	me.GET("/orders/pending", s.pending)
-	me.POST("/orders", s.placeOrder)
-	me.DELETE("/orders/:symbol/:id", s.cancelOrder)
+	me.POST("/trades", s.trade)
+	me.GET("/trades/mine", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.MyTrades(s.a.AcctOf(user(c)))) })
 	me.GET("/leaderboard", s.leaderboard)
 	me.GET("/news", s.news)
-	me.GET("/funds", func(c *gin.Context) { c.JSON(http.StatusOK, []any{}) })
 	me.POST("/disputes", s.raiseDispute)
 	me.GET("/disputes/mine", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.TicketsOf(user(c).ID)) })
 
@@ -87,6 +85,8 @@ func New(opt Options) (http.Handler, error) {
 	adm.GET("/disputes", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.AdminTickets()) })
 	adm.GET("/audit", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.AuditLog()) })
 	adm.GET("/rulebook", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.RulebookView(s.opt.RulebookSource)) })
+	adm.GET("/sim", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.SimStatus()) })
+	s.fundRoutes(me, adm)
 	adm.GET("/standings", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Leaderboard()) })
 
 	adm.POST("/clock/start", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockStart(u, b.Reason) }))
@@ -115,23 +115,11 @@ func New(opt Options) (http.Handler, error) {
 		}
 		return s.a.SetWindowOverride(u, b.Reason, i, o)
 	}))
-	adm.POST("/symbols/:symbol/resume", s.act(func(u app.User, b body, c *gin.Context) error {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-		defer cancel()
-		return s.a.ResumeSymbol(ctx, u, b.Reason, c.Param("symbol"))
-	}))
 	adm.POST("/accounts/:id/promote", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Promote(u, b.Reason, c.Param("id")) }))
 	adm.POST("/accounts/:id/warn", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Warn(u, b.Reason, c.Param("id")) }))
-	adm.POST("/accounts/:id/disqualify", s.act(func(u app.User, b body, c *gin.Context) error {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-		defer cancel()
-		return s.a.Disqualify(ctx, u, b.Reason, c.Param("id"))
-	}))
+	adm.POST("/accounts/:id/disqualify", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Disqualify(u, b.Reason, c.Param("id")) }))
 	adm.POST("/news", s.act(func(u app.User, b body, _ *gin.Context) error {
 		return s.a.PublishNews(u, b.Reason, b.Kind, b.Headline, b.Body)
-	}))
-	adm.POST("/disputes/:id/triage", s.act(func(u app.User, b body, c *gin.Context) error {
-		return s.a.TriageTicket(u, b.Reason, c.Param("id"), b.PlatformWide)
 	}))
 	adm.POST("/disputes/:id/resolve", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.ResolveTicket(u, b.Reason, c.Param("id")) }))
 	adm.POST("/grants", func(c *gin.Context) {
@@ -178,11 +166,6 @@ func New(opt Options) (http.Handler, error) {
 		}
 		return &app.BadRequest{Code: "invalid_direction", Message: "Direction must be give, take or set."}
 	}))
-	adm.POST("/accounts/:id/cancel-orders", s.act(func(u app.User, b body, c *gin.Context) error {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-		defer cancel()
-		return s.a.CancelTeamOrders(ctx, u, b.Reason, c.Param("id"), b.OrderID)
-	}))
 	adm.POST("/accounts/:id/reinstate", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Reinstate(u, b.Reason, c.Param("id")) }))
 	adm.POST("/accounts/:id/reset-password", s.act(func(u app.User, b body, c *gin.Context) error {
 		return s.a.ResetPassword(u, b.Reason, c.Param("id"), b.Password)
@@ -207,6 +190,7 @@ func New(opt Options) (http.Handler, error) {
 		return s.a.ClockSetBlockDuration(u, b.Reason, b.BlockID, b.Minutes)
 	}))
 	adm.POST("/clock/end", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockEnd(u, b.Reason) }))
+	adm.POST("/sim/:id/fire", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.FireSimEvent(u, b.Reason, c.Param("id")) }))
 	adm.POST("/announce", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.Announce(u, b.Reason, b.Text) }))
 	adm.POST("/control/symbols/:symbol", s.act(func(u app.User, b body, c *gin.Context) error {
 		return s.a.PauseSymbol(u, b.Reason, c.Param("symbol"), b.Paused)
@@ -325,6 +309,12 @@ func (s *Server) fail(c *gin.Context, err error) {
 			"message": "You have used your trades for now. Try again in " + strconv.Itoa(secs) + " seconds."})
 		return
 	}
+	var pc *trading.PriceChanged
+	if errors.As(err, &pc) {
+		now := strconv.FormatFloat(dto.Rupees(pc.Current), 'f', 2, 64)
+		c.JSON(http.StatusConflict, gin.H{"error": "price_changed", "currentPrice": dto.Rupees(pc.Current), "message": "The price changed to ₹" + now + ". Review it and try again."})
+		return
+	}
 	table := []struct {
 		err    error
 		status int
@@ -337,19 +327,19 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrAccountLocked, 403, "This account is locked. Ask an organiser."},
 		{app.ErrMarketClosed, 403, "The market is closed right now."},
 		{app.ErrSymbolPaused, 403, "Trading in this company is paused by the organisers."},
+		{app.ErrFrozen, 423, "Trading is frozen by the organisers."},
+		{trading.ErrUnknownSymbol, 404, "No such company."},
+		{trading.ErrInvalid, 400, "That trade is not valid."},
+		{trading.ErrIdempotencyMismatch, 409, "That trade id was already used for a different trade."},
+		{trading.ErrJournal, 503, "The trade could not be saved, so it did not happen. Try again."},
+		{trading.ErrNoPrice, 503, "This company has no price right now."},
+		{store.ErrDiskLow, 503, "The server is short of disk space, so it is not accepting trades. An organiser has been alerted."},
 		{app.ErrNoAccount, 403, "This account has no trading account."},
+		{app.ErrFundsNotFormed, 409, "The funds have not been formed yet."},
+		{app.ErrNotAllowed, 403, "You cannot do that."},
+		{funds.ErrUnknownFund, 404, "No such fund."},
 		{app.ErrUnknownUser, 404, "No such account."},
 		{app.ErrUnknownTicket, 404, "No such dispute."},
-		{engine.ErrFrozen, 423, "Trading is frozen by the organisers."},
-		{engine.ErrUnknownSymbol, 404, "No such company."},
-		{engine.ErrInvalidOrder, 400, "That order is not valid."},
-		{engine.ErrIdempotencyMismatch, 409, "That order id was already used for a different order."},
-		{engine.ErrSymbolHalted, 503, "This company is briefly unavailable. Try again shortly."},
-		{engine.ErrJournal, 503, "The order could not be saved, so it was not placed. Try again."},
-		{engine.ErrStopped, 503, "The server is shutting down."},
-		{engine.ErrNotFound, 404, "No such order."},
-		{engine.ErrNotOwner, 403, "That is not your order."},
-		{engine.ErrAlreadyClosed, 409, "That order is already closed."},
 		{ledger.ErrInsufficientCash, 422, "Not enough cash for this order."},
 		{ledger.ErrInsufficientShares, 422, "You do not hold enough shares to sell."},
 		{eventclock.ErrNotStarted, 409, "The event has not started."},
@@ -358,7 +348,6 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{eventclock.ErrPaused, 409, "The event is paused."},
 		{eventclock.ErrUnknownBlock, 400, "There is no such block."},
 		{eventclock.ErrBlockInPast, 409, "That block has already finished."},
-		{disputes.ErrUnknownTicket, 404, "No such dispute."},
 	}
 	for _, e := range table {
 		if errors.Is(err, e.err) {
@@ -386,8 +375,8 @@ func (s *Server) decode(c *gin.Context, v any) bool {
 // ---- health ----
 
 func (s *Server) ready(c *gin.Context) {
-	if s.a.Ledger.Anomalies() > 0 {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "error": "ledger_anomaly"})
+	if s.a.DiskLow() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "error": "disk_low"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -456,9 +445,10 @@ func (s *Server) me(c *gin.Context) { c.JSON(http.StatusOK, s.a.Account(user(c))
 
 type publicConfig struct {
 	rulebook.PublicConfig
-	TradingFrozen bool            `json:"tradingFrozen"`
-	MarketOpen    bool            `json:"marketOpen"`
-	WindowsOpen   map[string]bool `json:"windowsOpen"`
+	TradingFrozen    bool            `json:"tradingFrozen"`
+	MarketOpen       bool            `json:"marketOpen"`
+	WindowsOpen      map[string]bool `json:"windowsOpen"`
+	PriceTickSeconds int             `json:"priceTickSeconds"`
 }
 
 func (s *Server) config(c *gin.Context) {
@@ -473,23 +463,14 @@ func (s *Server) config(c *gin.Context) {
 	pc.Event.Timeline, pc.Event.TotalMinutes = s.a.PublicSchedule() // the lengths the organiser has set now
 	c.JSON(http.StatusOK, publicConfig{
 		PublicConfig: pc, TradingFrozen: cs.TradingFrozen, MarketOpen: cs.MarketOpen,
-		WindowsOpen: map[string]bool{"fundAllocationWindow": anyOpen},
+		WindowsOpen: map[string]bool{"fundAllocationWindow": anyOpen}, PriceTickSeconds: s.a.Sim.TickSeconds(),
 	})
-}
-
-func (s *Server) depth(c *gin.Context) {
-	d, err := s.a.Depth(c.Param("symbol"))
-	if err != nil {
-		s.fail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, d)
 }
 
 func (s *Server) history(c *gin.Context) {
 	sym := c.Param("symbol")
 	if !s.a.HasSymbol(sym) {
-		s.fail(c, engine.ErrUnknownSymbol)
+		s.fail(c, trading.ErrUnknownSymbol)
 		return
 	}
 	c.JSON(http.StatusOK, s.a.History(sym))
@@ -504,15 +485,6 @@ func (s *Server) portfolio(c *gin.Context) {
 	c.JSON(http.StatusOK, p)
 }
 
-func (s *Server) pending(c *gin.Context) {
-	live := s.a.LiveOrders(user(c).ID)
-	out := make([]dto.Order, len(live))
-	for i, o := range live {
-		out[i] = dto.FromOrder(o)
-	}
-	c.JSON(http.StatusOK, out)
-}
-
 func (s *Server) leaderboard(c *gin.Context) {
 	if !user(c).IsAdmin && !s.a.RB.Leaderboard.VisibleToParticipants {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden", "message": "Standings are not published to teams."})
@@ -523,36 +495,21 @@ func (s *Server) leaderboard(c *gin.Context) {
 
 func (s *Server) news(c *gin.Context) { c.JSON(http.StatusOK, s.a.NewsFor(user(c))) }
 
-// ---- orders ----
+// ---- trades ----
 
-func (s *Server) placeOrder(c *gin.Context) {
-	var in app.OrderRequest
+func (s *Server) trade(c *gin.Context) {
+	var in app.TradeRequest
 	if !s.decode(c, &in) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), requestWait)
 	defer cancel()
-	res, err := s.a.PlaceOrder(ctx, user(c), in)
+	res, err := s.a.Trade(ctx, user(c), in)
 	if err != nil {
 		s.fail(c, err)
 		return
 	}
-	fills := make([]dto.Fill, len(res.Fills))
-	for i, f := range res.Fills {
-		fills[i] = dto.FromFill(f)
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "deduped": res.Deduped, "order": dto.FromOrder(res.Order), "fills": fills})
-}
-
-func (s *Server) cancelOrder(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), requestWait)
-	defer cancel()
-	res, err := s.a.CancelOrder(ctx, user(c), c.Param("symbol"), c.Param("id"))
-	if err != nil {
-		s.fail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"cancelled": true, "order": dto.FromOrder(res.Order)})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "deduped": res.Deduped, "trade": dto.FromTrade(res.Trade)})
 }
 
 func (s *Server) raiseDispute(c *gin.Context) {
@@ -573,7 +530,7 @@ func (s *Server) raiseDispute(c *gin.Context) {
 		s.fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "id": rec.Ticket.ID, "queue": rec.Ticket.Queue})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "id": rec.Ticket.ID, "dueBy": dto.MS(rec.Ticket.DueBy)})
 }
 
 // ---- organiser actions ----
@@ -597,7 +554,6 @@ type body struct {
 	Symbol          string   `json:"symbol"`
 	Qty             int64    `json:"qty"`
 	Price           float64  `json:"price"`
-	OrderID         string   `json:"orderId"`
 	Paused          bool     `json:"paused"`
 	Direction       string   `json:"direction"`
 	FillID          string   `json:"fillId"`

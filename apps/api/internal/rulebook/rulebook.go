@@ -164,10 +164,8 @@ type Leaderboard struct {
 }
 
 type Disputes struct {
-	ExpeditedPerPhase          int    `json:"expeditedPerPhase"`
-	OverflowQueue              string `json:"overflowQueue"`
-	RaiseWithinMinutes         int    `json:"raiseWithinMinutes"`
-	ExpeditedTurnaroundMinutes int    `json:"expeditedTurnaroundMinutes"`
+	RaiseWithinMinutes    int `json:"raiseWithinMinutes"`
+	DecisionTargetMinutes int `json:"decisionTargetMinutes"`
 }
 
 type Prizes struct {

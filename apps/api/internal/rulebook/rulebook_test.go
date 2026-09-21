@@ -77,8 +77,8 @@ func TestRealRulebookMatchesSection17And3(t *testing.T) {
 	if rb.Leaderboard.RefreshSeconds != 300 || rb.Leaderboard.ExposeHoldings {
 		t.Errorf("leaderboard = %+v, want 5-minute refresh, holdings hidden", rb.Leaderboard)
 	}
-	if rb.Disputes.ExpeditedPerPhase != 3 || rb.Disputes.OverflowQueue != "standard" {
-		t.Errorf("disputes = %+v", rb.Disputes)
+	if rb.Disputes.RaiseWithinMinutes != 10 || rb.Disputes.DecisionTargetMinutes != 15 {
+		t.Errorf("disputes = %+v, want 10 and 15 minutes", rb.Disputes)
 	}
 	if rb.Teams.FundManagerSeats != 60 || rb.Qualification.QualifyingTeams != 20 || rb.Qualification.FundCount != 10 {
 		t.Errorf("teams/qualification wrong: %+v %+v", rb.Teams, rb.Qualification)
