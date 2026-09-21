@@ -1,0 +1,5 @@
+# Files that run on the Linux server must keep Unix line endings, even when edited on Windows.
+deploy/* text eol=lf
+*.sh text eol=lf
+*.service text eol=lf
+Caddyfile text eol=lf
