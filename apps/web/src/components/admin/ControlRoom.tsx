@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { SymbolInfo } from "@/lib/types";
-import type { Override, Overview } from "@/lib/adminTypes";
+import type { Override, Overview, TimelineBlock } from "@/lib/adminTypes";
 import { fmtClock, fmtMinSec } from "@/lib/format";
 import { ActionButton, Badge, ChoiceControl, LoadError, useDo, useNow, usePoll } from "./shared";
 
@@ -12,6 +12,32 @@ const OVERRIDE_OPTIONS: { value: "schedule" | "open" | "closed"; label: string }
 ];
 const toChoice = (o: Override) => (o ?? "schedule");
 const fromChoice = (c: string): Override => (c === "schedule" ? null : (c as Override));
+
+/** How long one block lasts. Changing it moves every later block, so the event can run shorter or longer. */
+function BlockEditor({ b, run }: { b: TimelineBlock; run: ReturnType<typeof useDo> }) {
+  const shown = String(Math.round(b.durationMin));
+  const [v, setV] = useState(shown);
+  useEffect(() => setV(shown), [shown]);
+  const n = Number(v);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 1440;
+  return (
+    <span className="row-field">
+      <input type="number" min="1" max="1440" step="1" value={v} onChange={(e) => setV(e.target.value)} style={{ width: 72, flex: "none" }} aria-label={`Minutes for ${b.label}`} />
+      <ActionButton
+        label="Set"
+        disabled={!valid || n === Math.round(b.durationMin)}
+        title={`Make this block ${valid ? n : "…"} minutes long`}
+        description={`${b.label}. Everything after it moves earlier or later to match. It cannot be shorter than the time already spent in it.`}
+        run={() => run("/api/admin/clock/block-duration", { blockId: b.id, minutes: n }, `Block set to ${n} min`)}
+      />
+    </span>
+  );
+}
+
+const hhmm = (min: number) => {
+  const m = Math.round(min);
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+};
 
 export function ControlRoom() {
   const { data, error, at, reload } = usePoll<Overview>("/api/admin/overview", 2000);
@@ -81,7 +107,7 @@ export function ControlRoom() {
             label="Start the event"
             title="Start the event clock"
             description="The clock starts now and the schedule begins running. This cannot be undone."
-            run={(reason) => run("/api/admin/clock/start", { reason }, "Event started")}
+            run={() => run("/api/admin/clock/start", {}, "Event started")}
           />
         )}
         {running && (
@@ -89,7 +115,7 @@ export function ControlRoom() {
             label="Pause"
             title="Pause the event clock"
             description="The schedule stops. Trading follows whatever the current block and your overrides say."
-            run={(reason) => run("/api/admin/clock/pause", { reason }, "Event paused")}
+            run={() => run("/api/admin/clock/pause", {}, "Event paused")}
           />
         )}
         {paused && (
@@ -110,7 +136,7 @@ export function ControlRoom() {
                 </select>
               </label>
             }
-            run={(reason) => run("/api/admin/clock/resume", { reason, compressBlockId: compress || undefined }, "Event resumed")}
+            run={() => run("/api/admin/clock/resume", { compressBlockId: compress || undefined }, "Event resumed")}
           />
         )}
         {(running || paused) &&
@@ -119,7 +145,7 @@ export function ControlRoom() {
               key={m}
               label={`${m > 0 ? "+" : "−"}${Math.abs(m)} min`}
               title={`Move the clock ${m > 0 ? "forward" : "back"} ${Math.abs(m)} minute${Math.abs(m) === 1 ? "" : "s"}`}
-              run={(reason) => run("/api/admin/clock/nudge", { reason, minutes: m }, `Clock moved ${m} min`)}
+              run={() => run("/api/admin/clock/nudge", { minutes: m }, `Clock moved ${m} min`)}
             />
           ))}
         {(running || paused) && (
@@ -138,11 +164,35 @@ export function ControlRoom() {
               danger
               title="Jump the clock to another block"
               description="Every block skipped is treated as having happened, including any freeze snapshot. Use it to recover, not to plan."
-              run={(reason) => run("/api/admin/clock/jump", { reason, blockId: jumpTo }, "Clock jumped").then(() => setJumpTo(""))}
+              run={() => run("/api/admin/clock/jump", { blockId: jumpTo }, "Clock jumped").then(() => setJumpTo(""))}
             />
           </span>
         )}
       </div>
+
+      {(running || paused) && block && (
+        <div className="btn-row" style={{ marginTop: 6 }}>
+          <span className="label" style={{ marginRight: 4 }}>This block</span>
+          {[-5, 5, 15].map((m) => (
+            <ActionButton
+              key={m}
+              label={`${m > 0 ? "+" : "−"}${Math.abs(m)} min`}
+              title={`${m > 0 ? "Add" : "Take off"} ${Math.abs(m)} minutes ${m > 0 ? "to" : "from"} the current block`}
+              description={`${block.label}. Everything after it moves to match, and the event ${m > 0 ? "runs longer" : "ends sooner"}.`}
+              run={() => run("/api/admin/clock/block-duration", { blockId: block.id, minutes: Math.round(block.durationMin) + m }, `Current block ${m > 0 ? "+" : "−"}${Math.abs(m)} min`)}
+            />
+          ))}
+          <span style={{ marginLeft: "auto" }}>
+            <ActionButton
+              danger
+              label="End the event now"
+              title="End the event now"
+              description="The clock goes to the end of the schedule, the market closes, and any freeze snapshots still due are taken. This cannot be undone."
+              run={() => run("/api/admin/clock/end", {}, "Event ended")}
+            />
+          </span>
+        </div>
+      )}
 
       <h2 className="section">Trading switches</h2>
       <div className="switches">
@@ -161,8 +211,8 @@ export function ControlRoom() {
                 ? "Order entry opens again, subject to the schedule and your other overrides."
                 : "Every participant's order entry stops at once. Use it for a fault or a ruling. It is recorded against your name."
             }
-            run={(reason) =>
-              run("/api/admin/control/freeze", { reason, frozen: !control.tradingFrozen }, control.tradingFrozen ? "Trading resumed" : "Trading frozen")
+            run={() =>
+              run("/api/admin/control/freeze", { frozen: !control.tradingFrozen }, control.tradingFrozen ? "Trading resumed" : "Trading frozen")
             }
           />
         </div>
@@ -177,7 +227,7 @@ export function ControlRoom() {
             value={toChoice(control.marketOverride)}
             options={OVERRIDE_OPTIONS}
             describe={(n) => `The market will ${n === "schedule" ? "follow the schedule again" : n === "open" ? "be forced open" : "be forced closed"}.`}
-            onChoose={(n, reason) => run("/api/admin/control/market", { reason, override: fromChoice(n) }, "Market override changed")}
+            onChoose={(n) => run("/api/admin/control/market", { override: fromChoice(n) }, "Market override changed")}
           />
         </div>
 
@@ -192,7 +242,7 @@ export function ControlRoom() {
               value={toChoice(control.windowOverrides[i] ?? null)}
               options={OVERRIDE_OPTIONS}
               describe={(n) => `Window ${i} will ${n === "schedule" ? "follow the schedule again" : n === "open" ? "be forced open" : "be forced closed"}.`}
-              onChoose={(n, reason) => run(`/api/admin/control/windows/${i}`, { reason, override: fromChoice(n) }, `Window ${i} override changed`)}
+              onChoose={(n) => run(`/api/admin/control/windows/${i}`, { override: fromChoice(n) }, `Window ${i} override changed`)}
             />
           </div>
         ))}
@@ -215,7 +265,7 @@ export function ControlRoom() {
           disabled={!pauseSym || control.pausedSymbols.includes(pauseSym)}
           label="Pause"
           title={`Pause trading in ${pauseSym}`}
-          run={(reason) => run(`/api/admin/control/symbols/${encodeURIComponent(pauseSym)}`, { reason, paused: true }, `${pauseSym} paused`)}
+          run={() => run(`/api/admin/control/symbols/${encodeURIComponent(pauseSym)}`, { paused: true }, `${pauseSym} paused`)}
         />
       </div>
       {control.pausedSymbols.length > 0 && (
@@ -227,7 +277,7 @@ export function ControlRoom() {
                 className="ghost"
                 label="Resume"
                 title={`Resume trading in ${sym}`}
-                run={(reason) => run(`/api/admin/control/symbols/${encodeURIComponent(sym)}`, { reason, paused: false }, `${sym} resumed`)}
+                run={() => run(`/api/admin/control/symbols/${encodeURIComponent(sym)}`, { paused: false }, `${sym} resumed`)}
               />
             </span>
           ))}
@@ -244,25 +294,31 @@ export function ControlRoom() {
           label="Announce"
           title="Send this announcement to every participant"
           description={<strong>{announce}</strong>}
-          run={(reason) => run("/api/admin/announce", { reason, text: announce.trim() }, "Announcement sent").then(() => setAnnounce(""))}
+          run={() => run("/api/admin/announce", { text: announce.trim() }, "Announcement sent").then(() => setAnnounce(""))}
         />
       </div>
 
       <h2 className="section">Schedule</h2>
+      <p className="dim" style={{ marginTop: 0, maxWidth: "70ch" }}>
+        The event does not have to last five hours. Change the length of any block that has not finished and everything after it moves. The total at the top
+        updates to match.
+      </p>
       <ol className="timeline">
         {timeline.map((b, i) => {
           const state = i < clock.blockIndex ? "past" : i === clock.blockIndex ? "now" : "next";
           return (
             <li key={b.id} className={state}>
-              <span className="t mono">
-                {Math.floor(b.startMin / 60)}:{String(b.startMin % 60).padStart(2, "0")}
-              </span>
+              <span className="t mono">{hhmm(b.startMin)}</span>
               <span className="l">{b.label}</span>
               <span className="tags">
                 {b.marketOpen && <Badge tone="up">Market open</Badge>}
                 {b.allocationWindow !== null && <Badge tone="flag">Window {b.allocationWindow}</Badge>}
-                <span className="dim mono">{b.durationMin} min</span>
               </span>
+              {clock.status !== "ended" && (clock.status === "not_started" || i >= clock.blockIndex) ? (
+                <BlockEditor b={b} run={run} />
+              ) : (
+                <span className="dim mono">{Math.round(b.durationMin)} min</span>
+              )}
             </li>
           );
         })}

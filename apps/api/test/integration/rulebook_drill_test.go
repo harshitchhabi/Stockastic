@@ -285,9 +285,6 @@ func TestStructuralChangesAreRejectedAtStartupNotSilentlyIgnored(t *testing.T) {
 				sub(m, "qualification")["tieBreak"] = []any{"highest_sharpe_ratio"}
 			}, "unknown tie-break",
 		},
-		"a schedule that no longer sums to the cap": {
-			func(m map[string]any) { block(m, "p1_trading")["durationMin"] = 50 }, "timeline sums to 310",
-		},
 		"prize weights that do not sum to 1": {
 			func(m map[string]any) { sub(m, "prizes", "prize1")["performance"] = 0.5 }, "prize1 weights",
 		},

@@ -161,6 +161,9 @@ func New(opt Options) (http.Handler, error) {
 		c.JSON(http.StatusOK, d)
 	})
 	adm.POST("/accounts/:id/cash", s.act(func(u app.User, b body, c *gin.Context) error {
+		if b.SetTo != nil {
+			return s.a.SetCash(u, b.Reason, c.Param("id"), *b.SetTo)
+		}
 		return s.a.AdjustCash(u, b.Reason, c.Param("id"), b.Amount)
 	}))
 	adm.POST("/accounts/:id/shares", s.act(func(u app.User, b body, c *gin.Context) error {
@@ -170,8 +173,10 @@ func New(opt Options) (http.Handler, error) {
 			return err
 		case "take":
 			return s.a.RevokeShares(u, b.Reason, c.Param("id"), b.Symbol, b.Qty)
+		case "set":
+			return s.a.SetShares(u, b.Reason, c.Param("id"), b.Symbol, b.Qty)
 		}
-		return &app.BadRequest{Code: "invalid_direction", Message: "Direction must be give or take."}
+		return &app.BadRequest{Code: "invalid_direction", Message: "Direction must be give, take or set."}
 	}))
 	adm.POST("/accounts/:id/cancel-orders", s.act(func(u app.User, b body, c *gin.Context) error {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
@@ -183,6 +188,25 @@ func New(opt Options) (http.Handler, error) {
 		return s.a.ResetPassword(u, b.Reason, c.Param("id"), b.Password)
 	}))
 	adm.POST("/accounts/:id/role", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.SetRole(u, b.Reason, c.Param("id"), b.Role) }))
+	adm.POST("/accounts/:id/sign-out", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.SignOut(u, b.Reason, c.Param("id")) }))
+	adm.POST("/accounts/:id/lock", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Lock(u, b.Reason, c.Param("id")) }))
+	adm.POST("/accounts/:id/unlock", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Unlock(u, b.Reason, c.Param("id")) }))
+	adm.POST("/sign-out-all", func(c *gin.Context) {
+		var b body
+		if !s.decode(c, &b) {
+			return
+		}
+		n, err := s.a.SignOutAll(user(c), b.Reason)
+		if err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "teams": n})
+	})
+	adm.POST("/clock/block-duration", s.act(func(u app.User, b body, _ *gin.Context) error {
+		return s.a.ClockSetBlockDuration(u, b.Reason, b.BlockID, b.Minutes)
+	}))
+	adm.POST("/clock/end", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockEnd(u, b.Reason) }))
 	adm.POST("/announce", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.Announce(u, b.Reason, b.Text) }))
 	adm.POST("/control/symbols/:symbol", s.act(func(u app.User, b body, c *gin.Context) error {
 		return s.a.PauseSymbol(u, b.Reason, c.Param("symbol"), b.Paused)
@@ -256,13 +280,13 @@ func (s *Server) requireUser(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	id, err := s.a.Signer.Parse(tok)
+	id, ver, err := s.a.Signer.Verify(tok)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
 	u, ok := s.a.User(id)
-	if !ok {
+	if !ok || !s.a.SessionOK(u, ver) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
@@ -310,6 +334,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrEmailTaken, 409, "That email is already registered."},
 		{app.ErrSignupClosed, 403, "Sign-up is closed."},
 		{app.ErrDisqualified, 403, "This team has been disqualified."},
+		{app.ErrAccountLocked, 403, "This account is locked. Ask an organiser."},
 		{app.ErrMarketClosed, 403, "The market is closed right now."},
 		{app.ErrSymbolPaused, 403, "Trading in this company is paused by the organisers."},
 		{app.ErrNoAccount, 403, "This account has no trading account."},
@@ -332,6 +357,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{eventclock.ErrNotPaused, 409, "The event is not paused."},
 		{eventclock.ErrPaused, 409, "The event is paused."},
 		{eventclock.ErrUnknownBlock, 400, "There is no such block."},
+		{eventclock.ErrBlockInPast, 409, "That block has already finished."},
 		{disputes.ErrUnknownTicket, 404, "No such dispute."},
 	}
 	for _, e := range table {
@@ -381,7 +407,7 @@ type session struct {
 }
 
 func (s *Server) issue(c *gin.Context, u app.User) {
-	tok, err := s.a.Signer.Issue(u.ID)
+	tok, err := s.a.Signer.Issue(u.ID, u.SessionVersion)
 	if err != nil {
 		s.fail(c, err)
 		return
@@ -443,8 +469,10 @@ func (s *Server) config(c *gin.Context) {
 			anyOpen = true
 		}
 	}
+	pc := s.a.RB.Public()
+	pc.Event.Timeline, pc.Event.TotalMinutes = s.a.PublicSchedule() // the lengths the organiser has set now
 	c.JSON(http.StatusOK, publicConfig{
-		PublicConfig: s.a.RB.Public(), TradingFrozen: cs.TradingFrozen, MarketOpen: cs.MarketOpen,
+		PublicConfig: pc, TradingFrozen: cs.TradingFrozen, MarketOpen: cs.MarketOpen,
 		WindowsOpen: map[string]bool{"fundAllocationWindow": anyOpen},
 	})
 }
@@ -551,27 +579,28 @@ func (s *Server) raiseDispute(c *gin.Context) {
 // ---- organiser actions ----
 
 type body struct {
-	Reason          string  `json:"reason"`
-	CompressBlockID string  `json:"compressBlockId"`
-	BlockID         string  `json:"blockId"`
-	Minutes         int     `json:"minutes"`
-	Frozen          bool    `json:"frozen"`
-	Override        any     `json:"override"`
-	Kind            string  `json:"kind"`
-	Headline        string  `json:"headline"`
-	Body            string  `json:"body"`
-	PlatformWide    bool    `json:"platformWide"`
-	Amount          float64 `json:"amount"`
-	Password        string  `json:"password"`
-	Role            string  `json:"role"`
-	Text            string  `json:"text"`
-	Symbol          string  `json:"symbol"`
-	Qty             int64   `json:"qty"`
-	Price           float64 `json:"price"`
-	OrderID         string  `json:"orderId"`
-	Paused          bool    `json:"paused"`
-	Direction       string  `json:"direction"`
-	FillID          string  `json:"fillId"`
+	Reason          string   `json:"reason"`
+	CompressBlockID string   `json:"compressBlockId"`
+	BlockID         string   `json:"blockId"`
+	Minutes         int      `json:"minutes"`
+	Frozen          bool     `json:"frozen"`
+	Override        any      `json:"override"`
+	Kind            string   `json:"kind"`
+	Headline        string   `json:"headline"`
+	Body            string   `json:"body"`
+	PlatformWide    bool     `json:"platformWide"`
+	Amount          float64  `json:"amount"`
+	SetTo           *float64 `json:"setTo"`
+	Password        string   `json:"password"`
+	Role            string   `json:"role"`
+	Text            string   `json:"text"`
+	Symbol          string   `json:"symbol"`
+	Qty             int64    `json:"qty"`
+	Price           float64  `json:"price"`
+	OrderID         string   `json:"orderId"`
+	Paused          bool     `json:"paused"`
+	Direction       string   `json:"direction"`
+	FillID          string   `json:"fillId"`
 	Adjustment      struct {
 		Note string `json:"note"`
 	} `json:"adjustment"`

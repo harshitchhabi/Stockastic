@@ -71,14 +71,13 @@ export function LoadError({ error, at }: { error: string | null; at: number | nu
   );
 }
 
-// ---- confirm dialog: every state-changing action needs a written reason, which the server audits ----
+// ---- confirm dialog: every state-changing action asks "are you sure?" and nothing more ----
 export function ConfirmDialog({
   open,
   title,
   description,
   danger,
   confirmLabel = "Confirm",
-  needsReason = true,
   onConfirm,
   onCancel,
 }: {
@@ -87,12 +86,10 @@ export function ConfirmDialog({
   description?: React.ReactNode;
   danger?: boolean;
   confirmLabel?: string;
-  needsReason?: boolean;
-  onConfirm: (reason: string) => Promise<void>;
+  onConfirm: () => Promise<void>;
   onCancel: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,21 +97,18 @@ export function ConfirmDialog({
     const d = ref.current;
     if (!d) return;
     if (open && !d.open) {
-      setReason("");
       setError(null);
       d.showModal();
     } else if (!open && d.open) d.close();
   }, [open]);
 
-  const valid = !needsReason || reason.trim().length >= 5;
-
   async function go(e: React.FormEvent) {
     e.preventDefault();
-    if (!valid || busy) return;
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      await onConfirm(reason.trim());
+      await onConfirm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "the action failed");
     } finally {
@@ -127,18 +121,13 @@ export function ConfirmDialog({
       <form onSubmit={go} className="stack">
         <h3 className={danger ? "down" : undefined}>{title}</h3>
         {description && <div className="dim">{description}</div>}
-        {needsReason && (
-          <label className="field">
-            <span className="label">Reason (recorded in the audit log)</span>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="At least 5 characters" autoFocus />
-          </label>
-        )}
         {error && <div className="down">{error}</div>}
         <div className="row-end">
-          <button type="button" onClick={onCancel} disabled={busy}>
+          {/* Cancel has the focus, so pressing Enter by accident never confirms something drastic. */}
+          <button type="button" onClick={onCancel} disabled={busy} autoFocus>
             Cancel
           </button>
-          <button type="submit" className={danger ? "solid danger" : "solid"} disabled={!valid || busy}>
+          <button type="submit" className={danger ? "solid danger" : "solid"} disabled={busy}>
             {busy ? "Working…" : confirmLabel}
           </button>
         </div>
@@ -147,7 +136,7 @@ export function ConfirmDialog({
   );
 }
 
-/** A button that asks first. `run` receives the reason and should throw on failure. */
+/** A button that asks first. `run` should throw on failure. */
 export function ActionButton({
   label,
   title,
@@ -155,7 +144,6 @@ export function ActionButton({
   danger,
   disabled,
   className,
-  needsReason,
   run,
 }: {
   label: React.ReactNode;
@@ -164,8 +152,7 @@ export function ActionButton({
   danger?: boolean;
   disabled?: boolean;
   className?: string;
-  needsReason?: boolean;
-  run: (reason: string) => Promise<unknown>;
+  run: () => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -178,10 +165,9 @@ export function ActionButton({
         title={title}
         description={description}
         danger={danger}
-        needsReason={needsReason}
         onCancel={() => setOpen(false)}
-        onConfirm={async (reason) => {
-          await run(reason);
+        onConfirm={async () => {
+          await run();
           setOpen(false);
         }}
       />
@@ -201,7 +187,7 @@ export function ChoiceControl<T extends string>({
   options: { value: T; label: string }[];
   title: string;
   describe?: (next: T) => React.ReactNode;
-  onChoose: (next: T, reason: string) => Promise<unknown>;
+  onChoose: (next: T) => Promise<unknown>;
 }) {
   const [pending, setPending] = useState<T | null>(null);
   return (
@@ -218,8 +204,8 @@ export function ChoiceControl<T extends string>({
         title={title}
         description={pending !== null && describe?.(pending)}
         onCancel={() => setPending(null)}
-        onConfirm={async (reason) => {
-          if (pending !== null) await onChoose(pending, reason);
+        onConfirm={async () => {
+          if (pending !== null) await onChoose(pending);
           setPending(null);
         }}
       />

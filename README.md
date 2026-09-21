@@ -85,7 +85,7 @@ npm run build        # -> apps/api/internal/webui/dist, then `go build` embeds i
 ## Rulebook values
 
 Edit `apps/api/internal/rulebook/rulebook.json`. The loader decodes strictly (an unknown key is an error) and validates
-cross-field rules (timeline sums to 300 minutes, windows 0–3 in order, prize weights sum to 1, provenance paths resolve);
+cross-field rules (allocation windows numbered in order, prize weights sum to 1, provenance paths resolve);
 the process **refuses to start** on a bad rulebook. To change a value without rebuilding, point `RULEBOOK_PATH` at an edited
 copy; a wrong path is a startup error, never a silent fallback to the embedded rules.
 
@@ -107,7 +107,8 @@ anyone else; it is disconnected and reconnects.
 
 **Security** — passwords are bcrypt-hashed (with a cap on concurrent hashing), tokens are HS256 and name only the account
 (role, promotion and disqualification are read live), organiser routes are checked on the server, logins are rate limited
-per email, the WebSocket rejects foreign browser origins, and every organiser action needs a written reason and is audited.
+per email, the WebSocket rejects foreign browser origins, and every organiser action asks for confirmation and is audited
+(who, what, when). Organisers can sign a team out or lock its account; that cancels its open pages and old logins at once.
 
 **Engine** — one goroutine per symbol on a buffered channel; symbols run in parallel, orders within a symbol are serial.
 - *Write-before-ack*: a match is planned read-only, committed to the journal, and only then applied. A failed commit changes nothing.

@@ -67,8 +67,8 @@ export function NewsDesk() {
             label="Publish"
             title={kind === "news" ? "Publish this news" : "Announce this market regime"}
             description={<strong>{headline}</strong>}
-            run={(reason) =>
-              run("/api/admin/news", { reason, kind, headline: headline.trim(), body: body.trim() || undefined }, "Published").then(() => {
+            run={() =>
+              run("/api/admin/news", { kind, headline: headline.trim(), body: body.trim() || undefined }, "Published").then(() => {
                 setHeadline("");
                 setBody("");
               })

@@ -70,7 +70,9 @@ func (a *App) Team(id string) (TeamDetail, error) {
 		return TeamDetail{}, ErrUnknownUser
 	}
 	var d TeamDetail
-	d.Account = AdminAccount{ID: u.ID, DisplayName: u.DisplayName, Email: u.Email, Role: u.Role, Status: u.Status, Warnings: u.Warnings}
+	d.Account = AdminAccount{ID: u.ID, DisplayName: u.DisplayName, Email: u.Email, Role: u.Role, Status: u.Status, Warnings: u.Warnings, Locked: u.Locked}
+	d.Account.Sockets = a.Hub.Sockets(id)
+	d.Account.Online, d.Account.LastSeen = a.presenceOf(id)
 	pf, err := a.Portfolio(u)
 	if err != nil {
 		return TeamDetail{}, err
@@ -129,12 +131,40 @@ func (a *App) AdjustCash(actor User, reason, id string, rupees float64) error {
 		return bad("invalid_amount", "Enter an amount other than zero.")
 	}
 	return a.Do(actor, fmt.Sprintf("Adjusted cash by ₹%+.2f", dto.Rupees(delta)), u.DisplayName, reason, func() error {
-		if err := a.Ledger.AdjustCash(id, delta, false); err != nil {
+		return a.applyCash(id, delta)
+	})
+}
+
+// applyCash changes a team's cash and stores the change; if it cannot be stored it is undone.
+func (a *App) applyCash(id string, delta money.Paise) error {
+	if err := a.Ledger.AdjustCash(id, delta, false); err != nil {
+		return err
+	}
+	if err := a.wal.Append(store.KindCash, CashAdjustment{AccountID: id, Delta: int64(delta)}); err != nil {
+		_ = a.Ledger.AdjustCash(id, -delta, true)
+		return err
+	}
+	return nil
+}
+
+// SetCash sets a team's cash to an exact amount. It works out the difference from what the team holds at
+// that moment; the difference cannot reach into cash held back for working orders.
+func (a *App) SetCash(actor User, reason, id string, rupees float64) error {
+	u, err := a.team(id)
+	if err != nil {
+		return err
+	}
+	if math.IsNaN(rupees) || math.IsInf(rupees, 0) || rupees < 0 || rupees > maxAdjustRupees {
+		return bad("invalid_amount", "Enter an amount from 0 up to ₹10 crore.")
+	}
+	target := dto.Paise(rupees)
+	return a.Do(actor, fmt.Sprintf("Set cash to ₹%.2f", dto.Rupees(target)), u.DisplayName, reason, func() error {
+		snap, err := a.Ledger.Snapshot(id)
+		if err != nil {
 			return err
 		}
-		if err := a.wal.Append(store.KindCash, CashAdjustment{AccountID: id, Delta: int64(delta)}); err != nil {
-			_ = a.Ledger.AdjustCash(id, -delta, true)
-			return err
+		if delta := target - snap.Cash; delta != 0 {
+			return a.applyCash(id, delta)
 		}
 		return nil
 	})
@@ -154,20 +184,66 @@ func (a *App) RevokeShares(actor User, reason, id, symbol string, qty int64) err
 		return bad("invalid_quantity", "Quantity must be a whole number of at least 1.")
 	}
 	return a.Do(actor, fmt.Sprintf("Took back %d x %s", qty, symbol), u.DisplayName, reason, func() error {
-		var avg int64
-		if snap, err := a.Ledger.Snapshot(id); err == nil {
-			for _, p := range snap.Positions {
-				if p.Symbol == symbol && p.Qty > 0 {
-					avg = int64(p.Cost) / p.Qty
-				}
+		return a.takeShares(id, symbol, qty)
+	})
+}
+
+func (a *App) takeShares(id, symbol string, qty int64) error {
+	var avg int64
+	if snap, err := a.Ledger.Snapshot(id); err == nil {
+		for _, p := range snap.Positions {
+			if p.Symbol == symbol && p.Qty > 0 {
+				avg = int64(p.Cost) / p.Qty
 			}
 		}
-		if err := a.Ledger.Revoke(id, symbol, qty, false); err != nil {
+	}
+	if err := a.Ledger.Revoke(id, symbol, qty, false); err != nil {
+		return err
+	}
+	if err := a.wal.Append(store.KindGrant, Grant{AccountID: id, Symbol: symbol, Qty: -qty}); err != nil {
+		_ = a.Ledger.Grant(id, symbol, qty, money.Paise(avg))
+		return err
+	}
+	return nil
+}
+
+func (a *App) giveShares(id, symbol string, qty int64, price money.Paise) error {
+	if err := a.wal.Append(store.KindGrant, Grant{AccountID: id, Symbol: symbol, Qty: qty, Price: price}); err != nil {
+		return err
+	}
+	return a.Ledger.Grant(id, symbol, qty, price)
+}
+
+// SetShares sets a team's holding of one company to an exact number of shares. Shares added are valued at
+// the company's last price; shares removed come out at the team's average cost.
+func (a *App) SetShares(actor User, reason, id, symbol string, qty int64) error {
+	u, err := a.team(id)
+	if err != nil {
+		return err
+	}
+	if !a.HasSymbol(symbol) {
+		return engine.ErrUnknownSymbol
+	}
+	if qty < 0 || qty > maxQty {
+		return bad("invalid_quantity", "Enter a whole number of shares from 0 up.")
+	}
+	return a.Do(actor, fmt.Sprintf("Set %s holding to %d", symbol, qty), u.DisplayName, reason, func() error {
+		snap, err := a.Ledger.Snapshot(id)
+		if err != nil {
 			return err
 		}
-		if err := a.wal.Append(store.KindGrant, Grant{AccountID: id, Symbol: symbol, Qty: -qty}); err != nil {
-			_ = a.Ledger.Grant(id, symbol, qty, money.Paise(avg))
-			return err
+		var cur int64
+		for _, p := range snap.Positions {
+			if p.Symbol == symbol {
+				cur = p.Qty
+			}
+		}
+		switch {
+		case qty > cur:
+			price, _ := a.Market.Last(symbol)
+			return a.giveShares(id, symbol, qty-cur, price)
+		case qty < cur:
+			return a.takeShares(id, symbol, cur-qty)
 		}
 		return nil
 	})

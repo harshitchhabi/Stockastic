@@ -62,6 +62,15 @@ export interface AdminAccount {
   warnings: number;
   cashBalance: number;
   portfolioValue: number;
+  /** Cash held back for working orders. */
+  reserved: number;
+  positions: number;
+  locked: boolean;
+  online: boolean;
+  /** Browser tabs connected right now. */
+  sockets: number;
+  /** When the team last connected or disconnected, in milliseconds; 0 if not since the server started. */
+  lastSeen: number;
 }
 
 export interface NewsRelease {

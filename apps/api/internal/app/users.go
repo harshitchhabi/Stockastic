@@ -29,6 +29,7 @@ var (
 	ErrSignupClosed       = errors.New("signup_closed")
 	ErrDisqualified       = errors.New("account_disqualified")
 	ErrUnknownUser        = errors.New("unknown_account")
+	ErrAccountLocked      = errors.New("account_locked")
 )
 
 // BadRequest is a validation failure whose message is safe to show the caller.
@@ -49,6 +50,11 @@ type User struct {
 	Status       string
 	Warnings     int
 	CreatedAt    time.Time
+	// Locked stops the account from logging in or using any session at all.
+	Locked bool
+	// SessionVersion is stamped into every login token. Signing a team out raises it, which cancels all
+	// of that team's earlier tokens at once.
+	SessionVersion int
 }
 
 type userStore struct {
@@ -158,6 +164,9 @@ func (a *App) Login(email, password string) (User, error) {
 	}
 	if !auth.CheckPassword(u.PasswordHash, password) {
 		return User{}, ErrInvalidCredentials
+	}
+	if u.Locked {
+		return User{}, ErrAccountLocked
 	}
 	return u, nil
 }

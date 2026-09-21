@@ -264,6 +264,77 @@ func (c *Clock) Nudge(d time.Duration) error {
 	return nil
 }
 
+// ScheduledBlock is a block with where it currently sits in the schedule.
+type ScheduledBlock struct {
+	Block    rulebook.Block
+	Start    time.Duration
+	Duration time.Duration
+}
+
+// Schedule is the current schedule: the rulebook's blocks with their live lengths, which the organiser
+// may have changed.
+func (c *Clock) Schedule() []ScheduledBlock {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]ScheduledBlock, len(c.durations))
+	var at time.Duration
+	for i, d := range c.durations {
+		out[i] = ScheduledBlock{Block: c.rb.Event.Timeline[i], Start: at, Duration: d}
+		at += d
+	}
+	return out
+}
+
+// Total is the current length of the whole schedule.
+func (c *Clock) Total() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.startOfLocked(len(c.durations))
+}
+
+// MaxBlock caps how long one block may be set to.
+const MaxBlock = 24 * time.Hour
+
+var ErrBlockInPast = errors.New("block_already_finished")
+
+// SetBlockDuration changes how long a block lasts, so the event can run shorter or longer than planned.
+// A block that has already finished cannot be changed, and the block in progress cannot be set shorter
+// than the time already spent in it. Everything after it moves up or back to match.
+func (c *Clock) SetBlockDuration(blockID string, d time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	idx := c.blockIndexLocked(blockID)
+	if idx < 0 {
+		return fmt.Errorf("%w: %q", ErrUnknownBlock, blockID)
+	}
+	if d < minBlock || d > MaxBlock {
+		return fmt.Errorf("a block must last between %v and %v", minBlock, MaxBlock)
+	}
+	if c.started {
+		p := c.positionLocked(c.now())
+		if p.Ended || idx < p.Index {
+			return ErrBlockInPast
+		}
+		if idx == p.Index && d < p.Into {
+			return fmt.Errorf("this block has already run for %v, so it cannot be shorter than that", p.Into.Round(time.Second))
+		}
+	}
+	c.durations[idx] = d
+	return nil
+}
+
+// End finishes the event now: the clock moves to the end of the schedule, and every block skipped still
+// delivers its transition on the next Tick.
+func (c *Clock) End() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return ErrNotStarted
+	}
+	c.offset += c.startOfLocked(len(c.durations)) - c.elapsedLocked(c.now())
+	return nil
+}
+
 func (c *Clock) SetFrozen(v bool)          { c.mu.Lock(); c.ov.Frozen = v; c.mu.Unlock() }
 func (c *Clock) SetMarketOverride(v *bool) { c.mu.Lock(); c.ov.MarketOpen = v; c.mu.Unlock() }
 func (c *Clock) SetWindowOverride(w int, v *bool) error {

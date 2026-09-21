@@ -71,7 +71,7 @@ export function Systems() {
                   label="Resume"
                   title={`Resume ${h.symbol}`}
                   description="Rebuilds the order book from the saved orders, then accepts orders again."
-                  run={(reason) => run(`/api/admin/symbols/${encodeURIComponent(h.symbol)}/resume`, { reason }, `${h.symbol} resumed`)}
+                  run={() => run(`/api/admin/symbols/${encodeURIComponent(h.symbol)}/resume`, {}, `${h.symbol} resumed`)}
                 />
               </td>
             </tr>

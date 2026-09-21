@@ -7,6 +7,7 @@ import { Systems } from "./Systems";
 import { Participants } from "./Participants";
 import { NewsDesk } from "./NewsDesk";
 import { Shares } from "./Shares";
+import { Wallets } from "./Wallets";
 import { Disputes } from "./Disputes";
 import { AdminStandings } from "./AdminStandings";
 import { AuditLog } from "./AuditLog";
@@ -17,6 +18,7 @@ const PAGES = [
   { id: "control", label: "Control room", view: ControlRoom },
   { id: "systems", label: "Systems", view: Systems },
   { id: "participants", label: "Participants", view: Participants },
+  { id: "wallets", label: "Wallets", view: Wallets },
   { id: "shares", label: "Shares", view: Shares },
   { id: "news", label: "News desk", view: NewsDesk },
   { id: "disputes", label: "Disputes", view: Disputes },
@@ -93,7 +95,7 @@ function Frame() {
             {new Date(notice.at).toLocaleTimeString()} · {notice.text}
           </span>
         ) : (
-          <span>Every action here is recorded with your name and reason</span>
+          <span>Every action here is recorded with your name and the time</span>
         )}
       </footer>
     </div>

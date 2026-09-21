@@ -47,27 +47,43 @@ func NewSigner(secret []byte, ttl time.Duration) (*Signer, error) {
 	return &Signer{secret: secret, ttl: ttl, now: time.Now}, nil
 }
 
-func (s *Signer) Issue(accountID string) (string, error) {
+// claims are a login token's contents: who, and which "session version" of that account it belongs to.
+// Signing an account out raises its version, which cancels every token issued before.
+type claims struct {
+	jwt.RegisteredClaims
+	Version int `json:"v,omitempty"`
+}
+
+func (s *Signer) Issue(accountID string, version int) (string, error) {
 	now := s.now()
-	claims := jwt.RegisteredClaims{
-		Subject:   accountID,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
+	c := claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   accountID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
+		},
+		Version: version,
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(s.secret)
 }
 
 // Parse returns the account id in a valid, unexpired token.
 func (s *Signer) Parse(token string) (string, error) {
-	var claims jwt.RegisteredClaims
-	_, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (any, error) {
+	id, _, err := s.Verify(token)
+	return id, err
+}
+
+// Verify returns the account id and session version in a valid, unexpired token.
+func (s *Signer) Verify(token string) (string, int, error) {
+	var c claims
+	_, err := jwt.ParseWithClaims(token, &c, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
 		}
 		return s.secret, nil
 	}, jwt.WithTimeFunc(s.now), jwt.WithExpirationRequired(), jwt.WithValidMethods([]string{"HS256"}))
-	if err != nil || claims.Subject == "" {
-		return "", ErrInvalidToken
+	if err != nil || c.Subject == "" {
+		return "", 0, ErrInvalidToken
 	}
-	return claims.Subject, nil
+	return c.Subject, c.Version, nil
 }

@@ -75,7 +75,9 @@ type Rulebook struct {
 }
 
 type Event struct {
-	TotalMinutes int          `json:"totalMinutes"`
+	// TotalMinutes is the length the rulebook plans for. It is informational only: the real length is the
+	// sum of the timeline's blocks, and the organiser may change block lengths during the event.
+	TotalMinutes int          `json:"totalMinutes,omitempty"`
 	Participants Participants `json:"participants"`
 	Timeline     []Block      `json:"timeline"`
 }
@@ -280,8 +282,8 @@ func (r *Rulebook) validate(generic map[string]any) error {
 			regime++
 		}
 	}
-	if total != r.Event.TotalMinutes {
-		bad("timeline sums to %d minutes, expected exactly %d", total, r.Event.TotalMinutes)
+	if total <= 0 {
+		bad("the timeline has no duration")
 	}
 	if len(windows) == 0 {
 		bad("no allocation windows in timeline")
@@ -411,9 +413,14 @@ func (r *Rulebook) BlockOffsets() []time.Duration {
 	return out
 }
 
-// TotalDuration is the strict event length.
+// TotalDuration is the scheduled event length: the sum of the timeline's blocks. It is not fixed at five
+// hours; a shorter or longer schedule is valid.
 func (r *Rulebook) TotalDuration() time.Duration {
-	return time.Duration(r.Event.TotalMinutes) * time.Minute
+	var d time.Duration
+	for _, b := range r.Event.Timeline {
+		d += b.Duration()
+	}
+	return d
 }
 
 // PublicBlock is the participant-facing view of a timeline block (Sec 13/17): start and duration
@@ -468,7 +475,7 @@ type PublicEvent struct {
 func (r *Rulebook) Public() PublicConfig {
 	return PublicConfig{
 		Version:       r.Version,
-		Event:         PublicEvent{TotalMinutes: r.Event.TotalMinutes, Timeline: r.PublicTimeline()},
+		Event:         PublicEvent{TotalMinutes: int(r.TotalDuration() / time.Minute), Timeline: r.PublicTimeline()},
 		Market:        r.Market,
 		Teams:         r.Teams,
 		Accounts:      r.Accounts,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"stockastic/api/internal/ids"
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/news"
+	"stockastic/api/internal/rulebook"
 	"stockastic/api/internal/store"
 )
 
@@ -31,14 +33,14 @@ type AuditEntry struct {
 	OK     bool      `json:"ok"`
 }
 
-var ErrReasonRequired = errors.New("reason_required")
-
-func checkReason(reason string) (string, error) {
+// tidyReason cleans an optional note. The console only asks for confirmation, so a reason is usually
+// empty; an API caller that supplies one has it kept in the audit entry.
+func tidyReason(reason string) string {
 	r := strings.TrimSpace(reason)
-	if len([]rune(r)) < 5 {
-		return "", bad("reason_required", "A reason of at least 5 characters is required.")
+	if rs := []rune(r); len(rs) > 500 {
+		r = string(rs[:500])
 	}
-	return r, nil
+	return r
 }
 
 // Audit writes one entry. The entry is stored before the caller reports success.
@@ -60,14 +62,10 @@ func (a *App) AuditLog() []AuditEntry {
 	return out
 }
 
-// Do runs one organiser action: it requires a reason, runs the action, and audits the outcome either way.
+// Do runs one organiser action and audits the outcome either way: who did it, what, to what, and whether it worked.
 func (a *App) Do(actor User, action, target, reason string, f func() error) error {
-	r, err := checkReason(reason)
-	if err != nil {
-		return err
-	}
-	err = f()
-	a.Audit(actor, action, target, r, err == nil)
+	err := f()
+	a.Audit(actor, action, target, tidyReason(reason), err == nil)
 	return err
 }
 
@@ -242,6 +240,12 @@ type AdminAccount struct {
 	Warnings       int     `json:"warnings"`
 	CashBalance    float64 `json:"cashBalance"`
 	PortfolioValue float64 `json:"portfolioValue"`
+	Reserved       float64 `json:"reserved"`
+	Positions      int     `json:"positions"`
+	Locked         bool    `json:"locked"`
+	Online         bool    `json:"online"`
+	Sockets        int     `json:"sockets"`
+	LastSeen       int64   `json:"lastSeen"`
 }
 
 func (a *App) AdminAccounts() []AdminAccount {
@@ -252,8 +256,13 @@ func (a *App) AdminAccounts() []AdminAccount {
 			continue
 		}
 		row := AdminAccount{ID: u.ID, DisplayName: u.DisplayName, Email: u.Email, Role: u.Role, IsAdmin: u.IsAdmin, Status: u.Status, Warnings: u.Warnings}
+		row.Locked = u.Locked
+		row.Sockets = a.Hub.Sockets(u.ID)
+		row.Online, row.LastSeen = a.presenceOf(u.ID)
 		if snap, err := a.Ledger.Snapshot(u.ID); err == nil {
 			row.CashBalance = dto.Rupees(snap.Cash)
+			row.Reserved = dto.Rupees(snap.ReservedCash)
+			row.Positions = len(snap.Positions)
 		}
 		if v, err := a.Ledger.DirectValue(u.ID, a.Market.Traded); err == nil {
 			row.PortfolioValue = dto.Rupees(v)
@@ -521,13 +530,13 @@ func (a *App) RecordAdjustment(actor User, reason, fillID, note string) error {
 // ---- overview, systems, rulebook ----
 
 type Block struct {
-	ID               string `json:"id"`
-	Label            string `json:"label"`
-	StartMin         int    `json:"startMin"`
-	DurationMin      int    `json:"durationMin"`
-	Stage            string `json:"stage"`
-	MarketOpen       bool   `json:"marketOpen"`
-	AllocationWindow *int   `json:"allocationWindow"`
+	ID               string  `json:"id"`
+	Label            string  `json:"label"`
+	StartMin         float64 `json:"startMin"`
+	DurationMin      float64 `json:"durationMin"`
+	Stage            string  `json:"stage"`
+	MarketOpen       bool    `json:"marketOpen"`
+	AllocationWindow *int    `json:"allocationWindow"`
 }
 
 type Overview struct {
@@ -574,14 +583,14 @@ func (a *App) Overview() Overview {
 	default:
 		o.Clock.Status = "running"
 	}
-	o.Clock.ElapsedMs, o.Clock.TotalMs = pos.Elapsed.Milliseconds(), a.RB.TotalDuration().Milliseconds()
+	o.Clock.ElapsedMs, o.Clock.TotalMs = pos.Elapsed.Milliseconds(), a.Clock.Total().Milliseconds()
 	o.Clock.BlockIndex, o.Clock.IntoMs, o.Clock.RemainingMs = pos.Index, pos.Into.Milliseconds(), pos.Remaining.Milliseconds()
 
-	offsets := a.RB.BlockOffsets()
-	o.Timeline = make([]Block, len(a.RB.Event.Timeline))
-	for i, b := range a.RB.Event.Timeline {
-		o.Timeline[i] = Block{ID: b.ID, Label: b.Label, StartMin: int(offsets[i] / time.Minute), DurationMin: b.DurationMin,
-			Stage: string(b.Stage), MarketOpen: b.MarketOpen, AllocationWindow: b.AllocationWindow}
+	sched := a.Clock.Schedule()
+	o.Timeline = make([]Block, len(sched))
+	for i, b := range sched {
+		o.Timeline[i] = Block{ID: b.Block.ID, Label: b.Block.Label, StartMin: round1(b.Start.Minutes()), DurationMin: round1(b.Duration.Minutes()),
+			Stage: string(b.Block.Stage), MarketOpen: b.Block.MarketOpen, AllocationWindow: b.Block.AllocationWindow}
 	}
 	ov := a.Clock.Overrides()
 	o.Control.TradingFrozen, o.Control.MarketOverride, o.Control.MarketOpen = ov.Frozen, ovString(ov.MarketOpen), a.Clock.MarketOpen()
@@ -721,11 +730,7 @@ func (a *App) GrantShares(actor User, reason, accountID, symbol string, qty int6
 	}
 	err := a.Do(actor, "Granted shares", target, reason, func() error {
 		for _, id := range targets {
-			g := Grant{AccountID: id, Symbol: symbol, Qty: qty, Price: price}
-			if err := a.wal.Append(store.KindGrant, g); err != nil {
-				return err
-			}
-			if err := a.Ledger.Grant(id, symbol, qty, price); err != nil {
+			if err := a.giveShares(id, symbol, qty, price); err != nil {
 				return err
 			}
 			n++
@@ -733,4 +738,46 @@ func (a *App) GrantShares(actor User, reason, accountID, symbol string, qty int6
 		return nil
 	})
 	return n, err
+}
+
+func round1(x float64) float64 { return math.Round(x*10) / 10 }
+
+// ClockSetBlockDuration changes how long one block lasts, so the event can run shorter or longer than planned.
+func (a *App) ClockSetBlockDuration(actor User, reason, blockID string, minutes int) error {
+	if minutes < 1 || minutes > 24*60 {
+		return bad("invalid_minutes", "A block lasts from 1 minute to 24 hours.")
+	}
+	return a.Do(actor, fmt.Sprintf("Set a block to %d min", minutes), blockID, reason, func() error {
+		if err := a.Clock.SetBlockDuration(blockID, time.Duration(minutes)*time.Minute); err != nil {
+			return err
+		}
+		a.persistClock()
+		a.broadcastControl()
+		return nil
+	})
+}
+
+// ClockEnd finishes the event right now.
+func (a *App) ClockEnd(actor User, reason string) error {
+	return a.Do(actor, "Ended the event", "clock", reason, func() error {
+		if err := a.Clock.End(); err != nil {
+			return err
+		}
+		a.persistClock()
+		a.broadcastControl()
+		return nil
+	})
+}
+
+// PublicSchedule is the schedule participants may see, with the lengths the organiser has set now.
+func (a *App) PublicSchedule() ([]rulebook.PublicBlock, int) {
+	sched := a.Clock.Schedule()
+	out := make([]rulebook.PublicBlock, len(sched))
+	var total time.Duration
+	for i, b := range sched {
+		out[i] = rulebook.PublicBlock{ID: b.Block.ID, Label: b.Block.PublicLabel, StartMin: int(math.Round(b.Start.Minutes())),
+			DurationMin: int(math.Round(b.Duration.Minutes())), Stage: b.Block.Stage, MarketOpen: b.Block.MarketOpen, AllocationWindow: b.Block.AllocationWindow}
+		total += b.Duration
+	}
+	return out, int(math.Round(total.Minutes()))
 }

@@ -154,10 +154,6 @@ func TestLoaderRejectsBrokenRulebooks(t *testing.T) {
 	}{
 		"unknown top-level key": {func(m map[string]any) { m["surprise"] = 1 }, "unknown field"},
 		"unknown nested key":    {func(m map[string]any) { sub(m, "fees")["oops"] = 1 }, "unknown field"},
-		"timeline no longer sums to the cap": {func(m map[string]any) {
-			tl := sub(m, "event")["timeline"].([]any)
-			tl[0].(map[string]any)["durationMin"] = 16
-		}, "timeline sums to 301"},
 		"allocation windows out of order": {func(m map[string]any) {
 			tl := sub(m, "event")["timeline"].([]any)
 			tl[8].(map[string]any)["allocationWindow"] = 2
@@ -264,6 +260,33 @@ func TestEveryRulebookSectionIsConsciouslyPublicOrPrivate(t *testing.T) {
 		name := rt.Field(i).Name
 		if !have[name] && !organiserOnly[name] {
 			t.Errorf("Rulebook.%s is neither in PublicConfig nor listed as organiser-only", name)
+		}
+	}
+}
+
+func TestTheScheduleMayBeShorterOrLongerThanFiveHours(t *testing.T) {
+	for name, minutes := range map[string]int{"longer": 40, "shorter": 5} {
+		raw, err := os.ReadFile(realPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		tl := sub(m, "event")["timeline"].([]any)
+		tl[0].(map[string]any)["durationMin"] = minutes // the first block was 15 minutes
+		out, _ := json.Marshal(m)
+		rb, err := Parse(out)
+		if err != nil {
+			t.Fatalf("%s schedule was refused: %v", name, err)
+		}
+		want := 300 - 15 + minutes
+		if got := int(rb.TotalDuration() / time.Minute); got != want {
+			t.Errorf("%s: TotalDuration = %d min, want %d (the sum of the blocks)", name, got, want)
+		}
+		if got := rb.Public().Event.TotalMinutes; got != want {
+			t.Errorf("%s: the public total = %d, want %d", name, got, want)
 		}
 	}
 }

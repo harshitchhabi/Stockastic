@@ -53,15 +53,15 @@ function Queue({ title, tickets, run, now }: { title: string; tickets: Ticket[];
                         label="Mark platform wide"
                         title="Mark this as a platform-wide issue"
                         description="Moves it to the expedited queue whatever the team's allowance."
-                        run={(reason) => run(`/api/admin/disputes/${t.id}/triage`, { reason, platformWide: true }, "Marked platform wide")}
+                        run={() => run(`/api/admin/disputes/${t.id}/triage`, { platformWide: true }, "Marked platform wide")}
                       />
                     )}
                     <ActionButton
                       className="solid"
                       label="Resolve"
                       title="Resolve this dispute"
-                      description="The reason you give is the resolution the team is told."
-                      run={(reason) => run(`/api/admin/disputes/${t.id}/resolve`, { reason }, "Dispute resolved")}
+                      description="Marks this dispute as resolved."
+                      run={() => run(`/api/admin/disputes/${t.id}/resolve`, {}, "Dispute resolved")}
                     />
                   </span>
                 </td>
@@ -118,8 +118,8 @@ export function Disputes() {
           disabled={!fillId.trim() || !note.trim()}
           label="Record correction"
           title="Record a correction against this trade"
-          run={(reason) =>
-            run("/api/admin/trade-adjustments", { reason, fillId: fillId.trim(), adjustment: { note: note.trim() } }, "Correction recorded").then(() => {
+          run={() =>
+            run("/api/admin/trade-adjustments", { fillId: fillId.trim(), adjustment: { note: note.trim() } }, "Correction recorded").then(() => {
               setFillId("");
               setNote("");
             })

@@ -97,6 +97,9 @@ type App struct {
 	pauseMu sync.RWMutex
 	paused  map[string]bool
 
+	presMu sync.Mutex
+	pres   map[string]presence
+
 	lbMu    sync.Mutex
 	lbAt    time.Time
 	lbCache []dto.LeaderRow
@@ -121,7 +124,7 @@ func New(cfg Config) (*App, error) {
 		users: newUserStore(), companies: map[string]universe.Company{}, started: cfg.Now(),
 		live: map[string]map[string]engine.Order{}, tickets: map[string]*TicketRec{},
 		commits: newDurations(1000), errs: &errRing{}, haltSince: map[string]time.Time{},
-		recentFills: map[string][]engine.Fill{}, paused: map[string]bool{},
+		recentFills: map[string][]engine.Fill{}, paused: map[string]bool{}, pres: map[string]presence{},
 	}
 	base := cfg.Log
 	if base == nil {
@@ -146,6 +149,7 @@ func New(cfg Config) (*App, error) {
 	a.Disputes = disputes.New(disputes.FromRulebook(a.RB.Disputes))
 	a.News = news.New(news.Config{Lead: a.RB.News.Lead(), Now: cfg.Now, Stage: a.stage, Log: a.log})
 	a.Hub = wsapi.New(a.log, a.wsAuth, cfg.AllowedOrigins, a.onWSReady)
+	a.Hub.OnPresence(a.onPresence)
 
 	a.Engine, err = engine.New(engine.Config{
 		Symbols: a.symbols,
@@ -448,12 +452,12 @@ func (s sink) OnApplied(ap engine.Applied) {
 // ---- websocket ----
 
 func (a *App) wsAuth(token string) (wsapi.Identity, bool) {
-	id, err := a.Signer.Parse(token)
+	id, ver, err := a.Signer.Verify(token)
 	if err != nil {
 		return wsapi.Identity{}, false
 	}
 	u, ok := a.users.get(id)
-	if !ok || u.Status == StatusDisqualified {
+	if !ok || u.Status == StatusDisqualified || !u.sessionOK(ver) {
 		return wsapi.Identity{}, false
 	}
 	role := u.Role

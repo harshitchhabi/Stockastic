@@ -14,6 +14,8 @@ export function AuditLog() {
       .sort((a, b) => b.at - a.at);
   }, [data, query]);
 
+  const anyReason = (data ?? []).some((e) => e.reason);
+
   return (
     <div className="page">
       <LoadError error={error} at={at} />
@@ -22,7 +24,7 @@ export function AuditLog() {
         <span className="dim">{data ? `${rows.length} of ${data.length} entries` : "loading…"}</span>
       </div>
       <div className="toolbar" style={{ justifyContent: "flex-end" }}>
-        <input type="search" className="search" placeholder="Search who, what or why" aria-label="Search the audit log" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input type="search" className="search" placeholder="Search who or what" aria-label="Search the audit log" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <table className="roomy">
         <thead>
@@ -31,7 +33,7 @@ export function AuditLog() {
             <th>Who</th>
             <th>Action</th>
             <th>Target</th>
-            <th>Reason</th>
+            {anyReason && <th>Note</th>}
             <th></th>
           </tr>
         </thead>
@@ -44,13 +46,13 @@ export function AuditLog() {
               <td style={{ fontFamily: "var(--sans)" }}>{e.actor}</td>
               <td style={{ fontFamily: "var(--sans)", textAlign: "left" }}>{e.action}</td>
               <td style={{ fontFamily: "var(--sans)", textAlign: "left" }}>{e.target}</td>
-              <td style={{ fontFamily: "var(--serif)", fontStyle: "italic", textAlign: "left" }}>{e.reason}</td>
+              {anyReason && <td style={{ fontFamily: "var(--serif)", fontStyle: "italic", textAlign: "left" }}>{e.reason}</td>}
               <td>{e.ok ? null : <Badge tone="down">Failed</Badge>}</td>
             </tr>
           ))}
           {data && rows.length === 0 && (
             <tr>
-              <td colSpan={6} className="empty">
+              <td colSpan={anyReason ? 6 : 5} className="empty">
                 nothing recorded
               </td>
             </tr>

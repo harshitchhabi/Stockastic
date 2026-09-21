@@ -12,7 +12,7 @@ var secret = []byte(strings.Repeat("s", 40))
 
 func TestTokenRoundTrip(t *testing.T) {
 	s, _ := auth.NewSigner(secret, time.Hour)
-	tok, err := s.Issue("acct-1")
+	tok, err := s.Issue("acct-1", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,10 +23,10 @@ func TestTokenRoundTrip(t *testing.T) {
 
 func TestTokensThatMustBeRejected(t *testing.T) {
 	s, _ := auth.NewSigner(secret, time.Hour)
-	tok, _ := s.Issue("acct-1")
+	tok, _ := s.Issue("acct-1", 0)
 	other, _ := auth.NewSigner([]byte(strings.Repeat("x", 40)), time.Hour)
 	expired, _ := auth.NewSigner(secret, -time.Minute)
-	old, _ := expired.Issue("acct-1")
+	old, _ := expired.Issue("acct-1", 0)
 
 	tampered := tok[:len(tok)-2] + "aa"
 	if tok[len(tok)-2:] == "aa" {
@@ -47,7 +47,7 @@ func TestTokensThatMustBeRejected(t *testing.T) {
 }
 
 func mustIssue(t *testing.T, s *auth.Signer) string {
-	tok, err := s.Issue("acct-1")
+	tok, err := s.Issue("acct-1", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,5 +70,19 @@ func TestPasswordHashing(t *testing.T) {
 	}
 	if auth.CheckPassword("", "anything") {
 		t.Fatal("an empty hash accepted a password")
+	}
+}
+
+func TestTokensCarryTheSessionVersion(t *testing.T) {
+	s, _ := auth.NewSigner(secret, time.Hour)
+	tok, _ := s.Issue("acct-1", 3)
+	id, ver, err := s.Verify(tok)
+	if err != nil || id != "acct-1" || ver != 3 {
+		t.Fatalf("Verify = %q, %d, %v", id, ver, err)
+	}
+	// A token issued before versions existed reads as version 0.
+	old, _ := s.Issue("acct-1", 0)
+	if _, ver, _ := s.Verify(old); ver != 0 {
+		t.Fatalf("version = %d", ver)
 	}
 }

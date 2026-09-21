@@ -432,7 +432,8 @@ func TestFreezeStopsOrdersAndResumeRestoresThem(t *testing.T) {
 	e.openMarket(adm)
 	tok, _ := e.signup("Alice")
 
-	if r := e.call("POST", "/api/admin/control/freeze", adm, map[string]any{"frozen": true}); r.Status != 400 || r.Body["error"] != "reason_required" {
+	// The console asks only for confirmation, so an action needs no reason.
+	if r := e.call("POST", "/api/admin/control/freeze", adm, map[string]any{"frozen": true}); r.Status != 200 {
 		t.Fatalf("an action without a reason: %d %s", r.Status, r.Raw)
 	}
 	e.call("POST", "/api/admin/control/freeze", adm, map[string]any{"reason": "fault drill", "frozen": true})

@@ -1002,7 +1002,7 @@ textarea {
 }
 .timeline li {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
+  grid-template-columns: 56px minmax(0, 1fr) auto auto;
   gap: 14px;
   align-items: baseline;
   padding: 8px 8px;
@@ -1063,4 +1063,17 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+/* online / offline dot next to a team */
+.dot-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 9px;
+  background: var(--rule-strong);
+}
+.dot-status.on {
+  background: var(--up);
 }

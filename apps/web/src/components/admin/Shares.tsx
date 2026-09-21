@@ -7,7 +7,7 @@ import { ActionButton, LoadError, useDo, usePoll } from "./shared";
 /**
  * Teams start with cash only and short selling is not allowed, so nobody can sell until shares exist.
  * This is how shares enter the market: an organiser gives a team (or every team) some, valued at a
- * price you choose. Each grant is stored, audited with your reason, and cannot be undone.
+ * price you choose. Each grant is stored, audited, and cannot be undone.
  */
 export function Shares() {
   const { data: accounts, error, at, reload } = usePoll<AdminAccount[]>("/api/admin/accounts", 15000);
@@ -43,7 +43,7 @@ export function Shares() {
       </div>
       <p className="dim" style={{ marginTop: 0, maxWidth: "62ch" }}>
         Teams start with cash only and cannot sell what they do not own, so no trade can happen until shares exist. Give shares here.
-        Each grant is permanent, recorded against your name with the reason you give, and valued at the price you set.
+        Each grant is permanent, recorded against your name, and valued at the price you set.
       </p>
 
       <div className="stack" style={{ maxWidth: 460 }}>
@@ -82,8 +82,8 @@ export function Shares() {
           label="Give shares"
           title={`Give ${q || "…"} shares of ${symbol} to ${who}`}
           description={`Valued at ₹${p ? p.toFixed(2) : "…"} each. This cannot be undone.`}
-          run={(reason) =>
-            run("/api/admin/grants", { reason, accountId: team, symbol, qty: q, price: p }, `Gave ${q} ${symbol} to ${who}`).then(() => setQty(""))
+          run={() =>
+            run("/api/admin/grants", { accountId: team, symbol, qty: q, price: p }, `Gave ${q} ${symbol} to ${who}`).then(() => setQty(""))
           }
         />
       </div>

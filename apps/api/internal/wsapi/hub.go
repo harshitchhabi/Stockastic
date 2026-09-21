@@ -56,6 +56,7 @@ type Hub struct {
 	auth     Authenticator
 	upgrader websocket.Upgrader
 	onReady  func(c *Client)
+	presence func(accountID string, online bool)
 
 	mu        sync.RWMutex
 	clients   map[*Client]struct{}
@@ -91,6 +92,32 @@ func New(log *slog.Logger, auth Authenticator, allowedOrigins []string, onReady 
 }
 
 func (c *Client) Identity() Identity { return c.id }
+
+// OnPresence registers a function called when an account gets its first connection (online) and when it
+// loses its last one (offline). It runs outside the hub's locks and must not block.
+func (h *Hub) OnPresence(f func(accountID string, online bool)) { h.presence = f }
+
+// Sockets is how many live connections an account has (a team may have several browsers open).
+func (h *Hub) Sockets(accountID string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.byAccount[accountID])
+}
+
+// DisconnectAccount closes every connection an account has, with a close code the web app understands
+// (4401 tells it to stop retrying and ask the person to sign in again).
+func (h *Hub) DisconnectAccount(accountID string, code int, text string) {
+	h.mu.RLock()
+	cs := make([]*Client, 0, len(h.byAccount[accountID]))
+	for c := range h.byAccount[accountID] {
+		cs = append(cs, c)
+	}
+	h.mu.RUnlock()
+	for _, c := range cs {
+		_ = c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, text), time.Now().Add(time.Second))
+		_ = c.conn.Close()
+	}
+}
 
 func encode(t string, d any) []byte {
 	raw, err := json.Marshal(d)
@@ -188,16 +215,22 @@ func (h *Hub) add(c *Client) {
 		h.byAccount[c.id.AccountID] = map[*Client]struct{}{}
 	}
 	h.byAccount[c.id.AccountID][c] = struct{}{}
+	first := len(h.byAccount[c.id.AccountID]) == 1
 	h.mu.Unlock()
+	if first && h.presence != nil {
+		h.presence(c.id.AccountID, true)
+	}
 }
 
 func (h *Hub) remove(c *Client) {
 	h.mu.Lock()
 	delete(h.clients, c)
+	last := false
 	if m := h.byAccount[c.id.AccountID]; m != nil {
 		delete(m, c)
 		if len(m) == 0 {
 			delete(h.byAccount, c.id.AccountID)
+			last = true
 		}
 	}
 	for s := range c.symbols {
@@ -209,6 +242,9 @@ func (h *Hub) remove(c *Client) {
 		}
 	}
 	h.mu.Unlock()
+	if last && h.presence != nil {
+		h.presence(c.id.AccountID, false)
+	}
 }
 
 func (h *Hub) subscribe(c *Client, symbol string, on bool) {

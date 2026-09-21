@@ -101,6 +101,7 @@
     "fund.seedCapital": { "status": "assumption", "section": "6/10", "note": "Rulebook does not say whether Phase-1 wallets carry into a fund. 0 = a fund starts empty and holds only investor capital." },
     "fees.managementFeePercent": { "status": "recommended", "section": "12", "note": "Range 1-2%, exact figure To Be Finalised." },
     "fees.managementFeeBasis": { "status": "assumption", "section": "12", "note": "Rulebook does not say whether the % applies per settlement period or per event/annum." },
+    "event.timeline": { "status": "assumption", "section": "17", "note": "The rulebook plans five hours, but the organiser has said the event may run shorter or longer. The real length is the sum of the blocks and can be changed live in the console." },
     "leaderboard.visibleToParticipants": { "status": "assumption", "section": "15", "note": "Section 15 describes public boards; the organiser asked for standings to be hidden from teams. Flip to true to publish them." },
     "leaderboard.refreshSeconds": { "status": "recommended", "section": "15" },
     "disputes.raiseWithinMinutes": { "status": "recommended", "section": "22" },

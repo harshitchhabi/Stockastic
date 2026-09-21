@@ -1,31 +1,60 @@
 import { useMemo, useState } from "react";
 import type { AdminAccount } from "@/lib/adminTypes";
-import { ActionButton, Badge, LoadError, useDo, usePoll } from "./shared";
+import { ago } from "@/lib/format";
+import { ActionButton, Badge, LoadError, useDo, useNow, usePoll } from "./shared";
 
-const money = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 type RoleFilter = "all" | "investor" | "fund_manager";
+type PresenceFilter = "all" | "online" | "offline";
 
-/** Everyone in the event. Warn, disqualify or promote a team, each with a recorded reason. */
+function lastSeenText(a: AdminAccount, now: number) {
+  if (a.online) return a.sockets > 1 ? `Online, ${a.sockets} tabs` : "Online";
+  return a.lastSeen ? `Left ${ago(a.lastSeen, now)}` : "Not seen yet";
+}
+
+/** Everyone in the event, who is online right now, and quick actions on each team. */
 export function Participants() {
-  const { data, error, at, reload } = usePoll<AdminAccount[]>("/api/admin/accounts", 10000);
+  const { data, error, at, reload } = usePoll<AdminAccount[]>("/api/admin/accounts", 4000);
   const run = useDo(reload);
+  const now = useNow(1000);
   const [query, setQuery] = useState("");
   const [role, setRole] = useState<RoleFilter>("all");
+  const [presence, setPresence] = useState<PresenceFilter>("all");
+
+  const counts = useMemo(() => {
+    const all = data ?? [];
+    const online = all.filter((a) => a.online).length;
+    return { online, offline: all.length - online };
+  }, [data]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (data ?? [])
       .filter((a) => role === "all" || a.role === role)
+      .filter((a) => presence === "all" || (presence === "online") === a.online)
       .filter((a) => !q || a.displayName.toLowerCase().includes(q) || a.email.toLowerCase().includes(q))
-      .sort((a, b) => b.portfolioValue - a.portfolioValue);
-  }, [data, query, role]);
+      .sort((a, b) => Number(b.online) - Number(a.online) || b.portfolioValue - a.portfolioValue);
+  }, [data, query, role, presence]);
 
   return (
     <div className="page">
       <LoadError error={error} at={at} />
       <div className="page-head">
         <h1>Participants</h1>
-        <span className="dim">{data ? `${rows.length} of ${data.length}` : "loading…"}</span>
+        {data && (
+          <span className="dim">
+            <span className="up">{counts.online} online</span>, {counts.offline} offline, {data.length} in all
+          </span>
+        )}
+        <span style={{ marginLeft: "auto" }}>
+          <ActionButton
+            label="Sign everyone out"
+            danger
+            disabled={!data || data.length === 0}
+            title="Sign every team out"
+            description="Every team's open pages go back to the sign-in screen and their old logins stop working. Teams can sign in again straight away. Your own login is not affected."
+            run={() => run("/api/admin/sign-out-all", {}, "Every team signed out")}
+          />
+        </span>
       </div>
 
       <div className="toolbar">
@@ -33,6 +62,19 @@ export function Participants() {
           {(
             [
               ["all", "Everyone"],
+              ["online", "Online"],
+              ["offline", "Offline"],
+            ] as [PresenceFilter, string][]
+          ).map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={presence === id} onClick={() => setPresence(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="tabs inline" role="tablist">
+          {(
+            [
+              ["all", "All roles"],
               ["investor", "Investors"],
               ["fund_manager", "Fund managers"],
             ] as [RoleFilter, string][]
@@ -49,10 +91,8 @@ export function Participants() {
         <thead>
           <tr>
             <th>Team</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Portfolio value</th>
-            <th>Cash</th>
+            <th>Connection</th>
+            <th>Standing</th>
             <th></th>
           </tr>
         </thead>
@@ -60,52 +100,57 @@ export function Participants() {
           {rows.map((a) => (
             <tr key={a.id}>
               <td>
+                <span className={`dot-status ${a.online ? "on" : ""}`} />
                 <a href={`#/team/${a.id}`} className="rowlink">
                   <strong>{a.displayName}</strong>
                 </a>
-                <div className="dim" style={{ fontSize: 11 }}>{a.email}</div>
+                <div className="dim" style={{ fontSize: 11, paddingLeft: 17 }}>
+                  {a.email} · {a.role === "fund_manager" ? "Fund manager" : "Investor"}
+                </div>
               </td>
-              <td style={{ fontFamily: "var(--sans)" }}>{a.role === "fund_manager" ? "Fund manager" : "Investor"}</td>
-              <td style={{ fontFamily: "var(--sans)" }}>
-                {a.status === "active" && <Badge tone="up">Active</Badge>}
+              <td className={a.online ? "up" : "dim"} style={{ fontFamily: "var(--sans)", textAlign: "left" }}>
+                {lastSeenText(a, now)}
+              </td>
+              <td style={{ fontFamily: "var(--sans)", textAlign: "left" }}>
+                {a.locked && <Badge tone="down">Locked</Badge>}{" "}
+                {a.status === "active" && !a.locked && <Badge tone="up">Active</Badge>}
                 {a.status === "warned" && <Badge tone="flag">Warned{a.warnings > 1 ? ` ×${a.warnings}` : ""}</Badge>}
                 {a.status === "disqualified" && <Badge tone="down">Disqualified</Badge>}
               </td>
-              <td>{money(a.portfolioValue)}</td>
-              <td>{money(a.cashBalance)}</td>
               <td>
                 <span className="btn-row" style={{ justifyContent: "flex-end", margin: 0 }}>
-                  {a.role === "investor" && a.status !== "disqualified" && (
+                  <ActionButton
+                    label="Sign out"
+                    title={`Sign ${a.displayName} out`}
+                    description="Their open pages go back to the sign-in screen and their old logins stop working. They can sign in again straight away."
+                    run={() => run(`/api/admin/accounts/${a.id}/sign-out`, {}, `${a.displayName} signed out`)}
+                  />
+                  {a.locked ? (
                     <ActionButton
-                      label="Promote"
-                      title={`Promote ${a.displayName} to fund manager`}
-                      description="Moves this team into the fund manager role."
-                      run={(reason) => run(`/api/admin/accounts/${a.id}/promote`, { reason }, `${a.displayName} promoted`)}
+                      className="solid"
+                      label="Unlock"
+                      title={`Unlock ${a.displayName}`}
+                      run={() => run(`/api/admin/accounts/${a.id}/unlock`, {}, `${a.displayName} unlocked`)}
                     />
-                  )}
-                  {a.status !== "disqualified" && (
+                  ) : (
                     <ActionButton
-                      label="Warn"
-                      title={`Issue a formal warning to ${a.displayName}`}
-                      run={(reason) => run(`/api/admin/accounts/${a.id}/warn`, { reason }, `${a.displayName} warned`)}
-                    />
-                  )}
-                  {a.status !== "disqualified" && (
-                    <ActionButton
-                      label="Disqualify"
                       danger
-                      title={`Disqualify ${a.displayName}`}
-                      description="Removes this team from the event. If it runs a fund, that fund is frozen at its current NAV."
-                      run={(reason) => run(`/api/admin/accounts/${a.id}/disqualify`, { reason }, `${a.displayName} disqualified`)}
+                      label="Lock"
+                      title={`Lock ${a.displayName}`}
+                      description="Signs them out and stops them signing in at all until you unlock them."
+                      run={() => run(`/api/admin/accounts/${a.id}/lock`, {}, `${a.displayName} locked`)}
                     />
                   )}
+                  <a href={`#/team/${a.id}`}>
+                    <button>Open</button>
+                  </a>
                 </span>
               </td>
             </tr>
           ))}
           {data && rows.length === 0 && (
             <tr>
-              <td colSpan={6} className="empty">
+              <td colSpan={4} className="empty">
                 no one matches
               </td>
             </tr>

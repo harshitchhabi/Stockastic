@@ -57,9 +57,9 @@ func TestOrganiserCanCorrectATeamsWalletAndItSurvivesARestart(t *testing.T) {
 			t.Fatalf("amount %v: %d", amt, r.Status)
 		}
 	}
-	// A correction with no reason is refused.
-	if r := e.call("POST", "/api/admin/accounts/"+id+"/cash", adm, map[string]any{"amount": 1}); r.Status != 400 {
-		t.Fatalf("no reason: %d", r.Status)
+	// A reason is optional.
+	if r := e.call("POST", "/api/admin/accounts/"+id+"/cash", adm, map[string]any{"amount": 1}); r.Status != 200 {
+		t.Fatalf("no reason: %d %s", r.Status, r.Raw)
 	}
 
 	// Give and take back shares.
