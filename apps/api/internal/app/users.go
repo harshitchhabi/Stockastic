@@ -223,6 +223,12 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 	return u, nil
 }
 
+// IsAdminEmail reports whether an address belongs to an organiser account.
+func (a *App) IsAdminEmail(email string) bool {
+	u, ok := a.users.byEmailAddr(email)
+	return ok && u.IsAdmin
+}
+
 // Login verifies a password. The same error is returned for an unknown email and a wrong password.
 func (a *App) Login(email, password string) (User, error) {
 	u, ok := a.users.byEmailAddr(email)

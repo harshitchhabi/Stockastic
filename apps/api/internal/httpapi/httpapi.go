@@ -459,14 +459,17 @@ func (s *Server) login(c *gin.Context) {
 	if !s.decode(c, &in) {
 		return
 	}
-	if wait := s.logins.blocked(in.Email); wait > 0 {
+	// An organiser can always sign in, from any address, however many wrong guesses were made at the email: the
+	// password is long (12 or more characters), and a lock here would only help someone who wants the console shut.
+	guarded := !s.a.IsAdminEmail(in.Email)
+	if wait := s.logins.blocked(in.Email); guarded && wait > 0 {
 		c.Header("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_attempts", "message": "Too many wrong passwords for this email. Wait a few minutes."})
 		return
 	}
 	u, err := s.a.Login(in.Email, in.Password)
 	if err != nil {
-		if errors.Is(err, app.ErrInvalidCredentials) {
+		if errors.Is(err, app.ErrInvalidCredentials) && guarded {
 			s.logins.failed(in.Email)
 		}
 		s.fail(c, err)

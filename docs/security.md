@@ -69,6 +69,15 @@ checked on the server. Changing what a page shows or what a request says changes
   `deploy/harden.sh` and the rehearsal in `docs/deployment.md` on the real machine and check that you can still log in over SSH from
   a second terminal before you close the first.
 
+## Working from any address
+
+Nothing in the app is tied to an address. The organiser console works from any network or device that can reach the site (a
+phone hotspot works if the venue Wi-Fi fails), and the organiser's sign-in is never locked by wrong guesses (the password is 12
+or more characters). Tokens are not bound to an address. On the server, `deploy/harden.sh` allows SSH from anywhere with a key
+by default (with automatic bans for repeated failures); setting `ADMIN_IP` is optional and only if you want SSH limited to one
+fixed address. If you change networks, run `ufw allow from <new address> to any port 22` from the AWS console session, or leave
+`ADMIN_IP` unset.
+
 ## Settings
 
 | Variable | Default | Meaning |

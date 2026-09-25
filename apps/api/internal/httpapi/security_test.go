@@ -538,3 +538,29 @@ func TestTheServerRefusesMoreSocketsThanItsLimit(t *testing.T) {
 		t.Fatalf("the refusal was %v, want 503", resp)
 	}
 }
+
+func TestOrganiserCanAlwaysSignInFromAnywhere(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	for i := 0; i < 30; i++ {
+		e.call("POST", "/api/auth/login", "", map[string]any{"email": adminEmail, "password": fmt.Sprintf("wrong-guess-%d", i)})
+	}
+	for _, from := range []string{"", "203.0.113.9", "198.51.100.77"} {
+		req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", strings.NewReader(fmt.Sprintf(`{"email":%q,"password":%q}`, adminEmail, adminPass)))
+		req.Header.Set("Content-Type", "application/json")
+		if from != "" {
+			req.Header.Set("X-Forwarded-For", from)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("the organiser could not sign in (via %q) after guesses at the account: %d", from, res.StatusCode)
+		}
+	}
+	// And the console works with that login from a browser on any origin the server is reached by.
+	if r := e.call("GET", "/api/admin/overview", e.admin(), nil); r.Status != 200 {
+		t.Fatalf("console: %d", r.Status)
+	}
+}
