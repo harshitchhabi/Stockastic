@@ -74,6 +74,28 @@ func (s *Server) privilegeRoutes(adm *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
+	adm.POST("/sim/shift", func(c *gin.Context) {
+		var r struct {
+			Minutes float64 `json:"minutes"`
+		}
+		if !s.decode(c, &r) {
+			return
+		}
+		if err := s.a.ShiftNews(user(c), r.Minutes); err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+	adm.POST("/sim/release-overdue", func(c *gin.Context) {
+		n, err := s.a.ReleaseOverdueNews(user(c))
+		if err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "released": n})
+	})
+	adm.GET("/schedule/check", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.CheckSchedule()) })
 	adm.POST("/sim/:id/skip", func(c *gin.Context) {
 		var r struct {
 			Skip bool `json:"skip"`

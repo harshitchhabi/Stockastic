@@ -37,6 +37,13 @@ feeds, `DATA_CHECKS`) describe how the prices were built and are not needed at r
   event times). In Phase 1 everyone sees it at once. In Phase 2 fund managers see it first and the public 60 seconds later.
   Bull and bear run announcements go to everyone at once. Real news, rumours and denials look the same to teams;
   only the organiser sees the type.
+- **Breaks are safe.** Prices and news run on open-market time, so a closed stretch (for example the break between Phase 1 and
+  Phase 2) pauses both and they carry on afterwards. With the rulebook timeline the 40 minute break sits between
+  market minute 40 and 41, exactly where the data expects it.
+- **The schedule is checked against the data.** Under the Schedule editor, the organiser sees how many minutes of open trading the
+  schedule gives against the 170 the data covers, the breaks, news that would never go out, and news that lands in a block of a
+  different phase than the data was designed for (which would change the fund managers' head start). Each news item also shows the
+  event-clock time it will go out at under the current schedule.
 - **The organiser is in charge of the news.** On **News and market events** they can turn automatic release off and send
   each item by hand, hold any item, reword it or change its time, or release it now. This changes only what people read.
   Prices come from the table whatever the organiser does with the news.

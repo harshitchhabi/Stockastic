@@ -142,6 +142,9 @@ export interface SimItem {
   impacts: number;
   skipped: boolean;
   edited: boolean;
+  phase?: string;
+  /** When it should go out on the event clock, in minutes, under the current schedule (null if it never will). */
+  clockMinute: number | null;
 }
 
 export interface SimStatus {
@@ -263,4 +266,13 @@ export interface Schedule {
   blocks: ScheduleBlock[];
   template: ScheduleBlock[];
   started: boolean;
+}
+
+export interface ScheduleCheck {
+  openMinutes: number;
+  dataMinutes: number;
+  lastNewsMinute: number;
+  blocks: { id: string; clockStartMin: number; marketStartMin: number; marketOpen: boolean; minutes: number }[];
+  breaks: string[];
+  warnings: string[];
 }

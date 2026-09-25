@@ -60,6 +60,9 @@ type Event struct {
 	// A FAKE or DENIAL item has no impacts: it is news that moves nothing.
 	Type     string `json:"type"`
 	Category string `json:"category"`
+	// Phase says which phase the item was designed for ("phase1" or "phase2"). It only drives a warning when the
+	// schedule puts the item in a block of a different phase (the fund managers' head start depends on it).
+	Phase string `json:"phase,omitempty"`
 }
 
 // Regime is a bull or bear run: broad optimism or pessimism, felt by most companies but not all, and not

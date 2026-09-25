@@ -513,7 +513,11 @@ type Item struct {
 	// Type is REAL, FAKE or DENIAL for market events: organiser-only labels, never shown to teams.
 	Type     string `json:"type,omitempty"`
 	Category string `json:"category,omitempty"`
-	Impacts  int    `json:"impacts"`
+	Phase    string `json:"phase,omitempty"`
+	// ClockMinute is when the item is expected to go out on the event clock under the current schedule, if the
+	// market runs without a pause (nil if the schedule never gets that far). The console fills it in.
+	ClockMinute *float64 `json:"clockMinute"`
+	Impacts     int      `json:"impacts"`
 	// Skipped means the organiser turned this item off: it will not be released by itself.
 	Skipped bool `json:"skipped"`
 	// Edited means the organiser changed its words or its time.
@@ -550,7 +554,7 @@ func (e *Engine) Status() Status {
 	for _, ev := range e.sc.Events {
 		_, edited := e.st.Edits[ev.ID]
 		ev = e.effective(ev)
-		s.Items = append(s.Items, Item{ID: ev.ID, Kind: "news", AtMinute: ev.AtMinute, Headline: ev.Headline, Fired: e.fired[ev.ID], Type: ev.Type, Category: ev.Category,
+		s.Items = append(s.Items, Item{ID: ev.ID, Kind: "news", AtMinute: ev.AtMinute, Headline: ev.Headline, Fired: e.fired[ev.ID], Type: ev.Type, Category: ev.Category, Phase: ev.Phase,
 			Impacts: len(ev.Impacts), Skipped: e.skipped(ev.ID), Edited: edited})
 	}
 	for _, r := range e.sc.Regimes {
@@ -562,6 +566,62 @@ func (e *Engine) Status() Status {
 	}
 	sort.SliceStable(s.Items, func(i, j int) bool { return s.Items[i].AtMinute < s.Items[j].AtMinute })
 	return s
+}
+
+// MarketMinutes is how much open-market time has passed.
+func (e *Engine) MarketMinutes() float64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return float64(e.st.MarketSeconds) / 60
+}
+
+// ShiftUnreleased moves every news item that has not gone out by delta minutes (negative moves it earlier). An
+// item cannot be moved before minute 0.
+func (e *Engine) ShiftUnreleased(delta float64) (int, error) {
+	if math.IsNaN(delta) || math.Abs(delta) > 24*60 {
+		return 0, errors.New("sim: shift by up to 1440 minutes")
+	}
+	e.mu.Lock()
+	n := 0
+	for _, ev := range e.sc.Events {
+		if e.fired[ev.ID] {
+			continue
+		}
+		at := max(e.effective(ev).AtMinute+delta, 0)
+		if e.st.Edits == nil {
+			e.st.Edits = map[string]ItemEdit{}
+		}
+		ed := e.st.Edits[ev.ID]
+		ed.AtMinute = &at
+		e.st.Edits[ev.ID] = ed
+		n++
+	}
+	e.mu.Unlock()
+	return n, e.save()
+}
+
+// ReleaseOverdue sends every item whose time has already passed and that has not gone out and is not held. It is
+// for after the organiser has had automatic news off, or after a shift, and wants everything caught up at once.
+func (e *Engine) ReleaseOverdue(now time.Time) (int, error) {
+	var out []release
+	e.mu.Lock()
+	mins := float64(e.st.MarketSeconds) / 60
+	if e.sc.NewsClock != "market" {
+		if el, ok := e.d.Clock.Elapsed(); ok {
+			mins = el.Minutes()
+		}
+	}
+	for _, ev := range e.sc.Events {
+		ev = e.effective(ev)
+		if mins >= ev.AtMinute && !e.fired[ev.ID] && !e.skipped(ev.ID) {
+			e.fireEventLocked(ev, now, &out)
+		}
+	}
+	e.mu.Unlock()
+	for _, r := range out {
+		e.d.News.Publish(r.kind, r.headline, r.body)
+	}
+	return len(out), e.save()
 }
 
 // save stores the state after an organiser change. The caller must not hold the lock.

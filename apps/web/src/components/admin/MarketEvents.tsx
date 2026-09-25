@@ -23,12 +23,16 @@ export function MarketEvents() {
   const [editing, setEditing] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [when, setWhen] = useState("");
+  const [shift, setShift] = useState("");
 
   if (!data) return <div className="page"><LoadError error={error} at={fetched} />{!error && <div className="empty">loading…</div>}</div>;
 
   const items = [...data.items].sort((a, b) => a.atMinute - b.atMinute);
   const fired = items.filter((i) => i.fired).length;
   const unit = data.newsClock === "market" ? "open-market time" : "event time";
+  const clockText = (m: number | null) => (m == null ? "not in this schedule" : `T+${Math.floor(m / 60)}:${String(Math.floor(m % 60)).padStart(2, "0")}`);
+  const shiftBy = Number(shift);
+  const shiftOk = shift.trim() !== "" && Number.isFinite(shiftBy) && shiftBy !== 0 && Math.abs(shiftBy) <= 1440;
 
   async function saveEdit(i: SimItem) {
     const minutes = when.trim() === "" ? undefined : Number(when);
@@ -75,10 +79,34 @@ export function MarketEvents() {
         Times are minutes of {unit}. In Phase 2 fund managers see each item first and the public 60 seconds later. Bull and bear run announcements go to everyone at once.
         {data.fromTable && " Prices follow the data table exactly: holding, moving or rewording news changes what people read, not what prices do."}
       </p>
+      <div className="btn-row" style={{ alignItems: "flex-end" }}>
+        <label className="field" style={{ width: 200 }}>
+          <span className="label">Move all remaining news by (minutes)</span>
+          <input type="number" step="0.5" value={shift} onChange={(e) => setShift(e.target.value)} placeholder="for example 5 or -3" />
+        </label>
+        <ActionButton
+          disabled={!shiftOk}
+          label="Move all remaining"
+          title={`Move every news item that has not gone out ${shiftBy > 0 ? "later" : "earlier"} by ${Math.abs(shiftBy)} minutes`}
+          description="Use it if the event runs behind or ahead of the plan. Items already released are not affected, and nothing can go before minute 0."
+          run={() => run("/api/admin/sim/shift", { minutes: shiftBy }, "Remaining news moved").then(() => setShift(""))}
+        />
+        <ActionButton
+          label="Release everything overdue"
+          title="Release every overdue news item now"
+          description="Sends every item whose time has passed and that has not gone out and is not held. Use it to catch up after turning automatic news off."
+          run={async () => {
+            const r = await api.post<{ released: number }>("/api/admin/sim/release-overdue", {});
+            notify(`${r.released} item${r.released === 1 ? "" : "s"} released`);
+            await reload();
+          }}
+        />
+      </div>
       <table className="roomy">
         <thead>
           <tr>
             <th>At</th>
+            <th>On the clock</th>
             <th>Kind</th>
             <th>Headline</th>
             <th></th>
@@ -88,6 +116,7 @@ export function MarketEvents() {
           {items.map((i) => (
             <tr key={i.id} style={i.fired ? { opacity: 0.55 } : undefined}>
               <td className="mono">{at(i.atMinute)}</td>
+              <td className="mono dim">{data.newsClock === "market" ? clockText(i.clockMinute) : ""}</td>
               <td>
                 {i.kind === "news" && i.type !== "REGIME" ? (
                   <Badge tone={i.type === "FAKE" ? "down" : i.type === "DENIAL" ? "flag" : undefined}>{i.type ?? "News"}</Badge>
@@ -154,7 +183,7 @@ export function MarketEvents() {
           ))}
           {items.length === 0 && (
             <tr>
-              <td colSpan={4} className="empty">
+              <td colSpan={5} className="empty">
                 no scheduled news
               </td>
             </tr>

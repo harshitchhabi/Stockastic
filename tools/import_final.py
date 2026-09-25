@@ -61,7 +61,7 @@ for r in wb['RUN_SHEET'].iter_rows(min_row=3, values_only=True):
     if t not in event_sec_to_bar:
         sys.exit("news %d at %s is not inside live trading" % (n, r[2]))
     events.append({"id": "n%02d" % n, "atMinute": round(event_sec_to_bar[t] * bar_seconds / 60, 4), "headline": headline,
-                   "body": "", "type": typ, "category": cat, "impacts": []})
+                   "body": "", "type": typ, "category": cat, "phase": "phase1" if r[1] == "P1" else "phase2", "impacts": []})
 events.sort(key=lambda e: e['atMinute'])
 
 scenario = {"seed": 1, "tickSeconds": bar_seconds, "newsClock": "market", "pricesFile": "prices.json",

@@ -545,7 +545,17 @@ func (a *App) Systems() Systems {
 }
 
 // SimStatus is what the price simulation is doing and which events are scheduled.
-func (a *App) SimStatus() sim.Status { return a.Sim.Status() }
+func (a *App) SimStatus() sim.Status {
+	st := a.Sim.Status()
+	if st.NewsClock == "market" {
+		for i := range st.Items {
+			if c, _, ok := a.clockMinuteOfMarketMinute(st.Items[i].AtMinute); ok {
+				st.Items[i].ClockMinute = &c
+			}
+		}
+	}
+	return st
+}
 
 // FireSimEvent releases a scheduled market event (or bull/bear run) right now.
 func (a *App) FireSimEvent(actor User, reason, id string) error {

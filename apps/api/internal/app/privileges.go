@@ -268,3 +268,24 @@ func (a *App) EditNewsItem(actor User, id, headline string, atMinute *float64) e
 		return nil
 	})
 }
+
+// ShiftNews moves every news item that has not gone out by some minutes (negative moves them earlier).
+func (a *App) ShiftNews(actor User, minutes float64) error {
+	return a.Do(actor, fmt.Sprintf("Shifted all remaining news by %+.1f min", minutes), "news", "", func() error {
+		if _, err := a.Sim.ShiftUnreleased(minutes); err != nil {
+			return bad("cannot_change", err.Error())
+		}
+		return nil
+	})
+}
+
+// ReleaseOverdueNews sends every news item whose time has passed and that has not gone out and is not held.
+func (a *App) ReleaseOverdueNews(actor User) (int, error) {
+	n := 0
+	err := a.Do(actor, "Released all overdue news", "news", "", func() error {
+		var err error
+		n, err = a.Sim.ReleaseOverdue(a.now())
+		return err
+	})
+	return n, err
+}

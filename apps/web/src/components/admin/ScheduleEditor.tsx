@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { Schedule, ScheduleBlock } from "@/lib/adminTypes";
+import type { Schedule, ScheduleBlock, ScheduleCheck } from "@/lib/adminTypes";
 import { ActionButton, Badge, useAdmin } from "./shared";
 
 const STAGES: { value: ScheduleBlock["stage"]; label: string }[] = [
@@ -29,6 +29,14 @@ export function ScheduleEditor() {
   const [started, setStarted] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [check, setCheck] = useState<ScheduleCheck | null>(null);
+
+  const loadCheck = useCallback(() => {
+    api
+      .get<ScheduleCheck>("/api/admin/schedule/check")
+      .then(setCheck)
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -38,10 +46,11 @@ export function ScheduleEditor() {
       setStarted(s.started);
       setDirty(false);
       setLoaded(true);
+      loadCheck();
     } catch (err) {
       notify(err instanceof Error ? err.message : "could not load the schedule", false);
     }
-  }, [notify]);
+  }, [notify, loadCheck]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -117,6 +126,34 @@ export function ScheduleEditor() {
         An allocation window lets investors move money in and out of funds. "Freeze standings" takes the Phase 1 result (call it <code>phase1</code>) or the final result (<code>final</code>) when the block starts; you can also take either by hand from Funds and prizes.
       </p>
 
+      {check && (
+        <div style={{ marginBottom: 14 }}>
+          <div className="dim">
+            {check.dataMinutes > 0 ? (
+              <>
+                Open trading in this saved schedule: <strong className="mono">{Math.round(check.openMinutes)} min</strong>. The price data covers{" "}
+                <strong className="mono">{Math.round(check.dataMinutes)} min</strong> of open trading, and the last news item is due at minute{" "}
+                <span className="mono">{Math.round(check.lastNewsMinute)}</span>.
+              </>
+            ) : (
+              <>Open trading in this saved schedule: <strong className="mono">{Math.round(check.openMinutes)} min</strong>.</>
+            )}
+          </div>
+          {check.breaks.length > 0 && (
+            <div className="dim">
+              Breaks with the market closed between open blocks: {check.breaks.join("; ")}. Prices and news stop during a break and carry on after it.
+            </div>
+          )}
+          {check.warnings.map((w, i) => (
+            <div key={i} className="down" style={{ marginTop: 4 }}>
+              {w}
+            </div>
+          ))}
+          {check.warnings.length === 0 && <div className="up" style={{ marginTop: 4 }}>The schedule fits the data.</div>}
+          {dirty && <div className="dim">These checks are for the last saved schedule. Save your changes to check them.</div>}
+        </div>
+      )}
+
       <table className="roomy">
         <thead>
           <tr>
@@ -127,6 +164,7 @@ export function ScheduleEditor() {
             <th>Market open</th>
             <th>Window</th>
             <th>Freeze standings</th>
+            <th>Clock starts</th>
             <th></th>
           </tr>
         </thead>
@@ -179,6 +217,12 @@ export function ScheduleEditor() {
                   <option value="phase1">Phase 1 result</option>
                   <option value="final">Final result</option>
                 </select>
+              </td>
+              <td className="mono dim">
+                {(() => {
+                  const t = !dirty ? check?.blocks.find((x) => x.id === b.id) : undefined;
+                  return t ? `T+${Math.floor(t.clockStartMin / 60)}:${String(Math.round(t.clockStartMin % 60)).padStart(2, "0")}` : "";
+                })()}
               </td>
               <td>
                 <button className="ghost" onClick={() => remove(i)} aria-label="Remove block" disabled={blocks.length <= 1}>
