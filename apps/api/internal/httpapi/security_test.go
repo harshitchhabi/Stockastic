@@ -377,11 +377,15 @@ func TestExportsCannotRunAFormula(t *testing.T) {
 // Many teams doing everything at once while the organiser changes things underneath them: nothing may return
 // a server error, deadlock or lose track of money, and a restart must rebuild exactly the same state.
 func TestChaosThenRestartIsIdentical(t *testing.T) {
-	wal := store.NewMem()
+	chaosThenRestart(t, store.NewMem(), nil)
+}
+
+func chaosThenRestart(t *testing.T, wal store.Log, reopen func() store.Log) {
 	r := rb(t, 100)
 	r.Fund.MandatoryAllocationPercent = 0.1
 	r.Market.MaxSingleStockPercent = 0
 	e := newEnvWith(t, wal, r, testScenario())
+	e.reopen = reopen
 	adm := e.admin()
 	var teams []team
 	for i := 0; i < 24; i++ {

@@ -174,6 +174,8 @@ func New(opt Options) (http.Handler, error) {
 		}
 		c.JSON(http.StatusOK, d)
 	})
+	adm.GET("/accounts/:id/history", s.teamHistory)
+	adm.GET("/shared-addresses", s.sharedAddresses)
 	adm.POST("/accounts/:id/cash", s.act(func(u app.User, b body, c *gin.Context) error {
 		if b.SetTo != nil {
 			return s.a.SetCash(u, b.Reason, c.Param("id"), *b.SetTo)
@@ -424,6 +426,10 @@ func (s *Server) ready(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "error": "disk_low"})
 		return
 	}
+	if !s.a.DBHealthy() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "error": "database_unavailable"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -470,6 +476,7 @@ func (s *Server) signup(c *gin.Context) {
 		s.fail(c, err)
 		return
 	}
+	s.track(c, u.ID, "signup", "")
 	s.issue(c, u)
 }
 
@@ -491,11 +498,20 @@ func (s *Server) login(c *gin.Context) {
 		if errors.Is(err, app.ErrInvalidCredentials) && guarded {
 			s.logins.failed(in.Email, c.ClientIP())
 		}
+		if errors.Is(err, app.ErrInvalidCredentials) {
+			s.track(c, "", "login_failed", in.Email)
+		}
 		s.fail(c, err)
 		return
 	}
 	s.logins.ok(in.Email, c.ClientIP())
+	s.track(c, u.ID, "login", "")
 	s.issue(c, u)
+}
+
+// track notes what a person did, with the address and browser it came from.
+func (s *Server) track(c *gin.Context, account, typ, detail string) {
+	s.a.Track(account, typ, c.ClientIP(), c.GetHeader("User-Agent"), detail)
 }
 
 func (s *Server) me(c *gin.Context) { c.JSON(http.StatusOK, s.a.Account(user(c))) }
@@ -658,4 +674,47 @@ func limitMessage(funds bool, secs int) string {
 		return "You are moving money in and out of funds too often. Try again in " + strconv.Itoa(secs) + " seconds."
 	}
 	return "You have used your trades for now. Try again in " + strconv.Itoa(secs) + " seconds."
+}
+
+// teamHistory is one team's wallet over time, what they did, and every change to their cash and shares. It needs
+// PostgreSQL (the lookup tables); without it the answer says so.
+func (s *Server) teamHistory(c *gin.Context) {
+	h := s.a.PastRecords()
+	if h == nil {
+		c.JSON(http.StatusOK, gin.H{"available": false})
+		return
+	}
+	id := c.Param("id")
+	if _, err := s.a.Team(id); err != nil {
+		s.fail(c, err)
+		return
+	}
+	ctx := c.Request.Context()
+	wallet, err1 := h.WalletHistory(ctx, id, 400)
+	acts, err2 := h.Activity(ctx, id, 100)
+	led, err3 := h.Ledger(ctx, id, 200)
+	behind, _ := h.Behind(ctx)
+	if err1 != nil || err2 != nil || err3 != nil {
+		s.log.Warn("history lookup failed", "err", errors.Join(err1, err2, err3))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "history_unavailable", "message": "The history could not be read just now."})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"available": true, "behind": behind, "wallet": wallet, "activity": acts, "ledger": led})
+}
+
+// sharedAddresses lists addresses that several accounts signed in from. It is a hint only: a venue's network
+// makes many honest people share one address.
+func (s *Server) sharedAddresses(c *gin.Context) {
+	h := s.a.PastRecords()
+	if h == nil {
+		c.JSON(http.StatusOK, gin.H{"available": false, "addresses": []any{}})
+		return
+	}
+	rows, err := h.SharedAddresses(c.Request.Context())
+	if err != nil {
+		s.log.Warn("shared address lookup failed", "err", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "history_unavailable", "message": "The history could not be read just now."})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"available": true, "addresses": rows})
 }

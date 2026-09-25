@@ -20,6 +20,7 @@ import (
 	"stockastic/api/internal/config"
 	"stockastic/api/internal/httpapi"
 	"stockastic/api/internal/oauth"
+	"stockastic/api/internal/pgstore"
 	"stockastic/api/internal/rulebook"
 	"stockastic/api/internal/sim"
 	"stockastic/api/internal/store"
@@ -84,21 +85,61 @@ func run() error {
 		log.Warn("using the PLACEHOLDER price simulation (a plain random walk, no market events); set SCENARIO_PATH to the real scenario")
 	}
 
-	// Tidy the log before opening it: drop records a newer one replaced, so restarting any number of times
-	// never lets it grow without bound. Trades and the audit log are always kept in full.
-	walPath := filepath.Join(cfg.DataDir, "stockastic.wal")
-	if res, err := store.Compact(walPath, app.CompactRules()); err != nil {
-		return fmt.Errorf("compacting the data log: %w", err)
-	} else if res.Dropped > 0 {
-		log.Info("data log compacted", "droppedRecords", res.Dropped, "keptRecords", res.Kept, "beforeMB", res.BeforeBytes>>20, "afterMB", res.AfterBytes>>20)
+	var (
+		wal     store.Log
+		disk    *store.DiskGuard
+		health  func() error
+		history store.History
+		closeDB = func() {}
+	)
+	if cfg.DatabaseURL != "" {
+		// PostgreSQL is the durable record. Records are stored before they are acknowledged; the lookup tables
+		// (wallet history, activity, trades and so on) are filled from it in the background.
+		var pg *pgstore.Log
+		pg, err = pgstore.Open(context.Background(), pgstore.Options{
+			DSN: cfg.DatabaseURL, Rules: app.CompactRules(), Log: log,
+			OnBroken: func(err error) {
+				// The database stopped taking writes (or another server took over). Stop at once so nothing is
+				// acknowledged that is not stored; the service manager restarts this process, which replays.
+				log.Error("the database is no longer accepting writes; stopping", "err", err)
+				time.AfterFunc(2*time.Second, func() { os.Exit(3) })
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("opening the database: %w", err)
+		}
+		if pg.Compacted > 0 {
+			log.Info("database record tidied", "droppedRecords", pg.Compacted)
+		}
+		proj, err := pgstore.NewProjector(context.Background(), cfg.DatabaseURL, log)
+		if err != nil {
+			_ = pg.Close()
+			return fmt.Errorf("opening the lookup tables: %w", err)
+		}
+		proj.Start()
+		wal, health, history = pg, pg.Healthy, proj.History()
+		closeDB = proj.Stop
+		log.Info("using PostgreSQL as the durable record")
+	} else {
+		// Tidy the log before opening it: drop records a newer one replaced, so restarting any number of times
+		// never lets it grow without bound. Trades and the audit log are always kept in full.
+		walPath := filepath.Join(cfg.DataDir, "stockastic.wal")
+		if res, err := store.Compact(walPath, app.CompactRules()); err != nil {
+			return fmt.Errorf("compacting the data log: %w", err)
+		} else if res.Dropped > 0 {
+			log.Info("data log compacted", "droppedRecords", res.Dropped, "keptRecords", res.Kept, "beforeMB", res.BeforeBytes>>20, "afterMB", res.AfterBytes>>20)
+		}
+		f, err := store.OpenFile(walPath)
+		if err != nil {
+			return fmt.Errorf("opening the data log: %w", err)
+		}
+		if f.Torn > 0 {
+			log.Warn("discarded an unfinished final record from the data log (an unacknowledged write before a crash)", "bytes", f.Torn)
+		}
+		wal = f
+		disk = &store.DiskGuard{Dir: cfg.DataDir, MinFree: uint64(cfg.DiskMinFreeMB) << 20}
 	}
-	wal, err := store.OpenFile(walPath)
-	if err != nil {
-		return fmt.Errorf("opening the data log: %w", err)
-	}
-	if wal.Torn > 0 {
-		log.Warn("discarded an unfinished final record from the data log (an unacknowledged write before a crash)", "bytes", wal.Torn)
-	}
+	defer closeDB()
 
 	signer, err := auth.NewSigner([]byte(cfg.JWTSecret), cfg.TokenTTL)
 	if err != nil {
@@ -106,7 +147,7 @@ func run() error {
 	}
 	a, err := app.New(app.Config{
 		Rulebook: rb, Log: log, WAL: wal, Universe: companies, Scenario: scenario, Signer: signer,
-		Disk:        &store.DiskGuard{Dir: cfg.DataDir, MinFree: uint64(cfg.DiskMinFreeMB) << 20},
+		Disk: disk, Track: cfg.DatabaseURL != "", History: history, Health: health,
 		AllowSignup: cfg.AllowSignup, AllowedOrigins: cfg.AllowedOrigins, Autostart: cfg.Autostart,
 		MaxAccounts: cfg.MaxAccounts, SignupCode: cfg.SignupCode, MaxSockets: cfg.MaxSockets, MaxSocketsPerAccount: cfg.MaxSocketsPerAccount,
 	})

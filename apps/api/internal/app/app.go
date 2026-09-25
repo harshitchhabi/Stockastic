@@ -52,7 +52,12 @@ type Config struct {
 	Autostart bool
 	// Disk, if set, refuses new trades while the disk is nearly full and is reported on the Systems page.
 	Disk *store.DiskGuard
-	Now  func() time.Time
+	// Track turns on the activity and wallet-history records (used with PostgreSQL). History reads them back, and
+	// Health reports whether the database is still accepting writes.
+	Track   bool
+	History store.History
+	Health  func() error
+	Now     func() time.Time
 }
 
 type App struct {
@@ -133,6 +138,7 @@ type App struct {
 	lbCache []dto.LeaderRow
 
 	simState  *sim.State
+	tracker   *tracker
 	cancelRun context.CancelFunc
 	runDone   chan struct{}
 }
@@ -557,6 +563,10 @@ func (a *App) Start() error {
 	}()
 	go a.Sim.Run(ctx)
 	go a.fundLoop(ctx)
+	if a.cfg.Track {
+		a.tracker = &tracker{ch: make(chan store.Activity, trackQueue), last: map[string]time.Time{}}
+		a.startTracking(ctx)
+	}
 	if a.cfg.Autostart && !a.Clock.Position().Started {
 		if err := a.Clock.Start(); err != nil {
 			return err
@@ -572,6 +582,9 @@ func (a *App) Close(ctx context.Context) error {
 	if a.cancelRun != nil {
 		a.cancelRun()
 		<-a.runDone
+	}
+	if a.tracker != nil {
+		a.tracker.wg.Wait()
 	}
 	a.Hub.Shutdown()
 	a.News.Stop()

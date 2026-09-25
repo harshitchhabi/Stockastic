@@ -555,7 +555,7 @@ func (a *App) Systems() Systems {
 	p50, p99 := a.commits.Percentiles()
 	st := a.Sim.Status()
 	s := Systems{
-		UptimeSec: int64(now.Sub(a.started).Seconds()), DBOK: true, Connected: a.Hub.Count(),
+		UptimeSec: int64(now.Sub(a.started).Seconds()), DBOK: a.DBHealthy(), Connected: a.Hub.Count(),
 		TradesPerMin: a.tradesPM.Sum(now), CommitP50Ms: p50.Milliseconds(), CommitP99Ms: p99.Milliseconds(),
 		JournalErrors: a.journalErrors.Load(), SymbolsTotal: len(a.symbols), PriceTicks: st.Ticks, TickSeconds: st.TickSeconds,
 		LastPriceAt: a.lastTick.Load(), RecentErrors: []ErrorRow{},

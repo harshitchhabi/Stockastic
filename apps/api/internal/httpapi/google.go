@@ -169,6 +169,7 @@ func (s *Server) googleCallback(c *gin.Context) {
 		googleFail(c, "failed")
 		return
 	}
+	s.track(c, u.ID, "login", "google")
 	// The token goes in the part of the address after # : it is never sent to any server or logged, and the page
 	// removes it from the address bar as soon as it has stored it.
 	c.Redirect(http.StatusFound, "/#/signin="+tok)

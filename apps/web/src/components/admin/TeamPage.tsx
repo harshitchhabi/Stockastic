@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import type { TeamDetail } from "@/lib/adminTypes";
 import type { SymbolInfo } from "@/lib/types";
 import { ago } from "@/lib/format";
+import { TeamRecord } from "./TeamRecord";
 import { ActionButton, Badge, ChoiceControl, LoadError, useDo, useNow, usePoll } from "./shared";
 
 const money = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -362,6 +363,7 @@ export function TeamPage({ id }: { id: string }) {
           )}
         </tbody>
       </table>
+      <TeamRecord id={id} />
     </div>
   );
 }

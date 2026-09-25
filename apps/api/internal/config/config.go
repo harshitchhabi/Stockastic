@@ -13,8 +13,10 @@ import (
 )
 
 type Config struct {
-	Addr           string
-	DataDir        string
+	Addr    string
+	DataDir string
+	// DatabaseURL, when set, makes PostgreSQL the durable record instead of the log file in DataDir.
+	DatabaseURL    string
 	JWTSecret      string
 	TokenTTL       time.Duration
 	AdminEmail     string
@@ -98,6 +100,7 @@ func FromEnv() (Config, error) {
 	c := Config{
 		Addr:          get("ADDR", "127.0.0.1:8080"),
 		DataDir:       get("DATA_DIR", "./data"),
+		DatabaseURL:   get("DATABASE_URL", ""),
 		JWTSecret:     get("JWT_SECRET", ""),
 		AdminEmail:    get("ADMIN_EMAIL", ""),
 		AdminPassword: get("ADMIN_PASSWORD", ""),

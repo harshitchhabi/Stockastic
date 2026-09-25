@@ -80,7 +80,51 @@ so WebSockets stay open), but with a single server it adds cost and a hop withou
   `JWT_SECRET` must be 32 or more random characters. Set `ALLOW_SIGNUP=false` once teams are registered.
 - **Listen address.** The server listens on `127.0.0.1:8080` by default. Keep it that way behind Caddy.
 
-## Backups
+## PostgreSQL (the durable record)
+
+Set `DATABASE_URL` and the server stores everything in PostgreSQL 14 or newer instead of the log file.
+
+**Choose one:**
+- *Same machine (cheapest, simplest):* install PostgreSQL on the server, keep its data on the EBS volume, listen only
+  on `127.0.0.1`. Use `sslmode=disable`.
+- *Amazon RDS (recommended if you can afford it):* a `db.m6i.large` single-AZ instance with 50 GB storage is plenty.
+  Turn on automated backups (point-in-time recovery, 7 days) and use `sslmode=require`. Multi-AZ adds automatic
+  failover of the database for roughly double the price.
+
+**One time setup** (as a database administrator):
+```sql
+CREATE ROLE stockastic LOGIN PASSWORD 'a long random password';
+CREATE DATABASE stockastic OWNER stockastic;
+```
+The server creates its own tables on first start. It needs to create tables, so keep the role as the owner.
+
+**What is guaranteed.** A trade or any other change is acknowledged only after PostgreSQL has committed it to disk
+(`synchronous_commit` is on for the server's writes; do not switch it off in the database). If the connection drops in
+the middle of a write the server reconnects and retries for up to 20 seconds, and every record has its own id so a retry
+can never store it twice. If the database stays unreachable, or another server takes the write lock, the server stops
+at once (exit code 3) and systemd restarts it; nothing is acknowledged that is not stored. `/readyz` and the Systems page
+report a database that has stopped accepting writes.
+
+**One server only.** A second copy of the server pointed at the same database cannot start (it fails to get the write
+lock). This protects against two servers acting on the same event.
+
+**Lookup tables.** `accounts`, `trades`, `ledger_entries`, `wallet_history`, `activity`, `price_ticks`, `funds`,
+`fund_flows`, `audit`, `news_releases`, `disputes`, `freezes` and the views `v_positions`, `v_cash_change`,
+`v_team_activity`, `v_shared_addresses` are filled from the `events` table in the background. They never hold password
+hashes. If they ever look wrong they can be emptied and rebuilt from `events` (the platform does not depend on
+them). You can query them directly, for example every team's cash change: `SELECT * FROM v_cash_change;`.
+
+**Backups.** Take `pg_dump` every few minutes during the event to S3, and keep RDS automated backups or an EBS snapshot
+hourly. To recover, restore the database and start the server; it replays `events`.
+
+**Moving an event that already started on the log file:** stop the server, run
+`walimport -wal /var/lib/stockastic/data/stockastic.wal -db "$DATABASE_URL"` (an empty database is required), set
+`DATABASE_URL`, start the server, and check a few teams before opening the market.
+
+**Test it before the event:** with a spare database, run
+`TEST_DATABASE_URL=postgres://... go test ./internal/pgstore ./internal/httpapi` (these tests wipe that database).
+
+## Backups (log file mode)
 
 The log only ever grows at the end, so copying it while the server runs is safe (a half-written last line is
 discarded on restart, and was never confirmed to anyone).
@@ -107,6 +151,4 @@ discarded on restart, and was never confirmed to anyone).
 ## What this setup does not do yet
 
 - **Automatic failover.** If the machine dies, recovery is the manual restore above (a few minutes).
-- **Postgres.** The log file is the system of record. It sits behind an interface so Postgres can replace it,
-  but that is not built.
 - **Metrics dashboards.** The Systems page is the only live view; there is no Prometheus endpoint yet.

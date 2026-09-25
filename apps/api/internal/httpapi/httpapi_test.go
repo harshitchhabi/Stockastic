@@ -39,6 +39,8 @@ type env struct {
 	sc  sim.Scenario
 	h   http.Handler
 	cfg []func(*app.Config)
+	// reopen, when set, gives the log again after the app closed it (a database log cannot be shared).
+	reopen func() store.Log
 }
 
 // rb returns the real rulebook, optionally with a different trades-per-minute limit.
@@ -105,7 +107,13 @@ func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenar
 func (e *env) restart(r *rulebook.Rulebook) *env {
 	e.srv.Close()
 	_ = e.a.Close(context.Background())
-	return newEnvWith(e.t, e.log, r, e.sc, e.cfg...)
+	log := e.log
+	if e.reopen != nil {
+		log = e.reopen()
+	}
+	n := newEnvWith(e.t, log, r, e.sc, e.cfg...)
+	n.reopen = e.reopen
+	return n
 }
 
 type resp struct {

@@ -7,7 +7,7 @@ The market is a **price simulation**, not an order book. Teams buy or sell a num
 ## Shape of the system
 
 At event time there is **one process**: the Go binary. It serves the web app, the REST API and the WebSocket feed, and
-writes everything durable to an fsync'd log file (`DATA_DIR/stockastic.wal`).
+writes everything durable to **PostgreSQL** (set `DATABASE_URL`), or to an fsync'd log file (`DATA_DIR/stockastic.wal`) when it is not set.
 
 ```
  browsers ──HTTP/WS──►  Go binary  ──►  durable log
@@ -15,8 +15,12 @@ writes everything durable to an fsync'd log file (`DATA_DIR/stockastic.wal`).
   the same binary)
 ```
 
-The log sits behind a small `store.Log` interface, so a Postgres implementation can replace the file without touching
-anything else. Postgres is **not built yet**; until it is, the log file is the system of record.
+The durable record sits behind a small `store.Log` interface with two implementations: the log file and PostgreSQL
+(`internal/pgstore`). With PostgreSQL every change is stored before it is acknowledged (synchronous commit, retried
+exactly once after a dropped connection, and only one server can hold the write lock). Ordinary tables (accounts,
+trades, ledger entries, wallet history each minute, sign-in activity with address and browser, prices, funds, news,
+disputes, audit) are filled from the record in the background and shown to organisers on each team's page; they can be
+rebuilt from the record at any time. See `docs/deployment.md` for setup, backups and moving an event from the file.
 
 The frontend is built once and embedded in the Go binary, so there is no Node server, no second origin and no CORS.
 Node exists only on a developer machine to build the frontend.
