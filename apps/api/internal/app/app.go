@@ -84,11 +84,13 @@ type App struct {
 
 	// per-team records kept for the organiser: recent trades, Phase 1 trade counts and peak portfolio value
 	// (the qualification tie-breaks), and the frozen results taken at each freeze block.
-	statMu    sync.Mutex
-	recent    map[string][]trading.Trade
-	p1Trades  map[string]int
-	peaks     map[string]money.Paise
-	snapshots map[string]FreezeSnapshot
+	statMu     sync.Mutex
+	allTrades  []trading.Trade // every trade of the event, for the organiser
+	signupOpen atomic.Bool
+	recent     map[string][]trading.Trade
+	p1Trades   map[string]int
+	peaks      map[string]money.Paise
+	snapshots  map[string]FreezeSnapshot
 
 	annMu         sync.Mutex
 	announcements []Announcement
@@ -155,6 +157,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	a.Limiter = ratelimit.FromRulebook(a.RB.RateLimits)
+	a.signupOpen.Store(cfg.AllowSignup)
 	a.Ledger = ledger.New(a.log)
 	a.Funds = funds.NewBook(a.RB.Fund.LaunchNav)
 	a.Market = market.New(cfg.Universe, cfg.Now())
@@ -164,6 +167,7 @@ func New(cfg Config) (*App, error) {
 	a.Hub = wsapi.New(a.log, a.wsAuth, cfg.AllowedOrigins, a.onWSReady)
 	a.Hub.OnPresence(a.onPresence)
 	a.Exec = trading.New(a.Ledger, a.Market, store.Journal{Log: a.wal, Guard: cfg.Disk, Observe: a.observeCommit}, cfg.Now)
+	a.Exec.SetGuard(a.concentrationGuard)
 
 	a.Sim, err = sim.New(cfg.Scenario, sim.Deps{
 		Prices: a.Market, Companies: cfg.Universe, Clock: clockView{a}, News: a.News, Lead: a.newsLead,
@@ -205,11 +209,12 @@ func CompactRules() map[string]store.Rule {
 		}
 	}
 	return map[string]store.Rule{
-		store.KindUser:   {Latest: 1, Key: field("ID")},
-		store.KindClock:  {Latest: 1},
-		store.KindNews:   {Latest: 1, Key: field("Item", "ID")},
-		store.KindTicket: {Latest: 1, Key: field("Ticket", "ID")},
-		store.KindPause:  {Latest: 1, Key: field("symbol")},
+		store.KindUser:    {Latest: 1, Key: field("ID")},
+		store.KindClock:   {Latest: 1},
+		store.KindNews:    {Latest: 1, Key: field("Item", "ID")},
+		store.KindTicket:  {Latest: 1, Key: field("Ticket", "ID")},
+		store.KindPause:   {Latest: 1, Key: field("symbol")},
+		store.KindSetting: {Latest: 1, Key: field("key")},
 		// The price history the charts show only needs the most recent records.
 		store.KindPrices: {Latest: market.MaxHistory},
 	}
@@ -346,6 +351,7 @@ func (a *App) Snapshot(name string) (FreezeSnapshot, bool) {
 
 func (a *App) recordTrade(t trading.Trade) {
 	a.statMu.Lock()
+	a.allTrades = append(a.allTrades, t)
 	l := append(a.recent[t.AccountID], t)
 	if len(l) > 100 {
 		l = append(l[:0], l[len(l)-100:]...)
@@ -413,6 +419,14 @@ func (a *App) restore() error {
 			a.updatePeaks()
 			st := s
 			a.simState = &st
+		case store.KindSetting:
+			var st Setting
+			if err := decode(raw, &st); err != nil {
+				return err
+			}
+			if st.Key == settingSignup {
+				a.signupOpen.Store(st.Value)
+			}
 		case store.KindReset:
 			a.resetState()
 			clockState, releases, trades = nil, map[string]news.Release{}, 0

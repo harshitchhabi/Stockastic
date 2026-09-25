@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 export function LoginForm() {
@@ -9,6 +10,18 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [signupOpen, setSignupOpen] = useState(true);
+
+  // Registration can be closed by the organisers: then there is only the log in form.
+  useEffect(() => {
+    api
+      .get<{ signupOpen: boolean }>("/api/status")
+      .then((s) => {
+        setSignupOpen(s.signupOpen);
+        if (!s.signupOpen) setMode("login");
+      })
+      .catch(() => {});
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,9 +50,11 @@ export function LoginForm() {
           <button type="button" aria-pressed={mode === "login"} onClick={() => setMode("login")}>
             Log in
           </button>
-          <button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
-            Sign up
-          </button>
+          {signupOpen && (
+            <button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
+              Sign up
+            </button>
+          )}
         </div>
         {mode === "signup" && (
           <input placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />

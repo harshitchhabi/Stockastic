@@ -16,7 +16,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"stockastic/api/internal/universe"
@@ -87,6 +89,36 @@ type Scenario struct {
 	PriceFloor float64 `json:"priceFloor"`
 	PriceCap   float64 `json:"priceCap"`
 	RoundTo    float64 `json:"roundTo"`
+
+	// PricesFile is a price table: the exact price of every company at every step, read from a file next to the
+	// scenario. When there is one, prices follow it exactly (nothing is random) and the volatility, limits,
+	// impacts and runs above are not used. Step k is the k-th TickSeconds of open-market time, whatever the
+	// clock or the schedule says, so pausing, editing the schedule and market closures cannot put prices out
+	// of step with the data.
+	PricesFile string `json:"pricesFile"`
+	// NewsClock says what event times are measured in: "event" (minutes since the event started, the default)
+	// or "market" (minutes of open-market time, which stays in step with a price table).
+	NewsClock string `json:"newsClock"`
+
+	table *PriceTable
+}
+
+// PriceTable is the exact price of every company at every step. Rows[k][i] is Symbols[i] at step k, in rupees.
+type PriceTable struct {
+	BarSeconds int         `json:"barSeconds"`
+	Symbols    []string    `json:"symbols"`
+	Rows       [][]float64 `json:"rows"`
+}
+
+// HasTable reports whether prices come from a table.
+func (sc Scenario) HasTable() bool { return sc.table != nil }
+
+// TableSteps is how many steps the price table has.
+func (sc Scenario) TableSteps() int {
+	if sc.table == nil {
+		return 0
+	}
+	return len(sc.table.Rows)
 }
 
 // DefaultScenario is a PLACEHOLDER until the organisers' data arrives: a plain random walk, no events.
@@ -107,13 +139,64 @@ func Load(path string) (Scenario, error) {
 	if err := dec.Decode(&sc); err != nil {
 		return Scenario{}, fmt.Errorf("sim: %s: %w", path, err)
 	}
+	if sc.PricesFile != "" {
+		p := sc.PricesFile
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(filepath.Dir(path), p)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return Scenario{}, fmt.Errorf("sim: price table: %w", err)
+		}
+		d := json.NewDecoder(bytes.NewReader(b))
+		d.DisallowUnknownFields()
+		var t PriceTable
+		if err := d.Decode(&t); err != nil {
+			return Scenario{}, fmt.Errorf("sim: %s: %w", p, err)
+		}
+		sc.table = &t
+	}
 	return sc, nil
 }
 
 // Validate checks the scenario against the company list and fills in defaults.
 func (sc *Scenario) Validate(cs []universe.Company) error {
+	if sc.table != nil && sc.TickSeconds == 0 {
+		sc.TickSeconds = sc.table.BarSeconds
+	}
 	if sc.TickSeconds == 0 {
 		sc.TickSeconds = 60
+	}
+	if sc.NewsClock != "" && sc.NewsClock != "event" && sc.NewsClock != "market" {
+		return errors.New(`sim: newsClock must be "event" or "market"`)
+	}
+	if t := sc.table; t != nil {
+		if t.BarSeconds != sc.TickSeconds {
+			return fmt.Errorf("sim: the price table has a step every %d seconds but tickSeconds is %d", t.BarSeconds, sc.TickSeconds)
+		}
+		if len(t.Rows) == 0 || len(t.Symbols) != len(cs) {
+			return fmt.Errorf("sim: the price table has %d companies and %d steps, the company list has %d companies", len(t.Symbols), len(t.Rows), len(cs))
+		}
+		want := map[string]bool{}
+		for _, c := range cs {
+			want[c.Symbol] = true
+		}
+		for _, s := range t.Symbols {
+			if !want[s] {
+				return fmt.Errorf("sim: the price table has %q, which is not in the company list", s)
+			}
+			delete(want, s)
+		}
+		for k, row := range t.Rows {
+			if len(row) != len(t.Symbols) {
+				return fmt.Errorf("sim: price table step %d has %d prices, want %d", k, len(row), len(t.Symbols))
+			}
+			for i, v := range row {
+				if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 {
+					return fmt.Errorf("sim: price table step %d, %s: %v is not a price", k, t.Symbols[i], v)
+				}
+			}
+		}
 	}
 	if sc.TickSeconds < 1 || sc.TickSeconds > 3600 {
 		return errors.New("sim: tickSeconds must be from 1 to 3600")

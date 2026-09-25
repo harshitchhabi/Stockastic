@@ -140,6 +140,8 @@ export interface SimItem {
   type?: string;
   category?: string;
   impacts: number;
+  skipped: boolean;
+  edited: boolean;
 }
 
 export interface SimStatus {
@@ -149,6 +151,24 @@ export interface SimStatus {
   pendingShocks: number;
   scriptedCompanies: number;
   items: SimItem[];
+  newsManual: boolean;
+  fromTable: boolean;
+  tableSteps: number;
+  marketSeconds: number;
+  newsClock: "event" | "market";
+}
+
+export interface AdminTrade {
+  id: string;
+  at: number;
+  accountId: string;
+  team: string;
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  value: number;
+  stage: string;
 }
 
 // ---- Phase 2: qualification, funds, prizes ----

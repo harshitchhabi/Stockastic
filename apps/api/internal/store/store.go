@@ -42,8 +42,9 @@ const (
 	KindPrices   = "prices"
 	KindSnapshot = "snapshot"
 	KindMove     = "move"
-	KindReset    = "reset" // the organiser reset the event: everything before this record (except accounts and the audit log) is void
-	KindFund     = "fund"  // a fund event: formation, profile, allocation, redemption, checkpoint, strategy log
+	KindSetting  = "setting" // an organiser switch (for example whether registration is open)
+	KindReset    = "reset"   // the organiser reset the event: everything before this record (except accounts and the audit log) is void
+	KindFund     = "fund"    // a fund event: formation, profile, allocation, redemption, checkpoint, strategy log
 )
 
 // Log is an append-only, replayable record of everything durable.

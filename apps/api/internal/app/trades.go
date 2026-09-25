@@ -295,3 +295,34 @@ func (a *App) Leaderboard() []dto.LeaderRow {
 	a.lbCache, a.lbAt = rows, a.now()
 	return rows
 }
+
+// concentrationGuard refuses a buy that would put more than the allowed share of the portfolio in one
+// company (market.maxSingleStockPercent). It is checked when the order is placed, so a holding that grows past
+// the limit because its price rose is not forced out. Sells are always allowed.
+func (a *App) concentrationGuard(r trading.Request, price money.Paise) error {
+	pct := a.RB.Market.MaxSingleStockPercent
+	if pct <= 0 || r.Side != trading.Buy {
+		return nil
+	}
+	snap, err := a.Ledger.Snapshot(r.AccountID)
+	if err != nil {
+		return nil // the ledger reports the missing account
+	}
+	value := snap.Value(a.Market.Price)
+	if !strings.HasPrefix(r.AccountID, "fund:") {
+		if h := a.Funds.Holdings(r.AccountID); len(h) > 0 {
+			value += unitsValue(h, a.navs())
+		}
+	}
+	var held int64
+	for _, p := range snap.Positions {
+		if p.Symbol == r.Symbol {
+			held = p.Qty
+		}
+	}
+	limit := int64(math.Floor(pct / 100 * float64(value) / float64(price)))
+	if held+r.Qty > limit {
+		return &trading.TooConcentrated{Symbol: r.Symbol, Percent: pct, MaxQty: max(limit-held, 0)}
+	}
+	return nil
+}

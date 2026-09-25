@@ -30,8 +30,9 @@ Node exists only on a developer machine to build the frontend.
 | `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
 | `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `data-files.md` (how the master data becomes the game), `stage2-dashboards.md` (Phase 2 screens) |
 | `deploy/` | Ready-to-use server files: systemd unit, Caddy config, backup script, kernel settings, env template |
-| `tools/import_master.py` | Turns the master workbook into the two data files the server loads (see `docs/data-files.md`) |
-| `apps/api/scenarios/mock` | Mock data made from `Stockastic_Master.xlsx`: 150 companies, 62 market events, 3 bull or bear runs. Replace with the real data |
+| `tools/import_final.py` | Turns the organisers' final workbook into the files the server loads (see `docs/data-files.md`) |
+| `apps/api/scenarios/mock` | A small sample scenario that is safe to commit; the tests use it |
+| `apps/api/scenarios/final` | The final companies, exact prices and news. **Git-ignored** because it holds the future prices |
 | `apps/api/cmd/loadsim` | Load simulator: hundreds of teams sign up, log in together, trade over live sockets, then stampede one company |
 
 The previous TypeScript backend lives only on the `archive/ts-backend` branch.
@@ -68,10 +69,10 @@ Settings are environment variables (a `.env.local` next to where you run the ser
 | `AUTOSTART` | `false` | Start the event clock on boot. Development only |
 | `WEB_DIR` | embedded | Serve the built web app from a folder instead |
 
-Run with the mock data:
+Run with the final data (generate it first with `python tools/import_final.py`; use `scenarios/mock` for the sample):
 
 ```bash
-cd apps/api && UNIVERSE_PATH=scenarios/mock/universe.json SCENARIO_PATH=scenarios/mock/scenario.json go run ./cmd/api
+cd apps/api && UNIVERSE_PATH=scenarios/final/universe.json SCENARIO_PATH=scenarios/final/scenario.json go run ./cmd/api
 ```
 
 **Nobody can sell until they hold shares.** Teams start with cash only and short selling is not allowed. Buying works from the start. To give teams shares, open **Shares** in the console (or open a team from **Participants**). Then start the event in the **Control room**: start, then jump to "Phase 1 live trading". After the Phase 1 freeze, open **Funds and prizes** and form the funds.

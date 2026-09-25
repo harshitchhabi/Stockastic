@@ -1,99 +1,61 @@
-# Data files: how the master data becomes the game
+# Data files: how the final workbook becomes the game
 
-The server needs two files. Everything about prices and news lives in them, so when the organisers send the real
-data, only these files change. No code changes.
+The server loads three files. Everything about companies, prices and news is in them, so a new workbook means new
+files and no code change.
 
 | File | Variable | What it holds |
 |---|---|---|
-| `universe.json` | `UNIVERSE_PATH` | The companies: symbol, name, sector, opening price |
-| `scenario.json` | `SCENARIO_PATH` | How prices move: volatility, price limits, scheduled market events, bull and bear runs |
+| `universe.json` | `UNIVERSE_PATH` | The 150 companies: symbol, game name, sector, opening price |
+| `scenario.json` | `SCENARIO_PATH` | The news schedule, and where the price table is |
+| `prices.json` | (named inside `scenario.json`) | The exact price of every company at every 10 seconds of open-market time |
 
-`apps/api/scenarios/mock/` holds mock versions made from `Stockastic_Master.xlsx` (150 companies, 62 market events,
-3 bull or bear runs). They are the test data until the real workbook arrives.
+## The final data is a secret, so it is not in git
 
-## Turning the workbook into the two files
+`prices.json` and the news schedule are the event's future. They are generated into `apps/api/scenarios/final/`, which is
+git-ignored, and so is the workbook. Copy those three files to the server by hand (for example to `/etc/stockastic/`) and
+point `UNIVERSE_PATH` and `SCENARIO_PATH` at them. `apps/api/scenarios/mock/` is a small sample that is safe to commit and is
+what the tests use.
+
+## Turning the workbook into the files
 
 ```bash
-python tools/import_master.py Stockastic_Master.xlsx apps/api/scenarios/mock
+python tools/import_final.py Stochasticdata.xlsx apps/api/scenarios/final
 ```
 
-Needs Python with `openpyxl`. Run it again whenever the workbook changes. A test (`sim.TestMockScenarioMatchesMockUniverse`)
-loads the generated files, so a bad import is caught before the event.
+Needs Python with `openpyxl`. It reads `UNIVERSE` (game names and sectors, never the real names), `PRICES_10S` (the price
+table; bar 0 is the opening price) and `RUN_SHEET` (the 40 news items). It refuses to continue if the companies in the two
+sheets do not match or a news item is not inside live trading. The other sheets (`IMPACT_MAP`, `RUMOUR_SPIKES`, the two
+feeds, `DATA_CHECKS`) describe how the prices were built and are not needed at run time.
 
-The importer reads these sheets:
+## How the game uses them
 
-| Sheet | Used for |
-|---|---|
-| `UNIVERSE` | ticker, name, sector, `P_sim` (the opening price) and `vol_band` (how much each company moves) |
-| `RUN_SHEET` | one row per news item: time (`T+HH:MM:SS`, since the event started), type, category, headline |
-| `IMPACT_MAP` | for each `REAL` news item, which sectors or single companies it moves and by how much |
-| `PARAMETERS` | price floor, price cap, price rounding, price impact coefficient |
-| `FUND_FEED`, `PARTICIPANT_FEED`, `SECTOR_ALLOCATION` | not read: they repeat what the sheets above already say |
+- **Prices follow the table exactly.** Every 10 seconds of open-market time the next row is applied. Nothing is random.
+  The step is counted in open-market time, not clock time, so pausing, closing the market, or editing the schedule cannot
+  put prices out of step with the data. The table covers 170 minutes of trading (1,020 steps). If the market stays open
+  longer, prices hold their last values.
+- **News goes out by itself.** Each of the 40 items has a time in open-market minutes (worked out from the workbook's
+  event times). In Phase 1 everyone sees it at once. In Phase 2 fund managers see it first and the public 60 seconds later.
+  Bull and bear run announcements go to everyone at once. Real news, rumours and denials look the same to teams;
+  only the organiser sees the type.
+- **The organiser is in charge of the news.** On **News and market events** they can turn automatic release off and send
+  each item by hand, hold any item, reword it or change its time, or release it now. This changes only what people read.
+  Prices come from the table whatever the organiser does with the news.
+- **Single-stock limit.** A buy is refused if it would put more than 25% of the portfolio's value in one company (the data's
+  "Max single-stock holding"). It is checked when the order is placed, so a holding that grows past 25% because its price
+  rose is not forced out. Sells are always allowed. The value is in `rulebook.json` (`market.maxSingleStockPercent`).
 
-### How each item behaves
+## Things to know
 
-- **REAL**: the headline is released, and the prices in its impact rows move.
-- **FAKE**: the headline is released and nothing moves (a rumour). Teams are not told it is fake.
-- **DENIAL**: the headline is released and nothing moves.
-- **REGIME**: a bull or bear run starts and lasts to the end of that trading block. It nudges most companies, not all
-  of them and not equally.
-- The release time in the sheet is when **fund managers** see it. The public sees it 60 seconds later in Phase 2, and the
-  price reaction happens at that public time, so fund managers have the 60 seconds to act first. In Phase 1 there is no delay.
+- The rulebook text says about 250 companies. The data has 150, and `rulebook.json` now says 150.
+- Prices go slightly outside the Rs 50 to 2,500 range in about 1.5% of cells (the workbook's own check reports this as
+  information only). The table is used exactly as given: nothing is clamped.
+- The parameters sheet's volatility bands, tiers and impact coefficient describe how the table was generated, so they are not
+  used by the server.
+- Every 10 seconds the prices that changed go to every browser in one small message (about 150 numbers), so the price
+  feed adds almost nothing to the load.
 
-### Assumptions in the importer (edit the constants at the top of `tools/import_master.py`)
+## Other formats the simulation still understands
 
-These are the places where the workbook does not say exactly what to do, so a choice was made.
-
-| Constant | Value | Meaning |
-|---|---|---|
-| `VOL_BAND_TO_TICK_PCT` | 0.1 | A `vol_band` of 0.02 becomes a 0.2% typical move per price update |
-| `TICK_SECONDS` | 60 | One price update a minute while the market is open |
-| `RAMP_MINUTES` | 3 | An event's price move is spread over 3 minutes |
-| `REGIME_DRIFT` | 0.03 / 0.05 / 0.10 % | Push per price update for a MINOR / MODERATE / MAJOR run |
-| `REGIME_BREADTH` | 0.7 | A run drives 70% of companies |
-| Impact | `impact x coefficient` | An impact of 0.02 with a coefficient of 0.7 moves prices 1.4% |
-
-## The file formats
-
-`universe.json` is a list:
-
-```json
-[{ "symbol": "SMZK", "name": "Saruti Muzuki", "sector": "Automobile & Auto Components", "openPrice": 1788.85 }]
-```
-
-`scenario.json`:
-
-```json
-{
-  "seed": 20260921,
-  "tickSeconds": 60,
-  "volatility": { "defaultPct": 0.3, "bySector": { "Information Technology": 0.4 }, "bySymbol": { "SMZK": 0.2 } },
-  "priceFloor": 50, "priceCap": 2500, "roundTo": 0.05,
-  "events": [
-    { "id": "e03", "atMinute": 27.83, "headline": "…", "type": "REAL", "category": "GLOBAL",
-      "impacts": [ { "sector": "Oil, Gas & Energy", "shockPct": 4.2, "rampMinutes": 3 },
-                   { "symbol": "INGA", "shockPct": -4.9, "rampMinutes": 3 } ] }
-  ],
-  "regimes": [
-    { "id": "e11", "kind": "bull", "atMinute": 43.5, "durationMinutes": 16.5, "driftPctPerTick": 0.05, "breadth": 0.7, "headline": "…" }
-  ],
-  "paths": { "SMZK": [[0, 1788.85], [30, 1800.0], [60, 1750.0]] }
-}
-```
-
-- `paths` is optional. A company with a path follows exactly those `[minutes since the event started, price]` points
-  (straight lines between them) and ignores volatility and events. Use it if the organisers want specific price stories.
-- Volatility is looked up by company, then by sector, then the default.
-- `seed` makes the random movement repeatable: the same seed gives the same prices, and a restarted server carries on
-  exactly where it was.
-- Every company, sector and event name is checked at start-up. A typo is an error, not a silent gap.
-
-If the organisers provide exact price tables instead of rules for how prices change, use `paths` for every company, or
-tell the developer: the price simulation is one file (`internal/sim/engine.go`) behind a small interface, so a different
-way of producing prices replaces it without touching trading, funds or the screens.
-
-## Things the mock data cannot tell us
-
-- The real company count (the rulebook says about 250; the mock has 150).
-- Whether prices should be exact scripted paths or rules with randomness.
-- The scale of `vol_band` (per update, per block, or per event).
+The price simulation can also run without a table: random movement scaled by volatility with market events and bull and
+bear runs (`apps/api/scenarios/mock`), or exact scripted paths for chosen companies. Those are described by the fields in
+`internal/sim/scenario.go`. With a `pricesFile` set, the table wins and the other price fields are ignored.

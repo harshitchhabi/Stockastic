@@ -116,7 +116,7 @@ func (s *userStore) put(u User) error {
 
 // Signup creates a team account with the rulebook's starting capital.
 func (a *App) Signup(displayName, email, password string) (User, error) {
-	if !a.cfg.AllowSignup {
+	if !a.signupOpen.Load() {
 		return User{}, ErrSignupClosed
 	}
 	displayName = strings.TrimSpace(displayName)

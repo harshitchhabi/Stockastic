@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
+import { api } from "@/lib/api";
 import type { AdminAccount } from "@/lib/adminTypes";
 import { ago } from "@/lib/format";
-import { ActionButton, Badge, LoadError, useDo, useNow, usePoll } from "./shared";
+import { ActionButton, Badge, LoadError, useAdmin, useDo, useNow, usePoll } from "./shared";
+import { downloadCsv } from "./download";
 
 type RoleFilter = "all" | "investor" | "fund_manager";
 type PresenceFilter = "all" | "online" | "offline";
@@ -19,6 +21,8 @@ export function Participants() {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState<RoleFilter>("all");
   const [presence, setPresence] = useState<PresenceFilter>("all");
+  const { notify } = useAdmin();
+  const settings = usePoll<{ signupOpen: boolean }>("/api/admin/settings", 5000);
 
   const counts = useMemo(() => {
     const all = data ?? [];
@@ -45,7 +49,21 @@ export function Participants() {
             <span className="up">{counts.online} online</span>, {counts.offline} offline, {data.length} in all
           </span>
         )}
-        <span style={{ marginLeft: "auto" }}>
+        <span style={{ marginLeft: "auto" }} className="btn-row">
+          {settings.data && (
+            <ActionButton
+              label={settings.data.signupOpen ? "Close registration" : "Open registration"}
+              className={settings.data.signupOpen ? "" : "solid"}
+              title={settings.data.signupOpen ? "Close registration" : "Open registration"}
+              description={settings.data.signupOpen ? "New people can no longer create an account. Existing teams are not affected." : "New people can create an account again."}
+              run={async () => {
+                await api.post("/api/admin/settings/signup", { open: !settings.data!.signupOpen });
+                notify(settings.data!.signupOpen ? "Registration closed" : "Registration opened");
+                await settings.reload();
+              }}
+            />
+          )}
+          <button onClick={() => void downloadCsv("/api/admin/export/accounts.csv", "teams.csv").catch((e) => notify(String(e.message ?? e), false))}>Export teams</button>
           <ActionButton
             label="Sign everyone out"
             danger
@@ -139,6 +157,22 @@ export function Participants() {
                       title={`Lock ${a.displayName}`}
                       description="Signs them out and stops them signing in at all until you unlock them."
                       run={() => run(`/api/admin/accounts/${a.id}/lock`, {}, `${a.displayName} locked`)}
+                    />
+                  )}
+                  {a.status === "disqualified" && a.locked ? (
+                    <ActionButton
+                      className="solid"
+                      label="Let back in"
+                      title={`Let ${a.displayName} back into the event`}
+                      run={() => run(`/api/admin/accounts/${a.id}/readmit`, {}, `${a.displayName} is back in`)}
+                    />
+                  ) : (
+                    <ActionButton
+                      danger
+                      label="Remove"
+                      title={`Remove ${a.displayName} from the event`}
+                      description="They are signed out at once, cannot sign in, and cannot trade. Their trades so far stand. You can let them back in later."
+                      run={() => run(`/api/admin/accounts/${a.id}/eject`, {}, `${a.displayName} removed from the event`)}
                     />
                   )}
                   <a href={`#/team/${a.id}`}>

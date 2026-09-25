@@ -61,6 +61,7 @@ func New(opt Options) (http.Handler, error) {
 	r.GET("/ws", func(c *gin.Context) { s.a.Hub.Serve(c.Writer, c.Request) })
 
 	api := r.Group("/api")
+	api.GET("/status", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen()}) })
 	api.POST("/auth/signup", s.signup)
 	api.POST("/auth/login", s.login)
 
@@ -87,6 +88,7 @@ func New(opt Options) (http.Handler, error) {
 	adm.GET("/rulebook", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.RulebookView(s.opt.RulebookSource)) })
 	adm.GET("/sim", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.SimStatus()) })
 	s.fundRoutes(me, adm)
+	s.privilegeRoutes(adm)
 	adm.GET("/standings", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Leaderboard()) })
 
 	adm.POST("/clock/start", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockStartAt(u, b.BlockID) }))
@@ -309,6 +311,17 @@ func (s *Server) fail(c *gin.Context, err error) {
 			"message": "You have used your trades for now. Try again in " + strconv.Itoa(secs) + " seconds."})
 		return
 	}
+	var tc *trading.TooConcentrated
+	if errors.As(err, &tc) {
+		msg := "You can hold at most " + strconv.FormatFloat(tc.Percent, 'f', -1, 64) + "% of your portfolio in one company."
+		if tc.MaxQty > 0 {
+			msg += " You can buy up to " + strconv.FormatInt(tc.MaxQty, 10) + " more shares of " + tc.Symbol + "."
+		} else {
+			msg += " You cannot buy more " + tc.Symbol + " right now."
+		}
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "too_concentrated", "maxQty": tc.MaxQty, "message": msg})
+		return
+	}
 	var pc *trading.PriceChanged
 	if errors.As(err, &pc) {
 		now := strconv.FormatFloat(dto.Rupees(pc.Current), 'f', 2, 64)
@@ -450,6 +463,7 @@ type publicConfig struct {
 	MarketOpen       bool            `json:"marketOpen"`
 	WindowsOpen      map[string]bool `json:"windowsOpen"`
 	PriceTickSeconds int             `json:"priceTickSeconds"`
+	SignupOpen       bool            `json:"signupOpen"`
 }
 
 func (s *Server) config(c *gin.Context) {
@@ -464,7 +478,7 @@ func (s *Server) config(c *gin.Context) {
 	pc.Event.Timeline, pc.Event.TotalMinutes = s.a.PublicSchedule() // the lengths the organiser has set now
 	c.JSON(http.StatusOK, publicConfig{
 		PublicConfig: pc, TradingFrozen: cs.TradingFrozen, MarketOpen: cs.MarketOpen,
-		WindowsOpen: map[string]bool{"fundAllocationWindow": anyOpen}, PriceTickSeconds: s.a.Sim.TickSeconds(),
+		WindowsOpen: map[string]bool{"fundAllocationWindow": anyOpen}, PriceTickSeconds: s.a.Sim.TickSeconds(), SignupOpen: s.a.SignupOpen(),
 	})
 }
 

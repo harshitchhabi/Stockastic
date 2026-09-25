@@ -27,9 +27,9 @@
     ]
   },
 
-  "market": { "symbolCount": 250 },
+  "market": { "symbolCount": 150, "maxSingleStockPercent": 25 },
 
-  "teams": { "investorTeamSize": 3, "fundTeamSize": 6, "fundManagerSeats": 60 },
+  "teams": { "investorTeamSize": 1, "fundTeamSize": 2, "fundManagerSeats": 20 },
 
   "accounts": { "startingCapital": 1000000, "currency": "INR" },
 
@@ -104,6 +104,11 @@
     "leaderboard.refreshSeconds": { "status": "recommended", "section": "15" },
     "disputes.raiseWithinMinutes": { "status": "recommended", "section": "22" },
     "disputes.decisionTargetMinutes": { "status": "recommended", "section": "22" },
+    "market.symbolCount": { "status": "assumption", "section": "14", "note": "The rulebook says about 250 companies; the organisers' final data has 150." },
+    "market.maxSingleStockPercent": { "status": "assumption", "section": "14", "note": "Not in the rulebook text. From the organisers' final data (Max single-stock holding 25%): a buy is refused if it would put more than this share of the portfolio in one company." },
+    "teams.investorTeamSize": { "status": "assumption", "section": "3", "note": "The organisers decided each participant is their own team of one." },
+    "teams.fundTeamSize": { "status": "assumption", "section": "6", "note": "With one person per team, a fund is two people (two merged single-person teams)." },
+    "teams.fundManagerSeats": { "status": "assumption", "section": "3", "note": "20 fund managers: the top 20 individuals, paired into 10 funds of 2." },
     "event.participants": { "status": "assumption", "section": "1/3", "note": "The rulebook gives 600-650, 650-700 and 700-750 in different places. 650-700 (its Section 1 and Section 3 table) is used; it only affects sizing checks." },
     "prizes.prize4.riskAdjustedReturn": { "status": "recommended", "section": "16", "note": "Prize 4 weights are a starting point; organisers may tune." },
     "prizes.prize4.drawdownControl": { "status": "recommended", "section": "16" },

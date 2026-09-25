@@ -16,6 +16,7 @@ import { TeamPage } from "./TeamPage";
 import { FundsAdmin } from "./FundsAdmin";
 import { MarketEvents } from "./MarketEvents";
 import { ScheduleEditor } from "./ScheduleEditor";
+import { TradeLog } from "./TradeLog";
 
 const PAGES = [
   { id: "control", label: "Control room", view: ControlRoom },
@@ -24,6 +25,7 @@ const PAGES = [
   { id: "participants", label: "Participants", view: Participants },
   { id: "wallets", label: "Wallets", view: Wallets },
   { id: "shares", label: "Shares", view: Shares },
+  { id: "trades", label: "Trades", view: TradeLog },
   { id: "news", label: "News desk", view: NewsDesk },
   { id: "events", label: "Market events", view: MarketEvents },
   { id: "funds", label: "Funds and prizes", view: FundsAdmin },

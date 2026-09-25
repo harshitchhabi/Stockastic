@@ -52,6 +52,15 @@ so a rulebook with five windows shows five switches with no console change.
 | `POST /api/admin/snapshots/{phase1\|final}` | | freezes every team's value now (also done by a schedule block with `freezeSnapshot`). Once each |
 | `POST /api/admin/funds/dissolve` | | takes the funds apart so they can be formed again. Refused once anyone has invested |
 | `POST /api/admin/funds/{id}/trader` | `accountId` | chooses which of the fund's two teams places its trades |
+| `POST /api/admin/sim/news-mode` | `manual: bool` | turns automatic news off (every item is released by hand) or on |
+| `POST /api/admin/sim/{id}/skip` | `skip: bool` | holds an item so it is not released by itself (or lets it go out again). Items already released cannot change |
+| `POST /api/admin/sim/{id}/edit` | `headline?`, `atMinute?` | rewords or moves an unreleased news item. Times are minutes of open-market time when the scenario uses a price table |
+| `POST /api/admin/accounts/{id}/eject` | | removes a team from the event: disqualified, locked and signed out at once. Trades made stand |
+| `POST /api/admin/accounts/{id}/readmit` | | lets a removed team back in |
+| `POST /api/admin/accounts/{id}/message` | `text` | a private notice on that team's open pages (not stored) |
+| `GET /api/admin/settings`, `POST /api/admin/settings/signup` | `open: bool` | opens or closes self-registration while the server runs. Kept across restarts |
+| `GET /api/admin/trades` | query: `account?`, `symbol?`, `limit?` | every trade, newest first, with team names |
+| `GET /api/admin/export/trades.csv`, `GET /api/admin/export/accounts.csv` | | downloads: every trade of the event, and every team with cash, value and status |
 | `POST /api/admin/sim/{id}/fire` | | releases a scheduled market event or run now; it will not fire again |
 | `POST /api/admin/qualification/run` | `pairs?: [[traderId, otherId], ...]` | forms the funds. With no pairs it ranks Phase 1 from the freeze snapshot and pairs the top teams first with last. With pairs, the organiser chooses who is merged with whom (up to the rulebook's fund count); the first team of each pair places the fund's trades |
 | `POST /api/admin/funds/{id}/disqualify` | | removes a fund from Prize 1 |

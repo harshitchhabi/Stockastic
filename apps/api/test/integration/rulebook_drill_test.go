@@ -173,7 +173,7 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		rb := mustEdit(t, func(m map[string]any) {
 			sub(m, "qualification")["qualifyingTeams"] = 24
 			sub(m, "qualification")["fundCount"] = 12
-			sub(m, "teams")["fundManagerSeats"] = 72
+			sub(m, "teams")["fundManagerSeats"] = 24
 		})
 		ranks := make([]int, rb.Qualification.QualifyingTeams)
 		for i := range ranks {

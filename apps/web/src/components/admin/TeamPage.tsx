@@ -57,6 +57,7 @@ export function TeamPage({ id }: { id: string }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState("");
   const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     api
@@ -228,6 +229,17 @@ export function TeamPage({ id }: { id: string }) {
             run={() => run(`${base}/lock`, {}, `${a.displayName} locked`)}
           />
         )}
+        {a.status === "disqualified" && a.locked ? (
+          <ActionButton className="solid" label="Let back in" title={`Let ${a.displayName} back into the event`} run={() => run(`${base}/readmit`, {}, `${a.displayName} is back in`)} />
+        ) : (
+          <ActionButton
+            danger
+            label="Remove from the event"
+            title={`Remove ${a.displayName} from the event`}
+            description="They are signed out at once, cannot sign in, and cannot trade. Their trades so far stand. You can let them back in later."
+            run={() => run(`${base}/eject`, {}, `${a.displayName} removed from the event`)}
+          />
+        )}
         <span style={{ marginLeft: 12 }}>
           <ChoiceControl
             title="Change this team's role"
@@ -239,6 +251,16 @@ export function TeamPage({ id }: { id: string }) {
             onChoose={(next) => run(`${base}/role`, { role: next }, `${a.displayName} is now ${next.replace("_", " ")}`)}
           />
         </span>
+      </div>
+      <div className="row-field" style={{ maxWidth: 460, marginTop: 14 }}>
+        <input type="text" placeholder="Private message to this team (shows on their wire)" maxLength={300} value={message} onChange={(e) => setMessage(e.target.value)} />
+        <ActionButton
+          disabled={!message.trim()}
+          label="Send"
+          title={`Send a private message to ${a.displayName}`}
+          description="Only their open pages show it. It is not kept."
+          run={() => run(`${base}/message`, { text: message }, "Message sent").then(() => setMessage(""))}
+        />
       </div>
       <div className="row-field" style={{ maxWidth: 460, marginTop: 14 }}>
         <input type="text" autoComplete="off" placeholder="New password (8 or more characters)" value={password} onChange={(e) => setPassword(e.target.value)} />

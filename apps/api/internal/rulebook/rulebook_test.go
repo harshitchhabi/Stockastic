@@ -62,8 +62,8 @@ func TestRealRulebookMatchesSection17And3(t *testing.T) {
 			t.Errorf("stage %s = %d min, want %d", s, byStage[s], w)
 		}
 	}
-	if rb.Market.SymbolCount != 250 {
-		t.Errorf("universe = %d, want 250", rb.Market.SymbolCount)
+	if rb.Market.SymbolCount != 150 {
+		t.Errorf("universe = %d, want 150", rb.Market.SymbolCount)
 	}
 	if rb.RateLimits.TradesPerWindow != 2 || rb.RateLimits.Window() != time.Minute || rb.RateLimits.Scope != "account" {
 		t.Errorf("rate limit = %+v, want 2 per minute per account", rb.RateLimits)
@@ -80,7 +80,7 @@ func TestRealRulebookMatchesSection17And3(t *testing.T) {
 	if rb.Disputes.RaiseWithinMinutes != 10 || rb.Disputes.DecisionTargetMinutes != 15 {
 		t.Errorf("disputes = %+v, want 10 and 15 minutes", rb.Disputes)
 	}
-	if rb.Teams.FundManagerSeats != 60 || rb.Qualification.QualifyingTeams != 20 || rb.Qualification.FundCount != 10 {
+	if rb.Teams.FundManagerSeats != 20 || rb.Qualification.QualifyingTeams != 20 || rb.Qualification.FundCount != 10 {
 		t.Errorf("teams/qualification wrong: %+v %+v", rb.Teams, rb.Qualification)
 	}
 	if got := rb.StartingCapital(); got != 100_000_000 {
@@ -162,7 +162,7 @@ func TestLoaderRejectsBrokenRulebooks(t *testing.T) {
 		"prize 1 weights not summing to 1":    {func(m map[string]any) { sub(m, "prizes", "prize1")["retention"] = 0.5 }, "prize1 weights"},
 		"prize 4 weights not summing to 1":    {func(m map[string]any) { sub(m, "prizes", "prize4")["diversification"] = 0.9 }, "prize4 weights"},
 		"qualifiers not twice the fund count": {func(m map[string]any) { sub(m, "qualification")["qualifyingTeams"] = 21 }, "2 x fundCount"},
-		"seats not fundCount x team size":     {func(m map[string]any) { sub(m, "teams")["fundManagerSeats"] = 59 }, "fundManagerSeats"},
+		"seats not fundCount x team size":     {func(m map[string]any) { sub(m, "teams")["fundManagerSeats"] = 19 }, "fundManagerSeats"},
 		"duplicate tie-break step": {func(m map[string]any) {
 			sub(m, "qualification")["tieBreak"] = []any{"coin_toss", "coin_toss"}
 		}, "duplicate tie-break"},

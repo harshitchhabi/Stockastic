@@ -39,6 +39,7 @@ func fundNamed(view map[string]any, id string) map[string]any {
 func TestPhaseTwoFromQualificationToRestart(t *testing.T) {
 	wal := store.NewMem()
 	r := rb(t, 100)
+	r.Market.MaxSingleStockPercent = 0 // this test spends a whole fund on one company; the limit has its own test
 	e := newEnv(t, wal, r)
 	adm := e.admin()
 

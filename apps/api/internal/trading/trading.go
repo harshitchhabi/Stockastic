@@ -115,6 +115,9 @@ type Executor struct {
 	now     func() time.Time
 
 	locks sync.Map // account id -> *sync.Mutex
+	// guard, if set, may refuse a trade after the price is known and before anything is stored. It runs
+	// while the account is locked, so two quick trades cannot both slip past a limit.
+	guard func(r Request, price money.Paise) error
 
 	mu   sync.Mutex
 	seen map[string]entry
@@ -131,6 +134,19 @@ func New(l *ledger.Ledger, p Prices, j Journal, now func() time.Time) *Executor 
 	}
 	return &Executor{ledger: l, prices: p, journal: j, now: now, seen: map[string]entry{}}
 }
+
+// SetGuard installs the pre-trade check.
+func (e *Executor) SetGuard(g func(r Request, price money.Paise) error) { e.guard = g }
+
+// TooConcentrated is returned when a buy would put too much of the portfolio in one company. MaxQty is how
+// many more shares could be bought.
+type TooConcentrated struct {
+	Symbol  string
+	Percent float64
+	MaxQty  int64
+}
+
+func (e *TooConcentrated) Error() string { return "too_concentrated" }
 
 func key(account, clientID string) string { return account + "\x00" + clientID }
 
@@ -183,6 +199,12 @@ func (e *Executor) Execute(ctx context.Context, r Request) (Result, error) {
 	}
 	if r.ExpectedPrice != 0 && r.ExpectedPrice != price {
 		return Result{}, &PriceChanged{Current: price}
+	}
+
+	if e.guard != nil {
+		if err := e.guard(r, price); err != nil {
+			return Result{}, err
+		}
 	}
 
 	t := Trade{

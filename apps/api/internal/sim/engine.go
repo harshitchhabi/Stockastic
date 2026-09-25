@@ -74,6 +74,16 @@ type State struct {
 	Fired         []string         `json:"fired"`
 	Pending       []PendingShock   `json:"pending"`
 	Shocks        []Shock          `json:"shocks"`
+	// The organiser's say over the news schedule. Manual means nothing is released by itself.
+	NewsManual bool                `json:"newsManual,omitempty"`
+	Skipped    []string            `json:"skipped,omitempty"`
+	Edits      map[string]ItemEdit `json:"edits,omitempty"`
+}
+
+// ItemEdit is a change the organiser made to a scheduled item: new words, a new time, or both.
+type ItemEdit struct {
+	Headline string   `json:"headline,omitempty"`
+	AtMinute *float64 `json:"atMinute,omitempty"`
 }
 
 type Engine struct {
@@ -166,11 +176,8 @@ func (e *Engine) Advance(now time.Time) {
 	}
 	var out []release
 	e.mu.Lock()
-	dirty := e.fireDueLocked(elapsed, now, &out)
-	if e.applyPendingLocked(now) {
-		dirty = true
-	}
 	var changed map[string]money.Paise
+	dirty := false
 	if e.d.Clock.MarketOpen() {
 		e.st.MarketSeconds++
 		if e.st.MarketSeconds%e.sc.TickSeconds == 0 {
@@ -179,6 +186,12 @@ func (e *Engine) Advance(now time.Time) {
 			changed = e.stepLocked(elapsed)
 			dirty = true
 		}
+	}
+	if e.fireDueLocked(elapsed, now, &out) {
+		dirty = true
+	}
+	if e.applyPendingLocked(now) {
+		dirty = true
 	}
 	var snapshot State
 	if dirty {
@@ -218,21 +231,35 @@ func (e *Engine) copyStateLocked() State {
 	s.Fired = append([]string(nil), e.st.Fired...)
 	s.Pending = append([]PendingShock(nil), e.st.Pending...)
 	s.Shocks = append([]Shock(nil), e.st.Shocks...)
+	s.Skipped = append([]string(nil), e.st.Skipped...)
+	if e.st.Edits != nil {
+		s.Edits = make(map[string]ItemEdit, len(e.st.Edits))
+		for k, v := range e.st.Edits {
+			s.Edits[k] = v
+		}
+	}
 	return s
 }
 
 // fireDueLocked releases every event and regime announcement whose time has come, exactly once.
 func (e *Engine) fireDueLocked(elapsed time.Duration, now time.Time, out *[]release) bool {
+	if e.st.NewsManual {
+		return false
+	}
 	mins := elapsed.Minutes()
+	if e.sc.NewsClock == "market" {
+		mins = float64(e.st.MarketSeconds) / 60
+	}
 	dirty := false
 	for _, ev := range e.sc.Events {
-		if mins >= ev.AtMinute && !e.fired[ev.ID] {
+		ev = e.effective(ev)
+		if mins >= ev.AtMinute && !e.fired[ev.ID] && !e.skipped(ev.ID) {
 			e.fireEventLocked(ev, now, out)
 			dirty = true
 		}
 	}
 	for _, r := range e.sc.Regimes {
-		if mins >= r.AtMinute && !e.fired[r.ID] {
+		if mins >= r.AtMinute && !e.fired[r.ID] && !e.skipped(r.ID) {
 			e.fireRegimeLocked(r, out)
 			dirty = true
 		}
@@ -245,9 +272,36 @@ func (e *Engine) markFiredLocked(id string) {
 	e.st.Fired = append(e.st.Fired, id)
 }
 
+func (e *Engine) skipped(id string) bool {
+	for _, s := range e.st.Skipped {
+		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+// effective is an event with the organiser's edits applied.
+func (e *Engine) effective(ev Event) Event {
+	if ed, ok := e.st.Edits[ev.ID]; ok {
+		if ed.Headline != "" {
+			ev.Headline = ed.Headline
+		}
+		if ed.AtMinute != nil {
+			ev.AtMinute = *ed.AtMinute
+		}
+	}
+	return ev
+}
+
 func (e *Engine) fireEventLocked(ev Event, now time.Time, out *[]release) {
+	ev = e.effective(ev)
 	e.markFiredLocked(ev.ID)
-	*out = append(*out, release{kind: news.KindNews, headline: ev.Headline, body: ev.Body})
+	kind := news.KindNews
+	if ev.Type == "REGIME" {
+		kind = news.KindRegime // a bull or bear run is announced to everyone at once (Section 13)
+	}
+	*out = append(*out, release{kind: kind, headline: ev.Headline, body: ev.Body})
 	if len(ev.Impacts) > 0 {
 		// The price reaction arrives when the public sees the news, so fund managers, who see it first,
 		// have the lead window to act before it (Section 11).
@@ -295,6 +349,17 @@ func (e *Engine) applyPendingLocked(now time.Time) bool {
 // stepLocked works out every company's next price.
 func (e *Engine) stepLocked(elapsed time.Duration) map[string]money.Paise {
 	cur := e.d.Prices.All()
+	if t := e.sc.table; t != nil {
+		// Prices follow the table exactly. Past its last step they stay where they ended.
+		row := t.Rows[min(e.st.Tick, len(t.Rows)-1)]
+		out := make(map[string]money.Paise, len(row))
+		for i, sym := range t.Symbols {
+			if px := money.FromRupees(row[i]); px != cur[sym] {
+				out[sym] = px
+			}
+		}
+		return out
+	}
 	mins := elapsed.Minutes()
 	out := make(map[string]money.Paise, len(e.cos))
 	for i, c := range e.cos {
@@ -324,6 +389,9 @@ func (e *Engine) stepLocked(elapsed time.Duration) map[string]money.Paise {
 
 // bound keeps a price on the tick grid and inside the scenario's floor and cap.
 func (e *Engine) bound(px money.Paise) money.Paise {
+	if e.sc.table != nil {
+		return px
+	}
 	if e.sc.RoundTo > 0 {
 		step := float64(money.FromRupees(e.sc.RoundTo))
 		px = money.Paise(math.Round(float64(px)/step) * step)
@@ -446,6 +514,10 @@ type Item struct {
 	Type     string `json:"type,omitempty"`
 	Category string `json:"category,omitempty"`
 	Impacts  int    `json:"impacts"`
+	// Skipped means the organiser turned this item off: it will not be released by itself.
+	Skipped bool `json:"skipped"`
+	// Edited means the organiser changed its words or its time.
+	Edited bool `json:"edited"`
 }
 
 // Status is what the organiser console shows about the simulation.
@@ -456,24 +528,126 @@ type Status struct {
 	PendingShocks int    `json:"pendingShocks"`
 	Scripted      int    `json:"scriptedCompanies"`
 	Items         []Item `json:"items"`
+	// NewsManual: the organiser has turned automatic news off.
+	NewsManual bool `json:"newsManual"`
+	// FromTable: prices follow a price table. TableSteps is its length and MarketSeconds is how much open-market
+	// time has passed, so the console can show how far through the data the event is.
+	FromTable     bool   `json:"fromTable"`
+	TableSteps    int    `json:"tableSteps"`
+	MarketSeconds int    `json:"marketSeconds"`
+	NewsClock     string `json:"newsClock"`
 }
 
 func (e *Engine) Status() Status {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	s := Status{TickSeconds: e.sc.TickSeconds, Ticks: e.st.Tick, ActiveShocks: len(e.st.Shocks), PendingShocks: len(e.st.Pending), Scripted: len(e.sc.Paths), Items: []Item{}}
+	clock := e.sc.NewsClock
+	if clock == "" {
+		clock = "event"
+	}
+	s := Status{TickSeconds: e.sc.TickSeconds, Ticks: e.st.Tick, ActiveShocks: len(e.st.Shocks), PendingShocks: len(e.st.Pending), Scripted: len(e.sc.Paths), Items: []Item{},
+		NewsManual: e.st.NewsManual, FromTable: e.sc.table != nil, TableSteps: e.sc.TableSteps(), MarketSeconds: e.st.MarketSeconds, NewsClock: clock}
 	for _, ev := range e.sc.Events {
-		s.Items = append(s.Items, Item{ID: ev.ID, Kind: "news", AtMinute: ev.AtMinute, Headline: ev.Headline, Fired: e.fired[ev.ID], Type: ev.Type, Category: ev.Category, Impacts: len(ev.Impacts)})
+		_, edited := e.st.Edits[ev.ID]
+		ev = e.effective(ev)
+		s.Items = append(s.Items, Item{ID: ev.ID, Kind: "news", AtMinute: ev.AtMinute, Headline: ev.Headline, Fired: e.fired[ev.ID], Type: ev.Type, Category: ev.Category,
+			Impacts: len(ev.Impacts), Skipped: e.skipped(ev.ID), Edited: edited})
 	}
 	for _, r := range e.sc.Regimes {
 		h := r.Headline
 		if h == "" {
 			h = "Market regime: " + r.Kind
 		}
-		s.Items = append(s.Items, Item{ID: r.ID, Kind: r.Kind, AtMinute: r.AtMinute, Headline: h, Fired: e.fired[r.ID]})
+		s.Items = append(s.Items, Item{ID: r.ID, Kind: r.Kind, AtMinute: r.AtMinute, Headline: h, Fired: e.fired[r.ID], Skipped: e.skipped(r.ID)})
 	}
-	sort.Slice(s.Items, func(i, j int) bool { return s.Items[i].AtMinute < s.Items[j].AtMinute })
+	sort.SliceStable(s.Items, func(i, j int) bool { return s.Items[i].AtMinute < s.Items[j].AtMinute })
 	return s
+}
+
+// save stores the state after an organiser change. The caller must not hold the lock.
+func (e *Engine) save() error {
+	e.mu.Lock()
+	snap := e.copyStateLocked()
+	e.mu.Unlock()
+	snap.Prices = pricesOf(e.d.Prices, nil)
+	if e.d.Save != nil {
+		return e.d.Save(snap)
+	}
+	return nil
+}
+
+// SetNewsManual turns automatic news off (true) or on (false). Off means the organiser releases every item.
+func (e *Engine) SetNewsManual(v bool) error {
+	e.mu.Lock()
+	e.st.NewsManual = v
+	e.mu.Unlock()
+	return e.save()
+}
+
+// SetSkipped turns one scheduled item off or back on.
+func (e *Engine) SetSkipped(id string, skip bool) error {
+	e.mu.Lock()
+	if e.fired[id] || !e.knownLocked(id) {
+		e.mu.Unlock()
+		return fmt.Errorf("sim: %q cannot be changed: it has already been released or does not exist", id)
+	}
+	out := e.st.Skipped[:0:0]
+	for _, s := range e.st.Skipped {
+		if s != id {
+			out = append(out, s)
+		}
+	}
+	if skip {
+		out = append(out, id)
+	}
+	e.st.Skipped = out
+	e.mu.Unlock()
+	return e.save()
+}
+
+// EditItem changes the words and/or the time of a scheduled news item that has not been released yet.
+func (e *Engine) EditItem(id, headline string, atMinute *float64) error {
+	if atMinute != nil && (math.IsNaN(*atMinute) || *atMinute < 0 || *atMinute > 24*60) {
+		return errors.New("sim: the time must be between 0 and 1440 minutes")
+	}
+	e.mu.Lock()
+	isEvent := false
+	for _, ev := range e.sc.Events {
+		if ev.ID == id {
+			isEvent = true
+		}
+	}
+	if !isEvent || e.fired[id] {
+		e.mu.Unlock()
+		return fmt.Errorf("sim: %q cannot be edited: it has already been released or is not a news item", id)
+	}
+	if e.st.Edits == nil {
+		e.st.Edits = map[string]ItemEdit{}
+	}
+	ed := e.st.Edits[id]
+	if headline != "" {
+		ed.Headline = headline
+	}
+	if atMinute != nil {
+		ed.AtMinute = atMinute
+	}
+	e.st.Edits[id] = ed
+	e.mu.Unlock()
+	return e.save()
+}
+
+func (e *Engine) knownLocked(id string) bool {
+	for _, ev := range e.sc.Events {
+		if ev.ID == id {
+			return true
+		}
+	}
+	for _, r := range e.sc.Regimes {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // Reset returns the simulation to its start: no price updates done, no events fired, nothing waiting. The

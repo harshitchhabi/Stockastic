@@ -136,6 +136,7 @@ func (a *App) resetState() {
 	a.Clock.Reset()
 
 	a.statMu.Lock()
+	a.allTrades = nil
 	a.recent, a.p1Trades, a.peaks, a.snapshots = map[string][]trading.Trade{}, map[string]int{}, map[string]money.Paise{}, map[string]FreezeSnapshot{}
 	a.statMu.Unlock()
 	a.ticketMu.Lock()

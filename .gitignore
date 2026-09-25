@@ -23,3 +23,6 @@ apps/api/data/
 # The organisers' rulebook and master data are kept out of the repository
 Live Financial Ecosystem*.docx
 Stockastic_Master*.xlsx
+apps/api/scenarios/final/
+Stochasticdata*.xlsx
+~$*

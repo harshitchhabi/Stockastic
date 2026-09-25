@@ -103,6 +103,9 @@ func (b Block) Duration() time.Duration { return time.Duration(b.DurationMin) * 
 
 type Market struct {
 	SymbolCount int `json:"symbolCount"`
+	// MaxSingleStockPercent: a buy is refused if it would put more than this share of the portfolio's value in
+	// one company. Zero means no limit.
+	MaxSingleStockPercent float64 `json:"maxSingleStockPercent"`
 }
 
 type Teams struct {
@@ -319,6 +322,9 @@ func (r *Rulebook) validate(generic map[string]any) error {
 			bad("duplicate tie-break step %q", s)
 		}
 		tb[s] = true
+	}
+	if r.Market.MaxSingleStockPercent < 0 || r.Market.MaxSingleStockPercent > 100 {
+		bad("market.maxSingleStockPercent must be from 0 to 100")
 	}
 	if r.Market.SymbolCount <= 0 {
 		bad("market.symbolCount must be positive")
