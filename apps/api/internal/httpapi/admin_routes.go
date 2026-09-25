@@ -16,7 +16,22 @@ func (s *Server) privilegeRoutes(adm *gin.RouterGroup) {
 	adm.POST("/accounts/:id/readmit", s.act(func(u app.User, _ body, c *gin.Context) error { return s.a.Readmit(u, c.Param("id")) }))
 	adm.POST("/accounts/:id/message", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Message(u, c.Param("id"), b.Text) }))
 
-	adm.GET("/settings", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen()}) })
+	adm.GET("/settings", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupCode": s.a.SignupCode()})
+	})
+	adm.POST("/settings/signup-code", func(c *gin.Context) {
+		var r struct {
+			Code string `json:"code"`
+		}
+		if !s.decode(c, &r) {
+			return
+		}
+		if err := s.a.SetSignupCode(user(c), r.Code); err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
 	adm.POST("/settings/signup", func(c *gin.Context) {
 		var r struct {
 			Open bool `json:"open"`

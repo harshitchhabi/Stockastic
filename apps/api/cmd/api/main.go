@@ -107,6 +107,7 @@ func run() error {
 		Rulebook: rb, Log: log, WAL: wal, Universe: companies, Scenario: scenario, Signer: signer,
 		Disk:        &store.DiskGuard{Dir: cfg.DataDir, MinFree: uint64(cfg.DiskMinFreeMB) << 20},
 		AllowSignup: cfg.AllowSignup, AllowedOrigins: cfg.AllowedOrigins, Autostart: cfg.Autostart,
+		MaxAccounts: cfg.MaxAccounts, SignupCode: cfg.SignupCode, MaxSockets: cfg.MaxSockets, MaxSocketsPerAccount: cfg.MaxSocketsPerAccount,
 	})
 	if err != nil {
 		_ = wal.Close()
@@ -127,15 +128,18 @@ func run() error {
 	} else if e, err := webui.Embedded(); err == nil {
 		static = e
 	}
-	handler, err := httpapi.New(httpapi.Options{App: a, Log: log, RulebookSource: source, Static: static})
+	handler, err := httpapi.New(httpapi.Options{App: a, Log: log, RulebookSource: source, Static: static, TrustedProxies: cfg.TrustedProxies})
 	if err != nil {
 		_ = a.Close(context.Background())
 		return err
 	}
 	srv := &http.Server{
 		Addr: cfg.Addr, Handler: handler,
-		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second,
-		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		// Slow or half-finished requests are dropped: headers within 10 s, the whole request within 30 s, a reply
+		// within 30 s (a client that will not read cannot hold a connection open), and small headers.
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second,
+		MaxHeaderBytes: 16 << 10,
+		ErrorLog:       slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 
 	serveErr := make(chan error, 1)

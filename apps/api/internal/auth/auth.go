@@ -14,23 +14,58 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var ErrInvalidToken = errors.New("invalid_token")
+var (
+	ErrInvalidToken = errors.New("invalid_token")
+	// ErrBusy means every password-checking slot stayed taken for too long. The caller should tell the person to
+	// try again in a moment; it never means the password was wrong.
+	ErrBusy = errors.New("busy")
+)
+
+// gateWait is the longest a login or sign-up waits for a free slot. A flood of junk logins therefore cannot
+// build an unbounded queue: what does not fit is turned away quickly.
+const gateWait = 4 * time.Second
+
+func acquire() bool {
+	select {
+	case hashSlots <- struct{}{}:
+		return true
+	default:
+	}
+	t := time.NewTimer(gateWait)
+	defer t.Stop()
+	select {
+	case hashSlots <- struct{}{}:
+		return true
+	case <-t.C:
+		return false
+	}
+}
 
 // hashSlots bounds concurrent bcrypt work so a login storm queues instead of thrashing. It may use every
 // core: matching is light (an order takes milliseconds), and a login storm is over in seconds.
 var hashSlots = make(chan struct{}, max(2, runtime.NumCPU()))
 
 func HashPassword(pw string) (string, error) {
-	hashSlots <- struct{}{}
+	if !acquire() {
+		return "", ErrBusy
+	}
 	defer func() { <-hashSlots }()
 	b, err := bcrypt.GenerateFromPassword([]byte(pw), 10)
 	return string(b), err
 }
 
 func CheckPassword(hash, pw string) bool {
-	hashSlots <- struct{}{}
+	ok, _ := TryCheckPassword(hash, pw)
+	return ok
+}
+
+// TryCheckPassword compares a password, or returns ErrBusy if it could not get a slot in time.
+func TryCheckPassword(hash, pw string) (bool, error) {
+	if !acquire() {
+		return false, ErrBusy
+	}
 	defer func() { <-hashSlots }()
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil, nil
 }
 
 type Signer struct {

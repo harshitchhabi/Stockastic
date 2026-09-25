@@ -28,11 +28,12 @@ Node exists only on a developer machine to build the frontend.
 | `apps/api` | Go backend (`stockastic/api`): `app` (wiring), `httpapi` (Gin), `wsapi`, `auth`, `store` (durable log), `config`, `market` (current prices), `sim` (price simulation), `trading` (buy and sell at the current price), `ledger`, `funds` (Phase 2 funds, units, NAV, checkpoints), `scoring` (ranking, pairing, caps, prizes), `universe`, `dto`, `rulebook`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui` |
 | `apps/api/internal/rulebook/rulebook.json` | **Every rulebook value**, embedded in the binary. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
 | `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
-| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `data-files.md` (how the master data becomes the game), `stage2-dashboards.md` (Phase 2 screens) |
+| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `data-files.md` (how the final data becomes the game), `security.md` (protection against abuse and how it was tested), `stage2-dashboards.md` (Phase 2 screens) |
 | `deploy/` | Ready-to-use server files: systemd unit, Caddy config, backup script, kernel settings, env template |
 | `tools/import_final.py` | Turns the organisers' final workbook into the files the server loads (see `docs/data-files.md`) |
 | `apps/api/scenarios/mock` | A small sample scenario that is safe to commit; the tests use it |
 | `apps/api/scenarios/final` | The final companies, exact prices and news. **Git-ignored** because it holds the future prices |
+| `apps/api/cmd/abusesim` | Attack simulator: floods, guessing, idle and flooding sockets, slow connections, huge bodies, while honest teams trade |
 | `apps/api/cmd/loadsim` | Load simulator: hundreds of teams sign up, log in together, trade over live sockets, then stampede one company |
 
 The previous TypeScript backend lives only on the `archive/ts-backend` branch.
@@ -66,6 +67,7 @@ Settings are environment variables (a `.env.local` next to where you run the ser
 | `UNIVERSE_PATH` | placeholder list | The company list and opening prices (see `docs/data-files.md`) |
 | `SCENARIO_PATH` | plain random walk | The price simulation: volatility, price limits, scheduled events, bull and bear runs |
 | `DISK_MIN_FREE_MB` | `200` | New trades are refused below this much free disk space |
+| `SIGNUP_CODE`, `MAX_ACCOUNTS`, `MAX_SOCKETS`, `MAX_SOCKETS_PER_ACCOUNT`, `TRUSTED_PROXIES` | see `docs/security.md` | Protection against abuse |
 | `AUTOSTART` | `false` | Start the event clock on boot. Development only |
 | `WEB_DIR` | embedded | Serve the built web app from a folder instead |
 

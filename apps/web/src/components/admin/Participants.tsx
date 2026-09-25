@@ -22,7 +22,8 @@ export function Participants() {
   const [role, setRole] = useState<RoleFilter>("all");
   const [presence, setPresence] = useState<PresenceFilter>("all");
   const { notify } = useAdmin();
-  const settings = usePoll<{ signupOpen: boolean }>("/api/admin/settings", 5000);
+  const settings = usePoll<{ signupOpen: boolean; signupCode: string }>("/api/admin/settings", 5000);
+  const [code, setCode] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     const all = data ?? [];
@@ -74,6 +75,32 @@ export function Participants() {
           />
         </span>
       </div>
+
+      {settings.data && (
+        <div className="row-field" style={{ maxWidth: 520, marginBottom: 10 }}>
+          <input
+            type="text"
+            autoComplete="off"
+            maxLength={40}
+            placeholder="Event code needed to register (empty means none)"
+            aria-label="Event code"
+            value={code ?? settings.data.signupCode}
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <ActionButton
+            label="Save code"
+            disabled={code === null || code === settings.data.signupCode}
+            title="Change the event code"
+            description="New sign-ups need this code from now on. Teams that already have accounts are not affected. Leave it empty to remove the requirement."
+            run={async () => {
+              await api.post("/api/admin/settings/signup-code", { code: code ?? "" });
+              notify("Event code saved");
+              setCode(null);
+              await settings.reload();
+            }}
+          />
+        </div>
+      )}
 
       <div className="toolbar">
         <div className="tabs inline" role="tablist">

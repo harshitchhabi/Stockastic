@@ -1,0 +1,81 @@
+# Security and protection against abuse
+
+What protects the event from a team that tries to cheat, jam the server, or break in, how each protection was tested,
+and what it cannot do.
+
+## The rule that matters most
+
+The server decides everything. A browser only asks. A trade names a company and a number of shares; the price, the cash
+check, the 25% limit, the two-a-minute allowance, who may trade for a fund, and every organiser power are all decided and
+checked on the server. Changing what a page shows or what a request says changes nothing the server has not agreed to.
+
+## Protections
+
+| Threat | Protection |
+|---|---|
+| Reading or changing traffic | HTTPS through Caddy (`deploy/Caddyfile`), HSTS, the app listens on 127.0.0.1 only |
+| Stealing or forging a login | Tokens signed with a 32+ character secret, algorithm pinned, session version so sign-out and removal cancel them at once, role and status read live on every request |
+| A team acting as organiser | Every organiser route sits behind a server-side check. A test walks the real route table and fails if any route is unprotected |
+| Guessing passwords | bcrypt, and 10 wrong guesses at one email lock new sign-ins for that email for 2 minutes. The lock never signs out a team that is already in, so a rival cannot throw someone out mid-trade |
+| Filling the server with junk accounts | Optional event code for registration (organisers can change it live), a cap on accounts (`MAX_ACCOUNTS`), organisers can close registration, and one mailbox is one person (case, `+tag` and Gmail dots are ignored) |
+| Hiding text in names, or spreadsheets running a name as a formula | Names refuse control, invisible and direction-changing characters and `<` `>`. CSV exports prefix dangerous cells |
+| One team flooding the server | A per-account limit of 40 requests a second (organisers 300), a two-trades-a-minute allowance, a per-address limit on anonymous traffic (3,000 a second) |
+| A rival in the same room using everyone's allowance | The address limit counts only anonymous traffic. Signed-in requests are limited per account. Wrong-password guesses are limited per email, not per address, so a whole venue on one address is not locked out |
+| Password-checking used as a weapon | Made-up emails cost no password work. The rest wait for a slot for at most 4 seconds, then get a "busy, try again" answer instead of building an endless queue |
+| WebSocket abuse | At most 4 sockets per account (a newer one replaces the oldest), 4,000 in all, at most 1,500 waiting to log in, 3 seconds to log in, 4 KB per message, and a socket sending more than 20 messages a second is cut off |
+| Slow or stalled connections | Header timeout 10 s, request 30 s, response 30 s, headers up to 16 KB. Caddy repeats these limits in front |
+| Huge or malformed requests | Request bodies are limited to 64 KB (256 KB at Caddy), JSON is decoded strictly, and quantities, prices, ids and symbols are range and format checked |
+| Losing data or filling the disk | Every trade is on disk before it is confirmed, the log is tidied at each start, trades are refused when disk space is low, and the service stops restarting after a crash loop |
+| Taking over the machine | Key-only SSH, no root login, firewall with only 80 and 443 open, automatic bans for repeated SSH failures, automatic security updates (`deploy/harden.sh`), and a sandboxed service with no extra rights |
+| Known vulnerabilities in code we depend on | `govulncheck` and `npm audit` were run: nothing affects the code. One advisory in a package we do not use (`x/crypto/openpgp`) has no fix and is not reachable |
+
+## How it was tested
+
+- **Route audit** (`TestEveryRouteIsProtected`): every route is called with no login, a fake token and a team's token.
+- **Forged tokens**: `alg: none`, wrong signature, edited payload, empty, garbage, oversized.
+- **Hostile input**: 18 kinds of bad trade (huge, negative, fractional, wrong type, path and script strings, nested JSON, 200 KB
+  bodies, null bytes) and organiser inputs. All refused with a 4xx, with no change to the account.
+- **Sign-up**: event code, alias mailboxes, hidden characters, account cap.
+- **Limits**: per-account flood, WebSocket per-account, message-flood, oversize frame, never-logged-in socket, total socket cap.
+- **Chaos** (`TestChaosThenRestartIsIdentical`, run with the race detector): 24 teams trading, investing and withdrawing at once
+  while the organiser freezes, pays, gives shares and reads screens, then a reset in the middle of it. No server error, no data
+  race, and a restart rebuilt exactly the same money, holdings, trades and funds.
+- **Attack on a real server** (`cmd/abusesim`): while 100 honest teams traded, one machine ran 300 attacking connections at once.
+  550,000 unauthenticated requests, 140,000 wrong-password attempts, a flood from one signed-in account, 300 KB request bodies,
+  3,000 idle sockets, message-flood sockets and 400 slow-header connections. Honest results were identical to the run without an
+  attack (every trade accepted or refused for the same reasons). Honest page loads went from 0.5 ms to a median of 6 ms
+  (99th percentile 51 ms). All message-flood sockets were cut off, all slow-header connections were dropped, and the server was
+  healthy afterwards.
+- **Every screen in a real browser** (Edge, automated): sign-up through the form, Explore with 150 companies, buying, the 25%
+  refusal, Holdings, Funds before and after formation, investing on screen, the fund desk, the second team's disabled trade
+  button, and every organiser page. No page errors and no server errors.
+- **Load**: 700 teams, all logging in at once, all trading, a hard kill and restart: no errors, every trade recovered.
+
+## What it cannot do
+
+- **Volumetric attacks from many machines.** Nothing running on the server can stop a flood that fills the network link before
+  it arrives. Use an AWS security group that allows only ports 80 and 443 (and SSH from your address), and AWS Shield Standard,
+  which is on by default for EC2 at no cost, handles the common network-level floods. If you want more, put Cloudflare's free
+  plan in front (it needs a domain).
+- **A rival inside the venue.** Everyone behind one address looks the same to the server. The protections above are built so
+  that one person's flood cannot use up other people's allowances, but a very large flood from inside the room can still slow the
+  shared Wi-Fi itself. Ask the venue to keep the network for participants only and to block participants from each other.
+- **Lock-out griefing of new sign-ins.** Someone who knows a team's email can make ten wrong guesses and stop that team signing in
+  again for 2 minutes. Teams that are already signed in are not affected. Organisers can reset a password or sign a team in
+  again from the console.
+- **Two people using one account, or one person using two accounts with different mailboxes.** That is a rules matter. The
+  alias check, the event code and the organiser's ability to see who is online and remove a team are the tools for it.
+- **Caddy and the hardening script were written and syntax-checked but not run.** They need a real server. Run
+  `deploy/harden.sh` and the rehearsal in `docs/deployment.md` on the real machine and check that you can still log in over SSH from
+  a second terminal before you close the first.
+
+## Settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SIGNUP_CODE` | none | Registration needs this code. Organisers can change it live |
+| `MAX_ACCOUNTS` | 2000 | Most accounts that can exist |
+| `MAX_SOCKETS` | 4000 | Most live connections |
+| `MAX_SOCKETS_PER_ACCOUNT` | 4 | Most sockets one account can hold |
+| `TRUSTED_PROXIES` | `127.0.0.1,::1` | Addresses whose `X-Forwarded-For` header is believed |
+| `DISK_MIN_FREE_MB` | 200 | Trades are refused when free disk space is lower |

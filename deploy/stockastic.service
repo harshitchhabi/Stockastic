@@ -27,6 +27,29 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/stockastic
+# The server needs no devices, no kernel settings, no other users' files and no way to gain power. If it were ever
+# taken over, this is how little it could do.
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+UMask=0077
+# Bounds so a fault or an attack cannot take the whole machine down with it.
+MemoryMax=3G
+TasksMax=8192
 
 [Install]
 WantedBy=multi-user.target

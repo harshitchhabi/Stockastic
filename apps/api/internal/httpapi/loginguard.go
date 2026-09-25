@@ -20,9 +20,11 @@ type attempts struct {
 }
 
 const (
-	maxFailures = 8
+	// Ten wrong passwords in five minutes lock that address for two minutes. It only blocks new sign-ins: a team
+	// that is already signed in is never affected, so a rival guessing at its email cannot throw it out mid-trade.
+	maxFailures = 10
 	failWindow  = 5 * time.Minute
-	lockFor     = 5 * time.Minute
+	lockFor     = 2 * time.Minute
 )
 
 func newLoginGuard() *loginGuard { return &loginGuard{m: map[string]*attempts{}} }

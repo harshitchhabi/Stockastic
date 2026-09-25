@@ -11,13 +11,16 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [signupOpen, setSignupOpen] = useState(true);
+  const [needsCode, setNeedsCode] = useState(false);
+  const [eventCode, setEventCode] = useState("");
 
   // Registration can be closed by the organisers: then there is only the log in form.
   useEffect(() => {
     api
-      .get<{ signupOpen: boolean }>("/api/status")
+      .get<{ signupOpen: boolean; signupNeedsCode?: boolean }>("/api/status")
       .then((s) => {
         setSignupOpen(s.signupOpen);
+        setNeedsCode(s.signupNeedsCode === true);
         if (!s.signupOpen) setMode("login");
       })
       .catch(() => {});
@@ -28,7 +31,7 @@ export function LoginForm() {
     setError(null);
     setSubmitting(true);
     try {
-      if (mode === "signup") await signup(displayName, email, password);
+      if (mode === "signup") await signup(displayName, email, password, eventCode);
       else await login(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : `${mode} failed`);
@@ -58,6 +61,9 @@ export function LoginForm() {
         </div>
         {mode === "signup" && (
           <input placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+        )}
+        {mode === "signup" && needsCode && (
+          <input placeholder="Event code (from the organisers)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} required autoComplete="off" />
         )}
         <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input

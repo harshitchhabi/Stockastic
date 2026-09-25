@@ -1,11 +1,13 @@
 package app
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/mail"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"stockastic/api/internal/auth"
 	"stockastic/api/internal/ids"
@@ -29,6 +31,9 @@ var (
 	ErrDisqualified       = errors.New("account_disqualified")
 	ErrUnknownUser        = errors.New("unknown_account")
 	ErrAccountLocked      = errors.New("account_locked")
+	ErrBusy               = errors.New("server_busy")
+	ErrBadEventCode       = errors.New("wrong_event_code")
+	ErrAccountsFull       = errors.New("accounts_full")
 )
 
 // BadRequest is a validation failure whose message is safe to show the caller.
@@ -60,13 +65,44 @@ type userStore struct {
 	mu      sync.RWMutex
 	byID    map[string]*User
 	byEmail map[string]*User
+	canon   map[string]string // emailKey -> the first account that used it
 }
 
 func newUserStore() *userStore {
-	return &userStore{byID: map[string]*User{}, byEmail: map[string]*User{}}
+	return &userStore{byID: map[string]*User{}, byEmail: map[string]*User{}, canon: map[string]string{}}
 }
 
 func normEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
+
+// emailKey is what makes two addresses the same person: case is ignored, a "+tag" is dropped, and for Gmail the
+// dots in the name do not count either. It stops one person opening many accounts from one mailbox.
+func emailKey(e string) string {
+	e = normEmail(e)
+	at := strings.LastIndex(e, "@")
+	if at < 1 {
+		return e
+	}
+	local, domain := e[:at], e[at+1:]
+	if i := strings.Index(local, "+"); i > 0 {
+		local = local[:i]
+	}
+	if domain == "gmail.com" || domain == "googlemail.com" {
+		local, domain = strings.ReplaceAll(local, ".", ""), "gmail.com"
+	}
+	return local + "@" + domain
+}
+
+// cleanName trims a display name and refuses control characters and invisible or direction-changing marks,
+// which can be used to impersonate someone or to hide text.
+func cleanName(s string) (string, bool) {
+	s = strings.Join(strings.Fields(s), " ")
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r) || unicode.Is(unicode.Co, r) || r == '<' || r == '>' {
+			return "", false
+		}
+	}
+	return s, true
+}
 
 func (s *userStore) get(id string) (User, bool) {
 	s.mu.RLock()
@@ -111,18 +147,46 @@ func (s *userStore) put(u User) error {
 	}
 	c := u
 	s.byID[u.ID], s.byEmail[key] = &c, &c
+	if _, ok := s.canon[emailKey(u.Email)]; !ok {
+		s.canon[emailKey(u.Email)] = u.ID
+	}
 	return nil
 }
 
+func (s *userStore) count() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.byID)
+}
+
+// putNew adds a new account, refusing an address that is the same person's as an existing one (a "+tag" or a
+// Gmail dot variant). Restoring from the log uses put, which never refuses, so an old log always loads.
+func (s *userStore) putNew(u User) error {
+	s.mu.Lock()
+	if id, ok := s.canon[emailKey(u.Email)]; ok && id != u.ID {
+		s.mu.Unlock()
+		return ErrEmailTaken
+	}
+	s.mu.Unlock()
+	return s.put(u)
+}
+
 // Signup creates a team account with the rulebook's starting capital.
-func (a *App) Signup(displayName, email, password string) (User, error) {
+func (a *App) Signup(displayName, email, password, eventCode string) (User, error) {
 	if !a.signupOpen.Load() {
 		return User{}, ErrSignupClosed
 	}
-	displayName = strings.TrimSpace(displayName)
-	if n := len([]rune(displayName)); n < 2 || n > 40 {
-		return User{}, bad("invalid_display_name", "Team name must be 2 to 40 characters.")
+	if code := a.SignupCode(); code != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(eventCode)), []byte(code)) != 1 {
+		return User{}, ErrBadEventCode
 	}
+	if max := a.cfg.MaxAccounts; max > 0 && a.users.count() >= max {
+		return User{}, ErrAccountsFull
+	}
+	name, ok := cleanName(displayName)
+	if n := len([]rune(name)); !ok || n < 2 || n > 40 {
+		return User{}, bad("invalid_display_name", "Use 2 to 40 letters, numbers or common symbols for the name.")
+	}
+	displayName = name
 	addr, err := mail.ParseAddress(strings.TrimSpace(email))
 	if err != nil || len(addr.Address) > 254 {
 		return User{}, bad("invalid_email", "Enter a valid email address.")
@@ -131,19 +195,25 @@ func (a *App) Signup(displayName, email, password string) (User, error) {
 		return User{}, bad("invalid_password", "Password must be 8 to 72 characters.")
 	}
 	hash, err := auth.HashPassword(password)
+	if errors.Is(err, auth.ErrBusy) {
+		return User{}, ErrBusy
+	}
 	if err != nil {
 		return User{}, err
 	}
 	u := User{ID: ids.New(), Email: normEmail(addr.Address), DisplayName: displayName, PasswordHash: hash,
 		Role: RoleInvestor, Status: StatusActive, CreatedAt: a.now()}
 	// Reserve the email first so two concurrent signups cannot both succeed.
-	if err := a.users.put(u); err != nil {
+	if err := a.users.putNew(u); err != nil {
 		return User{}, err
 	}
 	if err := a.persistUser(u); err != nil {
 		a.users.mu.Lock()
 		delete(a.users.byID, u.ID)
 		delete(a.users.byEmail, u.Email)
+		if a.users.canon[emailKey(u.Email)] == u.ID {
+			delete(a.users.canon, emailKey(u.Email))
+		}
 		a.users.mu.Unlock()
 		return User{}, err
 	}
@@ -158,10 +228,14 @@ func (a *App) Login(email, password string) (User, error) {
 	u, ok := a.users.byEmailAddr(email)
 	if !ok {
 		// Spend comparable time so response timing does not reveal which emails exist.
-		auth.CheckPassword(a.dummyHash, password)
+		// No password work for an address we do not know: a flood of made-up emails costs the server nothing.
 		return User{}, ErrInvalidCredentials
 	}
-	if !auth.CheckPassword(u.PasswordHash, password) {
+	okPw, err := auth.TryCheckPassword(u.PasswordHash, password)
+	if err != nil {
+		return User{}, ErrBusy
+	}
+	if !okPw {
 		return User{}, ErrInvalidCredentials
 	}
 	if u.Locked {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,13 +34,19 @@ import (
 )
 
 type Config struct {
-	Rulebook       *rulebook.Rulebook
-	Log            *slog.Logger
-	WAL            store.Log
-	Universe       []universe.Company
-	Scenario       sim.Scenario
-	Signer         *auth.Signer
-	AllowSignup    bool
+	Rulebook    *rulebook.Rulebook
+	Log         *slog.Logger
+	WAL         store.Log
+	Universe    []universe.Company
+	Scenario    sim.Scenario
+	Signer      *auth.Signer
+	AllowSignup bool
+	// MaxAccounts caps how many accounts can exist (0 means no cap). It bounds the damage of a sign-up flood.
+	MaxAccounts int
+	// MaxSockets and MaxSocketsPerAccount cap live connections (0 means the built-in defaults).
+	MaxSockets, MaxSocketsPerAccount int
+	// SignupCode, if set, must be entered to register. Organisers can change it while the event runs.
+	SignupCode     string
 	AllowedOrigins []string
 	// Autostart starts the event clock on boot if it has never been started (development only).
 	Autostart bool
@@ -87,6 +94,7 @@ type App struct {
 	statMu     sync.Mutex
 	allTrades  []trading.Trade // every trade of the event, for the organiser
 	signupOpen atomic.Bool
+	signupCode atomic.Value // string
 	recent     map[string][]trading.Trade
 	p1Trades   map[string]int
 	peaks      map[string]money.Paise
@@ -158,6 +166,7 @@ func New(cfg Config) (*App, error) {
 
 	a.Limiter = ratelimit.FromRulebook(a.RB.RateLimits)
 	a.signupOpen.Store(cfg.AllowSignup)
+	a.signupCode.Store(strings.TrimSpace(cfg.SignupCode))
 	a.Ledger = ledger.New(a.log)
 	a.Funds = funds.NewBook(a.RB.Fund.LaunchNav)
 	a.Market = market.New(cfg.Universe, cfg.Now())
@@ -166,6 +175,7 @@ func New(cfg Config) (*App, error) {
 	a.News = news.New(news.Config{Lead: a.RB.News.Lead(), Now: cfg.Now, Stage: a.stage, Log: a.log})
 	a.Hub = wsapi.New(a.log, a.wsAuth, cfg.AllowedOrigins, a.onWSReady)
 	a.Hub.OnPresence(a.onPresence)
+	a.Hub.SetLimits(cfg.MaxSockets, cfg.MaxSocketsPerAccount)
 	a.Exec = trading.New(a.Ledger, a.Market, store.Journal{Log: a.wal, Guard: cfg.Disk, Observe: a.observeCommit}, cfg.Now)
 	a.Exec.SetGuard(a.concentrationGuard)
 
@@ -424,8 +434,11 @@ func (a *App) restore() error {
 			if err := decode(raw, &st); err != nil {
 				return err
 			}
-			if st.Key == settingSignup {
+			switch st.Key {
+			case settingSignup:
 				a.signupOpen.Store(st.Value)
+			case settingCode:
+				a.signupCode.Store(st.Text)
 			}
 		case store.KindReset:
 			a.resetState()

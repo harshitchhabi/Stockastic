@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ type TradeRequest struct {
 	ExpectedPrice float64 `json:"expectedPrice"`
 }
 
+var clientIDRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
+
 const (
 	maxQty      = 10_000_000
 	maxClientID = 64
@@ -45,8 +48,8 @@ const (
 
 func (r TradeRequest) toRequest(account string, stage string) (trading.Request, error) {
 	q := trading.Request{ClientTradeID: strings.TrimSpace(r.ClientTradeID), AccountID: account, Symbol: r.Symbol, Qty: r.Qty, Stage: stage}
-	if q.ClientTradeID == "" || len(q.ClientTradeID) > maxClientID {
-		return q, bad("invalid_client_trade_id", "Every trade needs a client trade id of up to 64 characters.")
+	if !clientIDRE.MatchString(q.ClientTradeID) {
+		return q, bad("invalid_client_trade_id", "Every trade needs a client trade id of up to 64 letters, numbers, dots, dashes or underscores.")
 	}
 	switch strings.ToLower(r.Side) {
 	case "buy":

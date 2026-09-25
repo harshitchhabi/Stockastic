@@ -37,6 +37,9 @@ type Options struct {
 	Log *slog.Logger
 	// RulebookSource describes where the rulebook came from (shown on the organiser Rulebook page).
 	RulebookSource string
+	// TrustedProxies are the addresses whose X-Forwarded-For header is believed (the reverse proxy in front of the
+	// server). Empty means the header is ignored and the connection's own address is used.
+	TrustedProxies []string
 	// Static, if set, is served for every path that is not an API or WebSocket path (the built web app).
 	Static fs.FS
 }
@@ -46,26 +49,32 @@ type Server struct {
 	log    *slog.Logger
 	opt    Options
 	logins *loginGuard
+	lim    *limits
 }
 
 // New builds the router.
 func New(opt Options) (http.Handler, error) {
 	gin.SetMode(gin.ReleaseMode)
-	s := &Server{a: opt.App, log: opt.Log, opt: opt, logins: newLoginGuard()}
+	s := &Server{a: opt.App, log: opt.Log, opt: opt, logins: newLoginGuard(), lim: newLimits()}
 	r := gin.New()
+	if err := r.SetTrustedProxies(opt.TrustedProxies); err != nil {
+		return nil, err
+	}
 	r.HandleMethodNotAllowed = true
-	r.Use(s.recovery(), s.requestLog(), securityHeaders())
+	r.Use(s.recovery(), s.requestLog(), securityHeaders(), s.ipGate())
 
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	r.GET("/readyz", s.ready)
 	r.GET("/ws", func(c *gin.Context) { s.a.Hub.Serve(c.Writer, c.Request) })
 
 	api := r.Group("/api")
-	api.GET("/status", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen()}) })
+	api.GET("/status", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != ""})
+	})
 	api.POST("/auth/signup", s.signup)
 	api.POST("/auth/login", s.login)
 
-	me := api.Group("", s.requireUser)
+	me := api.Group("", s.requireUser, s.accountGate)
 	me.GET("/auth/me", s.me)
 	me.GET("/config", s.config)
 	me.GET("/symbols", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Companies()) })
@@ -78,7 +87,7 @@ func New(opt Options) (http.Handler, error) {
 	me.POST("/disputes", s.raiseDispute)
 	me.GET("/disputes/mine", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.TicketsOf(user(c).ID)) })
 
-	adm := api.Group("/admin", s.requireUser, requireAdmin)
+	adm := api.Group("/admin", s.requireUser, s.accountGate, requireAdmin)
 	adm.GET("/overview", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Overview()) })
 	adm.GET("/systems", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Systems()) })
 	adm.GET("/accounts", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.AdminAccounts()) })
@@ -336,6 +345,9 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrInvalidCredentials, 401, "Wrong email or password."},
 		{app.ErrEmailTaken, 409, "That email is already registered."},
 		{app.ErrSignupClosed, 403, "Sign-up is closed."},
+		{app.ErrBadEventCode, 403, "That event code is not right. Ask an organiser."},
+		{app.ErrAccountsFull, 403, "Registration is full. Ask an organiser."},
+		{app.ErrBusy, 503, "The server is busy checking passwords. Try again in a moment."},
 		{app.ErrDisqualified, 403, "This team has been disqualified."},
 		{app.ErrAccountLocked, 403, "This account is locked. Ask an organiser."},
 		{app.ErrMarketClosed, 403, "The market is closed right now."},
@@ -402,6 +414,7 @@ type credentials struct {
 	DisplayName string `json:"displayName"`
 	Email       string `json:"email"`
 	Password    string `json:"password"`
+	EventCode   string `json:"eventCode"`
 }
 
 type session struct {
@@ -423,7 +436,17 @@ func (s *Server) signup(c *gin.Context) {
 	if !s.decode(c, &in) {
 		return
 	}
-	u, err := s.a.Signup(in.DisplayName, in.Email, in.Password)
+	// The event code is checked before the address allowance is used, so guessing at it cannot use up the
+	// allowance of honest people who share the address.
+	if err := s.a.CheckSignupCode(in.EventCode); err != nil {
+		s.fail(c, err)
+		return
+	}
+	if ok, wait := s.lim.signup.allow(c.ClientIP(), time.Now()); !ok {
+		tooMany(c, wait, "too_many_signups", "Too many sign-ups from this connection. Wait a moment.")
+		return
+	}
+	u, err := s.a.Signup(in.DisplayName, in.Email, in.Password, in.EventCode)
 	if err != nil {
 		s.fail(c, err)
 		return

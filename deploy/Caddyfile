@@ -1,5 +1,16 @@
 # HTTPS in front of the server. Replace the name with your own domain (its DNS must point at this machine).
 # Caddy gets and renews the certificate by itself, and passes WebSockets through.
+{
+	servers {
+		# Slow or unfinished requests are dropped before they reach the app (slow-connection attacks).
+		timeouts {
+			read_header 10s
+			read_body 30s
+			idle 2m
+		}
+	}
+}
+
 event.example.com {
 	encode zstd gzip
 	header {
@@ -9,7 +20,12 @@ event.example.com {
 		Referrer-Policy no-referrer
 		-Server
 	}
+	# Nothing the app accepts is bigger than this, so a huge upload is refused at the door.
+	request_body {
+		max_size 256KB
+	}
 	reverse_proxy 127.0.0.1:8080 {
+		# Caddy sets X-Forwarded-For to the real address of the visitor; the app trusts it only from 127.0.0.1.
 		# Keep long-lived WebSocket connections open for the whole event.
 		transport http {
 			read_timeout 0

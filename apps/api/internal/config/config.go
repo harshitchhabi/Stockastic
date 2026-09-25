@@ -29,7 +29,15 @@ type Config struct {
 	// DiskMinFreeMB stops new trades being accepted when free disk space falls below it.
 	DiskMinFreeMB int
 	Autostart     bool
-	LogLevel      string
+	// MaxAccounts caps how many accounts can be created (a sign-up flood cannot fill the log).
+	MaxAccounts int
+	// SignupCode, if set, is needed to register. Organisers can change it live.
+	SignupCode string
+	// TrustedProxies are the addresses whose X-Forwarded-For header is believed (the reverse proxy).
+	TrustedProxies []string
+	// MaxSockets caps open live connections; MaxSocketsPerAccount caps one account's.
+	MaxSockets, MaxSocketsPerAccount int
+	LogLevel                         string
 	// WebDir, if set, serves the built web app from disk instead of the copy embedded in the binary.
 	WebDir string
 }
@@ -96,6 +104,12 @@ func FromEnv() (Config, error) {
 		ScenarioPath:  get("SCENARIO_PATH", ""),
 		LogLevel:      get("LOG_LEVEL", "info"),
 		WebDir:        get("WEB_DIR", ""),
+		SignupCode:    get("SIGNUP_CODE", ""),
+	}
+	for _, p := range strings.Split(get("TRUSTED_PROXIES", "127.0.0.1,::1"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			c.TrustedProxies = append(c.TrustedProxies, p)
+		}
 	}
 	for _, o := range strings.Split(get("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"), ",") {
 		if o = strings.TrimSpace(o); o != "" {
@@ -118,6 +132,15 @@ func FromEnv() (Config, error) {
 	if err != nil || c.DiskMinFreeMB < 0 || c.DiskMinFreeMB > 100000 {
 		return c, errors.New("config: DISK_MIN_FREE_MB must be a whole number of megabytes from 0 to 100000")
 	}
+	if c.MaxAccounts, err = intIn("MAX_ACCOUNTS", 2000, 1, 100000); err != nil {
+		return c, err
+	}
+	if c.MaxSockets, err = intIn("MAX_SOCKETS", 4000, 10, 100000); err != nil {
+		return c, err
+	}
+	if c.MaxSocketsPerAccount, err = intIn("MAX_SOCKETS_PER_ACCOUNT", 4, 1, 50); err != nil {
+		return c, err
+	}
 	if len(c.JWTSecret) < 32 {
 		return c, errors.New("config: JWT_SECRET is required and must be at least 32 characters")
 	}
@@ -133,4 +156,12 @@ func FromEnv() (Config, error) {
 		return c, fmt.Errorf("config: LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
 	}
 	return c, nil
+}
+
+func intIn(key string, def, lo, hi int) (int, error) {
+	n, err := strconv.Atoi(get(key, strconv.Itoa(def)))
+	if err != nil || n < lo || n > hi {
+		return 0, fmt.Errorf("config: %s must be a whole number from %d to %d", key, lo, hi)
+	}
+	return n, nil
 }

@@ -33,6 +33,11 @@ network traffic per browser is close to nothing. The two things that can still m
 2. **A long restart with a huge log.** Recovery reads the whole log. It is fast but grows with the event. Trades, fund
    events, the once-a-minute fund series and the audit log are kept in full, so allow up to 30 seconds after a full event.
 
+## Secure the server first
+
+Run `deploy/harden.sh` on a fresh Ubuntu server (key-only SSH, firewall with only the web ports open, automatic bans,
+automatic updates). `docs/security.md` says what is protected and what is not.
+
 ## Recommended setup
 
 **One server, in one region, near the venue.** State lives in memory and in one log file, so there must be

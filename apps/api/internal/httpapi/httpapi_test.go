@@ -33,6 +33,8 @@ type env struct {
 	srv *httptest.Server
 	log store.Log
 	sc  sim.Scenario
+	h   http.Handler
+	cfg []func(*app.Config)
 }
 
 // rb returns the real rulebook, optionally with a different trades-per-minute limit.
@@ -58,16 +60,20 @@ func newEnv(t *testing.T, wal store.Log, r *rulebook.Rulebook) *env {
 	return newEnvWith(t, wal, r, testScenario())
 }
 
-func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenario) *env {
+func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenario, cfg ...func(*app.Config)) *env {
 	t.Helper()
 	signer, err := auth.NewSigner([]byte(strings.Repeat("k", 40)), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := app.New(app.Config{
+	ac := app.Config{
 		Rulebook: r, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), WAL: wal, Universe: universe.Default(),
 		Scenario: sc, Signer: signer, AllowSignup: true, AllowedOrigins: []string{"http://localhost:3000"},
-	})
+	}
+	for _, f := range cfg {
+		f(&ac)
+	}
+	a, err := app.New(ac)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +87,7 @@ func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenar
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, a: a, srv: httptest.NewServer(h), log: wal, sc: sc}
+	e := &env{t: t, a: a, srv: httptest.NewServer(h), log: wal, sc: sc, h: h, cfg: cfg}
 	t.Cleanup(func() { e.srv.Close(); _ = a.Close(context.Background()) })
 	return e
 }
@@ -90,7 +96,7 @@ func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenar
 func (e *env) restart(r *rulebook.Rulebook) *env {
 	e.srv.Close()
 	_ = e.a.Close(context.Background())
-	return newEnvWith(e.t, e.log, r, e.sc)
+	return newEnvWith(e.t, e.log, r, e.sc, e.cfg...)
 }
 
 type resp struct {

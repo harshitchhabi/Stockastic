@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/subtle"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -79,9 +80,46 @@ func (a *App) Message(actor User, id, text string) error {
 type Setting struct {
 	Key   string `json:"key"`
 	Value bool   `json:"value"`
+	Text  string `json:"text,omitempty"`
 }
 
-const settingSignup = "signup"
+const (
+	settingSignup = "signup"
+	settingCode   = "signupCode"
+)
+
+// SignupCode is the event code people must enter to register ("" means none is needed).
+func (a *App) SignupCode() string {
+	s, _ := a.signupCode.Load().(string)
+	return s
+}
+
+// CheckSignupCode reports whether the code entered is the event code (or none is needed).
+func (a *App) CheckSignupCode(entered string) error {
+	if code := a.SignupCode(); code != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(entered)), []byte(code)) != 1 {
+		return ErrBadEventCode
+	}
+	return nil
+}
+
+// SetSignupCode sets or clears the event code. Teams that already have accounts are not affected.
+func (a *App) SetSignupCode(actor User, code string) error {
+	code = strings.TrimSpace(code)
+	if len(code) > 40 {
+		return bad("invalid_code", "An event code is up to 40 characters.")
+	}
+	label := "Changed the event code for registration"
+	if code == "" {
+		label = "Removed the event code for registration"
+	}
+	return a.Do(actor, label, "registration", "", func() error {
+		if err := a.wal.Append(store.KindSetting, Setting{Key: settingCode, Text: code}); err != nil {
+			return err
+		}
+		a.signupCode.Store(code)
+		return nil
+	})
+}
 
 // SignupOpen reports whether new teams may register themselves.
 func (a *App) SignupOpen() bool { return a.signupOpen.Load() }
@@ -156,6 +194,15 @@ func (a *App) adminTrade(t trading.Trade) AdminTrade {
 
 // ---- exports ----
 
+// csvSafe stops a spreadsheet from running a name as a formula: a cell starting with = + - @ (or a tab or
+// carriage return) gets a leading apostrophe. Team names are typed by participants, so this matters.
+func csvSafe(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
+}
+
 // WriteTradesCSV writes every trade of the event.
 func (a *App) WriteTradesCSV(w io.Writer) error {
 	a.statMu.Lock()
@@ -165,7 +212,7 @@ func (a *App) WriteTradesCSV(w io.Writer) error {
 	_ = cw.Write([]string{"time", "team", "account_id", "company", "side", "shares", "price", "value", "stage", "trade_id"})
 	for _, t := range src {
 		r := a.adminTrade(t)
-		_ = cw.Write([]string{t.At.UTC().Format("2006-01-02T15:04:05Z"), r.Team, r.AccountID, r.Symbol, r.Side, strconv.FormatInt(r.Qty, 10),
+		_ = cw.Write([]string{t.At.UTC().Format("2006-01-02T15:04:05Z"), csvSafe(r.Team), r.AccountID, r.Symbol, r.Side, strconv.FormatInt(r.Qty, 10),
 			strconv.FormatFloat(r.Price, 'f', 2, 64), strconv.FormatFloat(r.Value, 'f', 2, 64), r.Stage, r.ID})
 	}
 	cw.Flush()
@@ -179,7 +226,7 @@ func (a *App) WriteAccountsCSV(w io.Writer) error {
 	cw := csv.NewWriter(w)
 	_ = cw.Write([]string{"rank", "team", "email", "role", "status", "warnings", "cash", "portfolio_value", "positions", "online"})
 	for i, r := range rows {
-		_ = cw.Write([]string{strconv.Itoa(i + 1), r.DisplayName, r.Email, r.Role, r.Status, strconv.Itoa(r.Warnings),
+		_ = cw.Write([]string{strconv.Itoa(i + 1), csvSafe(r.DisplayName), csvSafe(r.Email), r.Role, r.Status, strconv.Itoa(r.Warnings),
 			strconv.FormatFloat(r.CashBalance, 'f', 2, 64), strconv.FormatFloat(r.PortfolioValue, 'f', 2, 64), strconv.Itoa(r.Positions), fmt.Sprint(r.Online)})
 	}
 	cw.Flush()
