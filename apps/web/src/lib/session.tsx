@@ -29,6 +29,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Coming back from "Continue with Google": the server put our login in the part of the address after #.
+    // Keep it, and take it out of the address bar straight away.
+    const h = window.location.hash;
+    if (h.startsWith("#/signin=")) {
+      setToken(decodeURIComponent(h.slice("#/signin=".length)));
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
     if (getToken()) {
       loadMe().finally(() => setLoading(false));
     } else {

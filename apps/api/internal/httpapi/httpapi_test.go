@@ -28,6 +28,9 @@ import (
 
 const adminEmail, adminPass = "admin@test.local", "correct-horse-battery"
 
+// extraHTTP, when set, adjusts the HTTP options of the next test server (used to switch on Google sign-in).
+var extraHTTP func(*httpapi.Options)
+
 type env struct {
 	t   *testing.T
 	a   *app.App
@@ -84,8 +87,12 @@ func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenar
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := httpapi.New(httpapi.Options{App: a, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), RulebookSource: "test",
-		Static: fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>t</title>")}, "assets/app.js": {Data: []byte("export {}")}}})
+	ho := httpapi.Options{App: a, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), RulebookSource: "test",
+		Static: fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>t</title>")}, "assets/app.js": {Data: []byte("export {}")}}}
+	if extraHTTP != nil {
+		extraHTTP(&ho)
+	}
+	h, err := httpapi.New(ho)
 	if err != nil {
 		t.Fatal(err)
 	}

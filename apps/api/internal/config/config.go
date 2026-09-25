@@ -37,7 +37,10 @@ type Config struct {
 	TrustedProxies []string
 	// MaxSockets caps open live connections; MaxSocketsPerAccount caps one account's.
 	MaxSockets, MaxSocketsPerAccount int
-	LogLevel                         string
+	// Google sign-in: leave the client id empty to keep it off.
+	GoogleClientID, GoogleClientSecret, GoogleRedirectURL string
+	GoogleAllowedDomains                                  []string
+	LogLevel                                              string
 	// WebDir, if set, serves the built web app from disk instead of the copy embedded in the binary.
 	WebDir string
 }
@@ -105,6 +108,13 @@ func FromEnv() (Config, error) {
 		LogLevel:      get("LOG_LEVEL", "info"),
 		WebDir:        get("WEB_DIR", ""),
 		SignupCode:    get("SIGNUP_CODE", ""),
+
+		GoogleClientID: get("GOOGLE_CLIENT_ID", ""), GoogleClientSecret: get("GOOGLE_CLIENT_SECRET", ""), GoogleRedirectURL: get("GOOGLE_REDIRECT_URL", ""),
+	}
+	for _, d := range strings.Split(get("GOOGLE_ALLOWED_DOMAINS", ""), ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			c.GoogleAllowedDomains = append(c.GoogleAllowedDomains, d)
+		}
 	}
 	for _, p := range strings.Split(get("TRUSTED_PROXIES", "127.0.0.1,::1"), ",") {
 		if p = strings.TrimSpace(p); p != "" {
@@ -140,6 +150,9 @@ func FromEnv() (Config, error) {
 	}
 	if c.MaxSocketsPerAccount, err = intIn("MAX_SOCKETS_PER_ACCOUNT", 4, 1, 50); err != nil {
 		return c, err
+	}
+	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") || (c.GoogleClientID != "" && !strings.HasPrefix(c.GoogleRedirectURL, "http")) {
+		return c, errors.New("config: Google sign-in needs GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URL (an http or https address) together")
 	}
 	if len(c.JWTSecret) < 32 {
 		return c, errors.New("config: JWT_SECRET is required and must be at least 32 characters")

@@ -28,7 +28,7 @@ Node exists only on a developer machine to build the frontend.
 | `apps/api` | Go backend (`stockastic/api`): `app` (wiring), `httpapi` (Gin), `wsapi`, `auth`, `store` (durable log), `config`, `market` (current prices), `sim` (price simulation), `trading` (buy and sell at the current price), `ledger`, `funds` (Phase 2 funds, units, NAV, checkpoints), `scoring` (ranking, pairing, caps, prizes), `universe`, `dto`, `rulebook`, `eventclock`, `news`, `ratelimit`, `disputes`, `webui` |
 | `apps/api/internal/rulebook/rulebook.json` | **Every rulebook value**, embedded in the binary. Values the rulebook marks Recommended / TBF, and gaps we filled with an assumption, are tagged in its `provenance` map |
 | `apps/web` | Vite + React + TypeScript single-page app. Builds straight into `apps/api/internal/webui/dist` |
-| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `data-files.md` (how the final data becomes the game), `security.md` (protection against abuse and how it was tested), `stage2-dashboards.md` (Phase 2 screens) |
+| `docs/` | `deployment.md` (hosting, sizing, measured load results), `admin-api.md` (organiser routes), `data-files.md` (how the final data becomes the game), `security.md` (protection against abuse and how it was tested), `owner-checklist.md` (what only you can do), `stage2-dashboards.md` (Phase 2 screens) |
 | `deploy/` | Ready-to-use server files: systemd unit, Caddy config, backup script, kernel settings, env template |
 | `tools/import_final.py` | Turns the organisers' final workbook into the files the server loads (see `docs/data-files.md`) |
 | `apps/api/scenarios/mock` | A small sample scenario that is safe to commit; the tests use it |

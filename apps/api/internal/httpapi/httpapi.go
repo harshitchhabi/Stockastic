@@ -20,6 +20,7 @@ import (
 	"stockastic/api/internal/eventclock"
 	"stockastic/api/internal/funds"
 	"stockastic/api/internal/ledger"
+	"stockastic/api/internal/oauth"
 	"stockastic/api/internal/rulebook"
 	"stockastic/api/internal/store"
 	"stockastic/api/internal/trading"
@@ -40,6 +41,11 @@ type Options struct {
 	// TrustedProxies are the addresses whose X-Forwarded-For header is believed (the reverse proxy in front of the
 	// server). Empty means the header is ignored and the connection's own address is used.
 	TrustedProxies []string
+	// Google, if set, turns on "Continue with Google". StateKey signs its round trip (any secret of 32+ bytes).
+	Google *oauth.Client
+	// GoogleRedirect is the registered return address; the cookie is marked Secure when it is https.
+	GoogleRedirect string
+	StateKey       []byte
 	// Static, if set, is served for every path that is not an API or WebSocket path (the built web app).
 	Static fs.FS
 }
@@ -50,12 +56,20 @@ type Server struct {
 	opt    Options
 	logins *loginGuard
 	lim    *limits
+	google *googleFlow
 }
 
 // New builds the router.
 func New(opt Options) (http.Handler, error) {
 	gin.SetMode(gin.ReleaseMode)
 	s := &Server{a: opt.App, log: opt.Log, opt: opt, logins: newLoginGuard(), lim: newLimits()}
+	if opt.Google != nil {
+		key := opt.StateKey
+		if len(key) < 32 {
+			return nil, errors.New("httpapi: Google sign-in needs a StateKey of at least 32 bytes")
+		}
+		s.google = newGoogleFlow(key, opt.GoogleRedirect)
+	}
 	r := gin.New()
 	if err := r.SetTrustedProxies(opt.TrustedProxies); err != nil {
 		return nil, err
@@ -69,8 +83,9 @@ func New(opt Options) (http.Handler, error) {
 
 	api := r.Group("/api")
 	api.GET("/status", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != "", "signupListed": s.a.AllowlistCount() > 0})
+		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != "", "signupListed": s.a.AllowlistCount() > 0, "googleEnabled": s.opt.Google != nil})
 	})
+	s.googleRoutes(api)
 	api.POST("/auth/signup", s.signup)
 	api.POST("/auth/login", s.login)
 

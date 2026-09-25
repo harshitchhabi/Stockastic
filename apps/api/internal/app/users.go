@@ -1,7 +1,9 @@
 package app
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"net/mail"
 	"strings"
@@ -225,6 +227,31 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 		return User{}, err
 	}
 	return u, nil
+}
+
+// ExternalSignIn signs in the account that has this (verified) email, or registers a new one with the normal
+// registration rules (open registration, the list of approved emails, the event code, the account cap, one
+// mailbox one person). The account has a random password nobody knows: they sign in with Google.
+func (a *App) ExternalSignIn(email, name, eventCode string) (User, error) {
+	if u, ok := a.users.byEmailAddr(email); ok {
+		if u.Locked {
+			return User{}, ErrAccountLocked
+		}
+		return u, nil
+	}
+	display, ok := cleanName(name)
+	if r := []rune(display); !ok || len(r) < 2 {
+		local, _, _ := strings.Cut(email, "@")
+		display, _ = cleanName(local)
+	}
+	if r := []rune(display); len(r) > 40 {
+		display = string(r[:40])
+	}
+	pw := make([]byte, 24)
+	if _, err := rand.Read(pw); err != nil {
+		return User{}, err
+	}
+	return a.Signup(display, email, hex.EncodeToString(pw), eventCode)
 }
 
 // IsAdminEmail reports whether an address belongs to an organiser account.

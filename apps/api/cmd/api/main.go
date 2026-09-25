@@ -19,6 +19,7 @@ import (
 	"stockastic/api/internal/auth"
 	"stockastic/api/internal/config"
 	"stockastic/api/internal/httpapi"
+	"stockastic/api/internal/oauth"
 	"stockastic/api/internal/rulebook"
 	"stockastic/api/internal/sim"
 	"stockastic/api/internal/store"
@@ -128,7 +129,9 @@ func run() error {
 	} else if e, err := webui.Embedded(); err == nil {
 		static = e
 	}
-	handler, err := httpapi.New(httpapi.Options{App: a, Log: log, RulebookSource: source, Static: static, TrustedProxies: cfg.TrustedProxies})
+	handler, err := httpapi.New(httpapi.Options{App: a, Log: log, RulebookSource: source, Static: static, TrustedProxies: cfg.TrustedProxies,
+		Google:         oauth.New(oauth.Config{ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret, RedirectURL: cfg.GoogleRedirectURL, AllowedDomains: cfg.GoogleAllowedDomains}),
+		GoogleRedirect: cfg.GoogleRedirectURL, StateKey: []byte("oauth-state:" + cfg.JWTSecret)})
 	if err != nil {
 		_ = a.Close(context.Background())
 		return err
