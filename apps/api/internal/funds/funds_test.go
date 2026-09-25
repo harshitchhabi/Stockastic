@@ -87,3 +87,19 @@ func TestRiskTrackingFindsTheLargestFallFromAPeak(t *testing.T) {
 		t.Fatalf("fund drawdown = %v", got)
 	}
 }
+
+func TestDiversificationIsAveragedOverTheEvent(t *testing.T) {
+	b := formed(t)
+	// Ten samples all in one company, then one sample spread over eight.
+	for i := 0; i < 10; i++ {
+		b.Apply(Event{Op: OpSeries, Values: map[string]int64{"x": 100}, Div: map[string]float64{"x": 1}})
+	}
+	b.Apply(Event{Op: OpSeries, Values: map[string]int64{"x": 100}, Div: map[string]float64{"x": 8}})
+	got, ok := b.AvgDiversification("x")
+	if !ok || got < 1.6 || got > 1.7 {
+		t.Fatalf("average spread = %v (ok %v), want about 1.64: a last-minute change must barely move it", got, ok)
+	}
+	if _, ok := b.AvgDiversification("nobody"); ok {
+		t.Fatal("an investor with no samples has an average")
+	}
+}

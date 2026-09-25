@@ -67,12 +67,16 @@ type App struct {
 	Clock   *eventclock.Clock
 	News    *news.Dispatcher
 	Limiter *ratelimit.Limiter
-	Dispute disputes.Config
-	Market  *market.Prices
-	Sim     *sim.Engine
-	Funds   *funds.Book
-	Hub     *wsapi.Hub
-	Signer  *auth.Signer
+	// fundOps limits how often one account can put money into or take it out of funds (30 a minute).
+	fundOps *ratelimit.Limiter
+	// profileAt is when each fund last changed its profile.
+	profileAt map[string]time.Time
+	Dispute   disputes.Config
+	Market    *market.Prices
+	Sim       *sim.Engine
+	Funds     *funds.Book
+	Hub       *wsapi.Hub
+	Signer    *auth.Signer
 
 	users     *userStore
 	companies map[string]universe.Company
@@ -165,6 +169,8 @@ func New(cfg Config) (*App, error) {
 	}
 
 	a.Limiter = ratelimit.FromRulebook(a.RB.RateLimits)
+	a.fundOps = ratelimit.New(30, time.Minute)
+	a.profileAt = map[string]time.Time{}
 	a.signupOpen.Store(cfg.AllowSignup)
 	a.signupCode.Store(strings.TrimSpace(cfg.SignupCode))
 	a.Ledger = ledger.New(a.log)

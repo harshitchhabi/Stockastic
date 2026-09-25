@@ -220,9 +220,9 @@ func TestPrizeScoringSec16(t *testing.T) {
 	})
 	t.Run("Prize 4: a steady diversified portfolio beats the raw-returns leader", func(t *testing.T) {
 		got := Prize4Scores([]Prize4Input{
-			{"gambler", 40, 0.5, []float64{1000}, true},
-			{"guardian", 12, 0.04, []float64{100, 100, 100, 100, 100}, true},
-			{"dq", 12, 0.01, []float64{100, 100}, false},
+			{"gambler", 40, 0.5, []float64{1000}, 0, true},
+			{"guardian", 12, 0.04, []float64{100, 100, 100, 100, 100}, 0, true},
+			{"dq", 12, 0.01, []float64{100, 100}, 0, false},
 		}, r.Prizes.Prize4)
 		if len(got) != 2 || got[0].ID != "guardian" {
 			t.Errorf("got %v", got)
@@ -251,4 +251,16 @@ func TestPrizeScoringSec16(t *testing.T) {
 			t.Errorf("equal scores must fall back to id order, got %v", got)
 		}
 	})
+}
+
+func TestLastMinuteDiversifyingCannotWinPrize4(t *testing.T) {
+	w := rb(t).Prizes.Prize4
+	steady := Prize4Input{AccountID: "steady", ReturnPct: 5, MaxDrawdown: 0.05, AvgEffectiveHoldings: 6, Eligible: true}
+	// Holds one company all event and spreads over ten in the final minute: the end-of-event view looks perfect,
+	// the average over the event does not.
+	sneaky := Prize4Input{AccountID: "sneaky", ReturnPct: 5, MaxDrawdown: 0.05, AvgEffectiveHoldings: 1.1, HoldingValues: []float64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, Eligible: true}
+	got := Prize4Scores([]Prize4Input{steady, sneaky}, w)
+	if got[0].ID != "steady" {
+		t.Fatalf("ranking = %+v, want the steady diversifier first", got)
+	}
 }

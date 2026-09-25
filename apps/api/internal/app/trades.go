@@ -23,7 +23,11 @@ var (
 )
 
 // RateLimited is returned when an account has used its trades for the current window.
-type RateLimited struct{ RetryAfter time.Duration }
+type RateLimited struct {
+	RetryAfter time.Duration
+	// Funds is set when the limit was on moving money in and out of funds rather than on trades.
+	Funds bool
+}
 
 func (e *RateLimited) Error() string { return "rate_limited" }
 

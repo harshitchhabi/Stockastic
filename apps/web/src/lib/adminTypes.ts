@@ -71,6 +71,10 @@ export interface AdminAccount {
   sockets: number;
   /** When the team last connected or disconnected, in milliseconds; 0 if not since the server started. */
   lastSeen: number;
+  /** Share of an investor's portfolio held in funds, in percent (0 until the funds exist). */
+  fundShare: number;
+  /** True once the funds exist and the investor holds less than the required minimum share in them. */
+  belowMandatory: boolean;
 }
 
 export interface NewsRelease {

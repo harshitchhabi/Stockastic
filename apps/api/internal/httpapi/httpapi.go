@@ -232,6 +232,9 @@ func securityHeaders() gin.HandlerFunc {
 		h.Set("X-Frame-Options", "DENY")
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
+		} else {
+			// (The web app handler sets the Content-Security-Policy: only our own scripts may run.)
+			h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
 		}
 		c.Next()
 	}
@@ -317,7 +320,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		secs := int(rl.RetryAfter.Seconds()) + 1
 		c.Header("Retry-After", strconv.Itoa(secs))
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate_limited", "retryAfterSeconds": secs,
-			"message": "You have used your trades for now. Try again in " + strconv.Itoa(secs) + " seconds."})
+			"message": limitMessage(rl.Funds, secs)})
 		return
 	}
 	var tc *trading.TooConcentrated
@@ -632,4 +635,11 @@ func (s *Server) act(f func(u app.User, b body, c *gin.Context) error) gin.Handl
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
+}
+
+func limitMessage(funds bool, secs int) string {
+	if funds {
+		return "You are moving money in and out of funds too often. Try again in " + strconv.Itoa(secs) + " seconds."
+	}
+	return "You have used your trades for now. Try again in " + strconv.Itoa(secs) + " seconds."
 }

@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"math"
 	"math/rand"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -372,6 +373,9 @@ type ProfileRequest struct {
 	Strategy   string `json:"strategy"`
 }
 
+// realNameRE catches the names of well-known real companies and institutions (Section 8 forbids them as fund names).
+var realNameRE = regexp.MustCompile(`\b(reliance|hdfc|icici|sbi|axis bank|kotak|tata|infosys|wipro|adani|mahindra|bajaj|birla|airtel|jio|maruti|itc|hul|lic|paytm|zomato|flipkart|amazon|google|microsoft|apple|goldman|morgan stanley|jpmorgan|blackrock|vanguard|fidelity|nippon|franklin|sebi|rbi|nse|bse)\b`)
+
 var riskProfiles = map[string]bool{"Conservative": true, "Balanced": true, "Aggressive": true}
 
 func (a *App) SetFundProfile(u User, r ProfileRequest) error {
@@ -388,8 +392,15 @@ func (a *App) SetFundProfile(u User, r ProfileRequest) error {
 	case !riskProfiles[p.Risk]:
 		return bad("invalid_risk", "Choose Conservative, Balanced or Aggressive.")
 	}
+	if lower := strings.ToLower(p.Name); realNameRE.MatchString(lower) {
+		return bad("real_name", "A fund must have a made-up name, never the name of a real company or institution.")
+	}
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
+	if last, ok := a.profileAt[f.ID]; ok && a.now().Sub(last) < 5*time.Second {
+		return bad("too_fast", "Wait a few seconds before changing the profile again.")
+	}
+	a.profileAt[f.ID] = a.now()
 	ev := funds.Event{Op: funds.OpProfile, At: a.now().UnixMilli(), FundID: f.ID, Profile: &p}
 	if err := a.fundAppend(ev); err != nil {
 		return err
@@ -461,7 +472,20 @@ func (a *App) capRooms(window int, navs map[string]float64) map[string]money.Pai
 }
 
 // Allocate puts cash into a fund during an open window. Units = amount / NAV at that moment.
+// Allocate puts cash into a fund during an open window. An account may do this (and Redeem) 30 times a minute;
+// an attempt that is refused does not count.
 func (a *App) Allocate(u User, fundID string, req AllocationRequest) (AllocationResult, error) {
+	if ok, retry := a.fundOps.Allow(u.ID, a.now()); !ok {
+		return AllocationResult{}, &RateLimited{RetryAfter: retry, Funds: true}
+	}
+	res, err := a.allocate(u, fundID, req)
+	if err != nil {
+		a.fundOps.Refund(u.ID)
+	}
+	return res, err
+}
+
+func (a *App) allocate(u User, fundID string, req AllocationRequest) (AllocationResult, error) {
 	if err := a.investorCheck(u); err != nil {
 		return AllocationResult{}, err
 	}
@@ -530,6 +554,17 @@ func (a *App) Allocate(u User, fundID string, req AllocationRequest) (Allocation
 // Redeem takes money out of a fund during an open window. If the fund is short of cash it sells a slice of
 // every holding at the current prices to pay, so no redemption is ever stuck.
 func (a *App) Redeem(ctx context.Context, u User, fundID string, req AllocationRequest) (AllocationResult, error) {
+	if ok, retry := a.fundOps.Allow(u.ID, a.now()); !ok {
+		return AllocationResult{}, &RateLimited{RetryAfter: retry, Funds: true}
+	}
+	res, err := a.redeem(ctx, u, fundID, req)
+	if err != nil {
+		a.fundOps.Refund(u.ID)
+	}
+	return res, err
+}
+
+func (a *App) redeem(ctx context.Context, u User, fundID string, req AllocationRequest) (AllocationResult, error) {
 	if err := a.investorCheck(u); err != nil {
 		return AllocationResult{}, err
 	}
@@ -561,9 +596,10 @@ func (a *App) Redeem(ctx context.Context, u User, fundID string, req AllocationR
 	if units <= 0 {
 		return AllocationResult{}, bad("invalid_amount", "That amount is too small.")
 	}
-	amount := money.FromRupees(units * nav)
-	if amount <= 0 {
-		return AllocationResult{}, bad("invalid_amount", "That amount is too small.")
+	// Pay by rounding DOWN to the paisa, so repeated small withdrawals can never turn rounding into money.
+	amount := money.Paise(math.Floor(units*nav*100 + 1e-9))
+	if amount <= 0 || (!req.All && amount < 100) {
+		return AllocationResult{}, bad("invalid_amount", "The smallest amount to take out is ₹1, or take everything out.")
 	}
 	// The 5% minimum in funds stays satisfied after leaving (Section 9).
 	wallet := a.totalValue(u.ID, navs)
@@ -671,10 +707,11 @@ func (a *App) sampleSeries() {
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
 	navs := a.navs()
-	ev := funds.Event{Op: funds.OpSeries, At: a.now().UnixMilli(), NAVs: navs, AUMs: a.fundAUMs(), Values: map[string]int64{}}
+	ev := funds.Event{Op: funds.OpSeries, At: a.now().UnixMilli(), NAVs: navs, AUMs: a.fundAUMs(), Values: map[string]int64{}, Div: map[string]float64{}}
 	for _, u := range a.users.all() {
 		if !u.IsAdmin && u.Role == RoleInvestor && u.Status != StatusDisqualified {
 			ev.Values[u.ID] = int64(a.totalValue(u.ID, navs))
+			ev.Div[u.ID] = a.effectiveHoldings(u.ID, navs)
 		}
 	}
 	if err := a.fundAppend(ev); err != nil {
@@ -841,7 +878,10 @@ func (a *App) MyFund(u User) (MyFund, error) {
 
 // ---- strategy log (Prize 3) ----
 
-const maxLogChars = 600
+const (
+	maxLogChars          = 600
+	maxLogsPerCheckpoint = 3
+)
 
 // logCheckpoint is which strategy-log checkpoint it is now: 1 until the first window closes, then 2 and 3.
 func (a *App) logCheckpoint() int {
@@ -870,6 +910,16 @@ func (a *App) SubmitLog(u User, text string) error {
 	}
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
+	// A few entries a checkpoint is what the prize asks for; more only fills the log.
+	mine, thisCheckpoint := a.Funds.Logs(u.ID), 0
+	for _, l := range mine {
+		if l.Checkpoint == a.logCheckpoint() {
+			thisCheckpoint++
+		}
+	}
+	if thisCheckpoint >= maxLogsPerCheckpoint || len(mine) >= maxLogsPerCheckpoint*4 {
+		return bad("too_many_logs", "You have already written your entries for this checkpoint.")
+	}
 	l := funds.StrategyLog{Account: u.ID, Checkpoint: a.logCheckpoint(), Text: text, At: a.now().UnixMilli()}
 	ev := funds.Event{Op: funds.OpLog, At: l.At, Log: &l}
 	if err := a.fundAppend(ev); err != nil {
@@ -1026,10 +1076,20 @@ func (a *App) Prizes() Prizes {
 				hv = append(hv, h.Units*navs[id]*100)
 			}
 		}
-		p4 = append(p4, scoring.Prize4Input{AccountID: u.ID, ReturnPct: ret, MaxDrawdown: dd, HoldingValues: hv, Eligible: eligible && has})
+		avgDiv, _ := a.Funds.AvgDiversification(u.ID)
+		p4 = append(p4, scoring.Prize4Input{AccountID: u.ID, ReturnPct: ret, MaxDrawdown: dd, HoldingValues: hv, AvgEffectiveHoldings: avgDiv, Eligible: eligible && has})
 	}
 	for _, s := range scoring.Prize2Ranking(p2) {
-		res.Prize2 = append(res.Prize2, PrizeRow{ID: s.ID, Name: name(s.ID), Score: dto.Rupees(money.Paise(s.Score)), Rank: s.Rank})
+		note := ""
+		if u, ok := a.users.get(s.ID); ok && u.Role == RoleInvestor {
+			if v := unitsValue(a.Funds.Holdings(s.ID), navs); v > 0 || a.Funds.Formed() {
+				total := a.totalValue(s.ID, navs)
+				if total > 0 && float64(v)*100+1e-6 < float64(total)*a.RB.Fund.MandatoryAllocationPercent {
+					note = "below the required share in funds"
+				}
+			}
+		}
+		res.Prize2 = append(res.Prize2, PrizeRow{ID: s.ID, Name: name(s.ID), Score: dto.Rupees(money.Paise(s.Score)), Rank: s.Rank, Note: note})
 	}
 	for _, s := range scoring.Prize4Scores(p4, a.RB.Prizes.Prize4) {
 		res.Prize4 = append(res.Prize4, PrizeRow{ID: s.ID, Name: name(s.ID), Score: s.Score, Rank: s.Rank})
@@ -1147,4 +1207,31 @@ func (a *App) ScoreLog(actor User, account string, scores map[string]float64) er
 		}
 		return a.Funds.Apply(ev)
 	})
+}
+
+// effectiveHoldings is how many holdings an account's invested money is effectively spread over right now: shares
+// by company and fund units by fund, as 1 divided by the concentration index. Cash does not count. 0 means nothing
+// is invested.
+func (a *App) effectiveHoldings(id string, navs map[string]float64) float64 {
+	var vals []float64
+	if snap, err := a.Ledger.Snapshot(id); err == nil {
+		for _, p := range snap.Positions {
+			if px, ok := a.Market.Price(p.Symbol); ok {
+				vals = append(vals, float64(px)*float64(p.Qty))
+			}
+		}
+	}
+	for fid, h := range a.Funds.Holdings(id) {
+		if h.Units > 0 {
+			vals = append(vals, h.Units*navs[fid]*100)
+		}
+	}
+	var total float64
+	for _, v := range vals {
+		total += v
+	}
+	if total <= 0 {
+		return 0
+	}
+	return 1 / scoring.Herfindahl(vals)
 }

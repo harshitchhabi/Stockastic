@@ -192,6 +192,10 @@ type AdminAccount struct {
 	Online         bool    `json:"online"`
 	Sockets        int     `json:"sockets"`
 	LastSeen       int64   `json:"lastSeen"`
+	// FundShare is the share of an investor's portfolio held in funds, in percent. BelowMandatory is set once the
+	// funds exist and the share is under the required minimum (Section 9).
+	FundShare      float64 `json:"fundShare"`
+	BelowMandatory bool    `json:"belowMandatory"`
 }
 
 func (a *App) AdminAccounts() []AdminAccount {
@@ -210,7 +214,13 @@ func (a *App) AdminAccounts() []AdminAccount {
 			row.CashBalance = dto.Rupees(snap.Cash)
 			row.Positions = len(snap.Positions)
 		}
-		row.PortfolioValue = dto.Rupees(a.totalValue(u.ID, navs))
+		total := a.totalValue(u.ID, navs)
+		row.PortfolioValue = dto.Rupees(total)
+		if u.Role == RoleInvestor && u.Status != StatusDisqualified && a.Funds.Formed() && total > 0 {
+			inFunds := unitsValue(a.Funds.Holdings(u.ID), navs)
+			row.FundShare = float64(inFunds) / float64(total) * 100
+			row.BelowMandatory = row.FundShare+1e-9 < a.RB.Fund.MandatoryAllocationPercent
+		}
 		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PortfolioValue > out[j].PortfolioValue })
@@ -335,6 +345,20 @@ func (a *App) RaiseDispute(u User, category, summary string, incidentAt time.Tim
 	cat := disputes.Category(category)
 	if !cat.Valid() {
 		return TicketRec{}, bad("invalid_category", "Unknown dispute category.")
+	}
+	a.ticketMu.Lock()
+	open, all := 0, 0
+	for _, t := range a.tickets {
+		if t.Ticket.Account == u.ID {
+			all++
+			if t.Status == "open" {
+				open++
+			}
+		}
+	}
+	a.ticketMu.Unlock()
+	if open >= 5 || all >= 40 {
+		return TicketRec{}, bad("too_many_disputes", "You already have several disputes waiting. Wait for them to be decided before raising another.")
 	}
 	now := a.now()
 	if incidentAt.IsZero() || incidentAt.After(now) {

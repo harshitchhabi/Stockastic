@@ -266,7 +266,10 @@ function PrizeTable({ title, rows, fmt, unit }: { title: string; rows: PrizeRow[
           {rows.slice(0, 10).map((r) => (
             <tr key={r.id}>
               <td className="mono">{r.rank}</td>
-              <td>{r.name}</td>
+              <td>
+                {r.name}
+                {r.note && <div className="down" style={{ fontSize: 11 }}>{r.note}</div>}
+              </td>
               <td className="mono">{fmt(r.score)}</td>
             </tr>
           ))}

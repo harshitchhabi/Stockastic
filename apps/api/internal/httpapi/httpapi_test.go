@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -83,7 +84,8 @@ func newEnvWith(t *testing.T, wal store.Log, r *rulebook.Rulebook, sc sim.Scenar
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := httpapi.New(httpapi.Options{App: a, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), RulebookSource: "test"})
+	h, err := httpapi.New(httpapi.Options{App: a, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), RulebookSource: "test",
+		Static: fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>t</title>")}, "assets/app.js": {Data: []byte("export {}")}}})
 	if err != nil {
 		t.Fatal(err)
 	}

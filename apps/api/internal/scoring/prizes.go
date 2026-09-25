@@ -143,7 +143,10 @@ type Prize4Input struct {
 	MaxDrawdown float64
 	// HoldingValues are the market values of every non-cash holding, including fund units at NAV.
 	HoldingValues []float64
-	Eligible      bool
+	// AvgEffectiveHoldings, if above zero, is the average spread of the investor's money over the whole event and is
+	// used instead of HoldingValues, so diversifying only in the last minute cannot win the prize.
+	AvgEffectiveHoldings float64
+	Eligible             bool
 }
 
 // drawdownFloor avoids dividing by ~0 for a portfolio that never fell.
@@ -166,6 +169,10 @@ func Prize4Scores(entrants []Prize4Input, w rulebook.Prize4) []Scored {
 		ids[i] = e.AccountID
 		riskAdj[i] = e.ReturnPct / math.Max(e.MaxDrawdown, drawdownFloor)
 		control[i] = -e.MaxDrawdown
+		if e.AvgEffectiveHoldings > 0 {
+			div[i] = math.Min(e.AvgEffectiveHoldings, w.DiversificationCapHoldings)
+			continue
+		}
 		has := false
 		for _, v := range e.HoldingValues {
 			if v > 0 {

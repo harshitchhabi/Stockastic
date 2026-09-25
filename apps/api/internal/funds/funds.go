@@ -109,6 +109,9 @@ type Event struct {
 	Values map[string]int64   `json:"values,omitempty"` // investor -> total value (series)
 	NAVs   map[string]float64 `json:"navs,omitempty"`   // fund -> NAV (series)
 	AUMs   map[string]int64   `json:"aums,omitempty"`   // fund -> AUM (series)
+	// Div is, for each investor, how many holdings their money is effectively spread over right now (1 divided by
+	// the concentration index; 0 if they hold nothing). Prize 4 uses its average over the event, not the last moment.
+	Div map[string]float64 `json:"div,omitempty"`
 
 	Checkpoint *Checkpoint        `json:"checkpoint,omitempty"`
 	Log        *StrategyLog       `json:"log,omitempty"`
@@ -137,6 +140,8 @@ type Holding struct {
 type risk struct {
 	first, peak int64
 	maxDD       float64
+	divSum      float64
+	divN        int
 }
 
 // Book is all fund state.
@@ -237,6 +242,15 @@ func (b *Book) Apply(ev Event) error {
 			if r.peak > 0 {
 				r.maxDD = math.Max(r.maxDD, float64(r.peak-v)/float64(r.peak))
 			}
+		}
+		for id, d := range ev.Div {
+			r := b.risks[id]
+			if r == nil {
+				r = &risk{}
+				b.risks[id] = r
+			}
+			r.divSum += d
+			r.divN++
 		}
 		for id, nav := range ev.NAVs {
 			f := b.byID[id]
@@ -416,6 +430,18 @@ func (b *Book) Risk(investor string) (first, peak int64, maxDrawdown float64, ok
 		return 0, 0, 0, false
 	}
 	return r.first, r.peak, r.maxDD, true
+}
+
+// AvgDiversification is the average number of holdings an investor's money was effectively spread over across the
+// once-a-minute samples. ok is false if there are no samples.
+func (b *Book) AvgDiversification(investor string) (float64, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	r := b.risks[investor]
+	if r == nil || r.divN == 0 {
+		return 0, false
+	}
+	return r.divSum / float64(r.divN), true
 }
 
 // MaxDrawdown is a fund's largest fall in NAV from a peak during Phase 2.

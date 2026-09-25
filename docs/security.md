@@ -51,6 +51,28 @@ checked on the server. Changing what a page shows or what a request says changes
   button, and every organiser page. No page errors and no server errors.
 - **Load**: 700 teams, all logging in at once, all trading, a hard kill and restart: no errors, every trade recovered.
 
+## Loopholes looked for in the game itself
+
+Each of these was tried as a test (`loopholes_test.go` and others). The ones marked "fixed" were open before.
+
+| Attempt | Result |
+|---|---|
+| Send the same trade many times at once | One trade (retries return the original) |
+| Send many different trades at once to beat two a minute | Exactly the allowed number go through |
+| Buy in many parallel requests to get past the 25% single-company limit | Cannot: the check runs while the account is locked |
+| Invest in a fund in many parallel requests to spend cash twice or exceed 60% in one fund | Cannot: cash never goes negative and the 60% limit holds |
+| Withdraw tiny amounts over and over, hoping rounding pays a little extra | No gain was possible, but hardened anyway: payouts round down and the smallest withdrawal is ₹1 (fixed) |
+| Fill the log with strategy entries, disputes, profile rewrites or endless fund operations | **Fixed:** at most 3 strategy entries per checkpoint, 5 open disputes, one profile change every 5 seconds, 30 fund operations a minute (refused attempts do not count) |
+| Name a fund after a real company or bank | **Fixed:** well-known names are refused (Section 8) |
+| Never put 5% into funds | Not blocked (the rulebook only warns), but **now visible**: the organiser sees each investor's share in funds, a filter for those below the minimum, and a note on the Prize 2 table |
+| Leave a fund and drop below 5% | Refused with the reason. To switch funds, invest in the new one first, then withdraw |
+| Diversify only in the last minute to win Prize 4 | **Fixed:** diversification is now averaged over the whole event |
+| Read future prices or news | Only current prices, and history up to now, are public. The schedule and news data are on organiser routes only, which the route audit checks |
+| Read the data files or source through the web server | Path tricks all fail |
+| Inject script through a name, headline or fund text | Text is shown as text, and a Content-Security-Policy stops any script that is not the app's own |
+| Trade as the other team of a fund | Refused: only the trader places trades |
+| A fund manager leaking the early news | Cannot be stopped by the server (it is a rules matter): the organiser sees who is in each fund and can remove a team |
+
 ## What it cannot do
 
 - **Volumetric attacks from many machines.** Nothing running on the server can stop a flood that fills the network link before

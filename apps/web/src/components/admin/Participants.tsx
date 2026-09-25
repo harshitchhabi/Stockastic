@@ -6,7 +6,7 @@ import { ActionButton, Badge, LoadError, useAdmin, useDo, useNow, usePoll } from
 import { downloadCsv } from "./download";
 
 type RoleFilter = "all" | "investor" | "fund_manager";
-type PresenceFilter = "all" | "online" | "offline";
+type PresenceFilter = "all" | "online" | "offline" | "below";
 
 function lastSeenText(a: AdminAccount, now: number) {
   if (a.online) return a.sockets > 1 ? `Online, ${a.sockets} tabs` : "Online";
@@ -35,7 +35,7 @@ export function Participants() {
     const q = query.trim().toLowerCase();
     return (data ?? [])
       .filter((a) => role === "all" || a.role === role)
-      .filter((a) => presence === "all" || (presence === "online") === a.online)
+      .filter((a) => presence === "all" || (presence === "below" ? a.belowMandatory : (presence === "online") === a.online))
       .filter((a) => !q || a.displayName.toLowerCase().includes(q) || a.email.toLowerCase().includes(q))
       .sort((a, b) => Number(b.online) - Number(a.online) || b.portfolioValue - a.portfolioValue);
   }, [data, query, role, presence]);
@@ -109,6 +109,7 @@ export function Participants() {
               ["all", "Everyone"],
               ["online", "Online"],
               ["offline", "Offline"],
+              ["below", `Below the required share in funds${data ? ` (${data.filter((a) => a.belowMandatory).length})` : ""}`],
             ] as [PresenceFilter, string][]
           ).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={presence === id} onClick={() => setPresence(id)}>
@@ -159,6 +160,7 @@ export function Participants() {
               <td style={{ fontFamily: "var(--sans)", textAlign: "left" }}>
                 {a.locked && <Badge tone="down">Locked</Badge>}{" "}
                 {a.status === "active" && !a.locked && <Badge tone="up">Active</Badge>}
+                {a.belowMandatory && <Badge tone="flag">{a.fundShare.toFixed(1)}% in funds</Badge>}{" "}
                 {a.status === "warned" && <Badge tone="flag">Warned{a.warnings > 1 ? ` ×${a.warnings}` : ""}</Badge>}
                 {a.status === "disqualified" && <Badge tone="down">Disqualified</Badge>}
               </td>
