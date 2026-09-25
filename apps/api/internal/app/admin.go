@@ -198,6 +198,8 @@ type AdminAccount struct {
 	BelowMandatory bool    `json:"belowMandatory"`
 }
 
+func (r AdminAccount) belowRequired() bool { return r.BelowMandatory }
+
 func (a *App) AdminAccounts() []AdminAccount {
 	users := a.users.all()
 	out := make([]AdminAccount, 0, len(users))

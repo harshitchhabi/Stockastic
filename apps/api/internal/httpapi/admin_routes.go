@@ -17,7 +17,34 @@ func (s *Server) privilegeRoutes(adm *gin.RouterGroup) {
 	adm.POST("/accounts/:id/message", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Message(u, c.Param("id"), b.Text) }))
 
 	adm.GET("/settings", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupCode": s.a.SignupCode()})
+		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupCode": s.a.SignupCode(), "allowlistCount": s.a.AllowlistCount()})
+	})
+	adm.POST("/security/clear-login-locks", func(c *gin.Context) {
+		n := s.logins.clear()
+		s.a.Audit(user(c), "Cleared the sign-in locks", "security", "", true)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "cleared": n})
+	})
+	adm.POST("/settings/allowlist", func(c *gin.Context) {
+		var r struct {
+			Emails []string `json:"emails"`
+		}
+		if !s.decode(c, &r) {
+			return
+		}
+		n, err := s.a.SetAllowlist(user(c), r.Emails)
+		if err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "count": n})
+	})
+	adm.POST("/funds/warn-below-share", func(c *gin.Context) {
+		n, err := s.a.WarnBelowMandatory(user(c))
+		if err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "warned": n})
 	})
 	adm.POST("/settings/signup-code", func(c *gin.Context) {
 		var r struct {

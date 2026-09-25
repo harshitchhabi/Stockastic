@@ -69,7 +69,7 @@ func New(opt Options) (http.Handler, error) {
 
 	api := r.Group("/api")
 	api.GET("/status", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != ""})
+		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != "", "signupListed": s.a.AllowlistCount() > 0})
 	})
 	api.POST("/auth/signup", s.signup)
 	api.POST("/auth/login", s.login)
@@ -348,6 +348,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrInvalidCredentials, 401, "Wrong email or password."},
 		{app.ErrEmailTaken, 409, "That email is already registered."},
 		{app.ErrSignupClosed, 403, "Sign-up is closed."},
+		{app.ErrNotOnList, 403, "That email is not on the list of people registered for this event. Ask an organiser."},
 		{app.ErrBadEventCode, 403, "That event code is not right. Ask an organiser."},
 		{app.ErrAccountsFull, 403, "Registration is full. Ask an organiser."},
 		{app.ErrBusy, 503, "The server is busy checking passwords. Try again in a moment."},
@@ -465,7 +466,7 @@ func (s *Server) login(c *gin.Context) {
 	// An organiser can always sign in, from any address, however many wrong guesses were made at the email: the
 	// password is long (12 or more characters), and a lock here would only help someone who wants the console shut.
 	guarded := !s.a.IsAdminEmail(in.Email)
-	if wait := s.logins.blocked(in.Email); guarded && wait > 0 {
+	if wait := s.logins.blocked(in.Email, c.ClientIP()); guarded && wait > 0 {
 		c.Header("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_attempts", "message": "Too many wrong passwords for this email. Wait a few minutes."})
 		return
@@ -473,12 +474,12 @@ func (s *Server) login(c *gin.Context) {
 	u, err := s.a.Login(in.Email, in.Password)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidCredentials) && guarded {
-			s.logins.failed(in.Email)
+			s.logins.failed(in.Email, c.ClientIP())
 		}
 		s.fail(c, err)
 		return
 	}
-	s.logins.ok(in.Email)
+	s.logins.ok(in.Email, c.ClientIP())
 	s.issue(c, u)
 }
 

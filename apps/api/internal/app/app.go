@@ -99,10 +99,13 @@ type App struct {
 	allTrades  []trading.Trade // every trade of the event, for the organiser
 	signupOpen atomic.Bool
 	signupCode atomic.Value // string
-	recent     map[string][]trading.Trade
-	p1Trades   map[string]int
-	peaks      map[string]money.Paise
-	snapshots  map[string]FreezeSnapshot
+	// allowed, if not empty, is the list of people who may register (by canonical email).
+	allowMu   sync.RWMutex
+	allowed   map[string]bool
+	recent    map[string][]trading.Trade
+	p1Trades  map[string]int
+	peaks     map[string]money.Paise
+	snapshots map[string]FreezeSnapshot
 
 	annMu         sync.Mutex
 	announcements []Announcement
@@ -445,6 +448,8 @@ func (a *App) restore() error {
 				a.signupOpen.Store(st.Value)
 			case settingCode:
 				a.signupCode.Store(st.Text)
+			case settingAllow:
+				a.setAllowed(st.Text)
 			}
 		case store.KindReset:
 			a.resetState()

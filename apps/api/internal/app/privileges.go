@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"net/mail"
 	"sort"
 	"strconv"
 	"strings"
@@ -86,6 +87,7 @@ type Setting struct {
 const (
 	settingSignup = "signup"
 	settingCode   = "signupCode"
+	settingAllow  = "allowlist"
 )
 
 // SignupCode is the event code people must enter to register ("" means none is needed).
@@ -288,4 +290,80 @@ func (a *App) ReleaseOverdueNews(actor User) (int, error) {
 		return err
 	})
 	return n, err
+}
+
+// ---- who may register ----
+
+func (a *App) setAllowed(text string) {
+	m := map[string]bool{}
+	for _, line := range strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\r' }) {
+		if addr, err := mail.ParseAddress(strings.TrimSpace(line)); err == nil {
+			m[emailKey(addr.Address)] = true
+		}
+	}
+	a.allowMu.Lock()
+	a.allowed = m
+	a.allowMu.Unlock()
+}
+
+// AllowlistCount is how many people are on the list of who may register (0 means anyone may).
+func (a *App) AllowlistCount() int {
+	a.allowMu.RLock()
+	defer a.allowMu.RUnlock()
+	return len(a.allowed)
+}
+
+func (a *App) emailAllowed(email string) bool {
+	a.allowMu.RLock()
+	defer a.allowMu.RUnlock()
+	if len(a.allowed) == 0 {
+		return true
+	}
+	addr, err := mail.ParseAddress(strings.TrimSpace(email))
+	return err == nil && a.allowed[emailKey(addr.Address)]
+}
+
+// SetAllowlist replaces the list of people who may register. An empty list lets anyone register again. A mailbox
+// on the list can be used for one account only (the alias check still applies), which closes the way to a second
+// account. Accounts that already exist are not affected.
+func (a *App) SetAllowlist(actor User, emails []string) (int, error) {
+	if len(emails) > 5000 {
+		return 0, bad("too_many", "The list can hold up to 5,000 emails.")
+	}
+	text := strings.Join(emails, "\n")
+	if len(text) > 60_000 {
+		return 0, bad("too_long", "That list is too long.")
+	}
+	n := 0
+	err := a.Do(actor, fmt.Sprintf("Set the list of people who may register (%d emails)", len(emails)), "registration", "", func() error {
+		if err := a.wal.Append(store.KindSetting, Setting{Key: settingAllow, Text: text}); err != nil {
+			return err
+		}
+		a.setAllowed(text)
+		n = a.AllowlistCount()
+		return nil
+	})
+	return n, err
+}
+
+// WarnBelowMandatory gives a formal warning to every investor who holds less than the required share in funds.
+// The rulebook leaves what follows to the organisers (a second violation may end in disqualification).
+func (a *App) WarnBelowMandatory(actor User) (int, error) {
+	if !a.Funds.Formed() {
+		return 0, bad("funds_not_formed", "The funds have not been formed yet.")
+	}
+	var ids []string
+	for _, r := range a.AdminAccounts() {
+		// Teams that already carry a warning are skipped, so pressing the button twice does not stack warnings.
+		if r.belowRequired() && r.Warnings == 0 {
+			ids = append(ids, r.ID)
+		}
+	}
+	n := 0
+	for _, id := range ids {
+		if err := a.Warn(actor, "below the required share in funds", id); err == nil {
+			n++
+		}
+	}
+	return n, nil
 }

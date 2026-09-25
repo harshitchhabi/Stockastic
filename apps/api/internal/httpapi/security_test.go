@@ -564,3 +564,72 @@ func TestOrganiserCanAlwaysSignInFromAnywhere(t *testing.T) {
 		t.Fatalf("console: %d", r.Status)
 	}
 }
+
+func TestOnlyListedPeopleCanRegisterWhenThereIsAList(t *testing.T) {
+	wal := store.NewMem()
+	r := rb(t, 100)
+	e := newEnv(t, wal, r)
+	adm := e.admin()
+	body := func(name, email string) map[string]any {
+		return map[string]any{"displayName": name, "email": email, "password": "password-123"}
+	}
+	if got := e.call("POST", "/api/auth/signup", "", body("Anyone", "anyone@test.local")); got.Status != 200 {
+		t.Fatalf("with no list anyone can register: %d", got.Status)
+	}
+	if r := e.call("POST", "/api/admin/settings/allowlist", adm, map[string]any{"emails": []string{"ann@test.local", "Bo.B@Gmail.com", "not an email"}}); r.Status != 200 || num(r.Body["count"]) != 2 {
+		t.Fatalf("set the list: %d %s", r.Status, r.Raw)
+	}
+	if st := e.call("GET", "/api/status", "", nil).Body; st["signupListed"] != true {
+		t.Fatalf("status = %v", st)
+	}
+	if r := e.call("POST", "/api/auth/signup", "", body("Mallory", "mallory@test.local")); r.Status != 403 || r.Body["error"] != "not_on_list" {
+		t.Fatalf("someone not on the list: %d %s", r.Status, r.Raw)
+	}
+	if r := e.call("POST", "/api/auth/signup", "", body("Ann", "ANN@test.local")); r.Status != 200 {
+		t.Fatalf("someone on the list: %d %s", r.Status, r.Raw)
+	}
+	// A listed mailbox is one person: its variants cannot open a second account.
+	if r := e.call("POST", "/api/auth/signup", "", body("Ann2", "ann+2@test.local")); r.Status != 409 {
+		t.Fatalf("a second account on a listed mailbox: %d", r.Status)
+	}
+	if r := e.call("POST", "/api/auth/signup", "", body("Bob", "bob@gmail.com")); r.Status != 200 {
+		t.Fatalf("a listed gmail address written another way: %d", r.Status)
+	}
+	// The list survives a restart, and clearing it opens registration again.
+	e2 := e.restart(r)
+	if r := e2.call("POST", "/api/auth/signup", "", body("Mallory", "mallory@test.local")); r.Status != 403 {
+		t.Fatalf("the list was lost in a restart: %d", r.Status)
+	}
+	if r := e2.call("POST", "/api/admin/settings/allowlist", e2.admin(), map[string]any{"emails": []string{}}); r.Status != 200 {
+		t.Fatal("clear the list")
+	}
+	if r := e2.call("POST", "/api/auth/signup", "", body("Mallory", "mallory@test.local")); r.Status != 200 {
+		t.Fatalf("after clearing the list: %d", r.Status)
+	}
+}
+
+func TestWarningEveryoneBelowTheRequiredShare(t *testing.T) {
+	e, adm, inv := fundedEnv(t, 4)
+	if r := e.call("POST", "/api/funds/F1/allocate", inv[0].token, map[string]any{"amount": 60_000}); r.Status != 200 {
+		t.Fatalf("invest: %d", r.Status)
+	}
+	r := e.call("POST", "/api/admin/funds/warn-below-share", adm, map[string]any{})
+	if r.Status != 200 || num(r.Body["warned"]) != 3 {
+		t.Fatalf("warn: %d %s (want 3: one investor already holds enough)", r.Status, r.Raw)
+	}
+	if r := e.call("POST", "/api/admin/funds/warn-below-share", adm, map[string]any{}); num(r.Body["warned"]) != 0 {
+		t.Fatalf("pressing the button again warned %v more people", r.Body["warned"])
+	}
+	warned := 0
+	for _, x := range list(e.call("GET", "/api/admin/accounts", adm, nil).Raw) {
+		if m := x.(map[string]any); m["status"] == "warned" {
+			warned++
+		}
+	}
+	if warned != 3 {
+		t.Fatalf("%d teams show as warned, want 3", warned)
+	}
+	if r := e.call("POST", "/api/admin/security/clear-login-locks", adm, map[string]any{}); r.Status != 200 {
+		t.Fatalf("clear locks: %d", r.Status)
+	}
+}

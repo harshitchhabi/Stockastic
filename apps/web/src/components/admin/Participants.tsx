@@ -22,7 +22,8 @@ export function Participants() {
   const [role, setRole] = useState<RoleFilter>("all");
   const [presence, setPresence] = useState<PresenceFilter>("all");
   const { notify } = useAdmin();
-  const settings = usePoll<{ signupOpen: boolean; signupCode: string }>("/api/admin/settings", 5000);
+  const settings = usePoll<{ signupOpen: boolean; signupCode: string; allowlistCount: number }>("/api/admin/settings", 5000);
+  const [list, setList] = useState("");
   const [code, setCode] = useState<string | null>(null);
 
   const counts = useMemo(() => {
@@ -101,6 +102,57 @@ export function Participants() {
           />
         </div>
       )}
+
+      {settings.data && (
+        <details style={{ marginBottom: 10 }}>
+          <summary>
+            Approved emails for registration:{" "}
+            <strong>{settings.data.allowlistCount > 0 ? `${settings.data.allowlistCount} people may register` : "anyone may register"}</strong>
+          </summary>
+          <div className="stack" style={{ maxWidth: 560, marginTop: 8 }}>
+            <p className="dim" style={{ margin: 0 }}>
+              Paste the emails of the people who may register, one per line or separated by commas. Only they can create an account, and each mailbox can be used for one account only. Existing teams are not affected. Save an empty list to let anyone register again.
+            </p>
+            <textarea rows={6} value={list} onChange={(e) => setList(e.target.value)} placeholder="ann@example.com&#10;bob@example.com" />
+            <div>
+              <ActionButton
+                className="solid"
+                label="Save the list"
+                title="Save the list of approved emails"
+                description="From now on only these emails can register. An empty list lets anyone register."
+                run={async () => {
+                  const emails = list.split(/[\s,;]+/).filter(Boolean);
+                  const r = await api.post<{ count: number }>("/api/admin/settings/allowlist", { emails });
+                  notify(r.count > 0 ? `${r.count} approved emails saved` : "Anyone may register again");
+                  setList("");
+                  await settings.reload();
+                }}
+              />
+            </div>
+          </div>
+        </details>
+      )}
+
+      <div className="btn-row">
+        <ActionButton
+          label="Clear sign-in locks"
+          title="Clear every sign-in lock"
+          description="Lifts the short locks that follow repeated wrong passwords, for everyone. Use it if a team is stuck out of its account."
+          run={async () => {
+            const r = await api.post<{ cleared: number }>("/api/admin/security/clear-login-locks", {});
+            notify(`${r.cleared} lock${r.cleared === 1 ? "" : "s"} cleared`);
+          }}
+        />
+        {presence === "below" && (
+          <ActionButton
+            danger
+            label="Warn everyone below the share"
+            title="Give a formal warning to every investor below the required share in funds"
+            description="Teams that already carry a warning are skipped, so pressing it twice does not stack warnings. What follows a second violation is up to you."
+            run={() => run("/api/admin/funds/warn-below-share", {}, "Warnings given")}
+          />
+        )}
+      </div>
 
       <div className="toolbar">
         <div className="tabs inline" role="tablist">

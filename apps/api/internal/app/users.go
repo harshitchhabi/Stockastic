@@ -34,6 +34,7 @@ var (
 	ErrBusy               = errors.New("server_busy")
 	ErrBadEventCode       = errors.New("wrong_event_code")
 	ErrAccountsFull       = errors.New("accounts_full")
+	ErrNotOnList          = errors.New("not_on_list")
 )
 
 // BadRequest is a validation failure whose message is safe to show the caller.
@@ -178,6 +179,9 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 	}
 	if code := a.SignupCode(); code != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(eventCode)), []byte(code)) != 1 {
 		return User{}, ErrBadEventCode
+	}
+	if !a.emailAllowed(email) {
+		return User{}, ErrNotOnList
 	}
 	if max := a.cfg.MaxAccounts; max > 0 && a.users.count() >= max {
 		return User{}, ErrAccountsFull

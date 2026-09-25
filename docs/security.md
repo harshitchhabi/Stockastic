@@ -16,8 +16,8 @@ checked on the server. Changing what a page shows or what a request says changes
 | Reading or changing traffic | HTTPS through Caddy (`deploy/Caddyfile`), HSTS, the app listens on 127.0.0.1 only |
 | Stealing or forging a login | Tokens signed with a 32+ character secret, algorithm pinned, session version so sign-out and removal cancel them at once, role and status read live on every request |
 | A team acting as organiser | Every organiser route sits behind a server-side check. A test walks the real route table and fails if any route is unprotected |
-| Guessing passwords | bcrypt, and 10 wrong guesses at one email lock new sign-ins for that email for 2 minutes. The lock never signs out a team that is already in, so a rival cannot throw someone out mid-trade |
-| Filling the server with junk accounts | Optional event code for registration (organisers can change it live), a cap on accounts (`MAX_ACCOUNTS`), organisers can close registration, and one mailbox is one person (case, `+tag` and Gmail dots are ignored) |
+| Guessing passwords | bcrypt. Ten wrong guesses at one email from one address lock that pair for 2 minutes, so someone guessing from elsewhere cannot lock a team out from its own device. A hundred wrong guesses at one email from any addresses lock it too. The lock never signs out a team that is already in, and an organiser can clear all locks with one button |
+| Filling the server with junk accounts, or one person with two accounts | An optional list of approved emails (only those people can register, one account per mailbox), an optional event code for registration (organisers can change it live), a cap on accounts (`MAX_ACCOUNTS`), organisers can close registration, and one mailbox is one person (case, `+tag` and Gmail dots are ignored) |
 | Hiding text in names, or spreadsheets running a name as a formula | Names refuse control, invisible and direction-changing characters and `<` `>`. CSV exports prefix dangerous cells |
 | One team flooding the server | A per-account limit of 40 requests a second (organisers 300), a two-trades-a-minute allowance, a per-address limit on anonymous traffic (3,000 a second) |
 | A rival in the same room using everyone's allowance | The address limit counts only anonymous traffic. Signed-in requests are limited per account. Wrong-password guesses are limited per email, not per address, so a whole venue on one address is not locked out |
@@ -64,7 +64,7 @@ Each of these was tried as a test (`loopholes_test.go` and others). The ones mar
 | Withdraw tiny amounts over and over, hoping rounding pays a little extra | No gain was possible, but hardened anyway: payouts round down and the smallest withdrawal is ₹1 (fixed) |
 | Fill the log with strategy entries, disputes, profile rewrites or endless fund operations | **Fixed:** at most 3 strategy entries per checkpoint, 5 open disputes, one profile change every 5 seconds, 30 fund operations a minute (refused attempts do not count) |
 | Name a fund after a real company or bank | **Fixed:** well-known names are refused (Section 8) |
-| Never put 5% into funds | Not blocked (the rulebook only warns), but **now visible**: the organiser sees each investor's share in funds, a filter for those below the minimum, and a note on the Prize 2 table |
+| Never put 5% into funds | Not blocked (the rulebook only warns), but **visible and actionable**: the organiser sees each investor's share in funds, filters those below the minimum, warns them all with one button (teams already warned are skipped), and sees a note on the Prize 2 table |
 | Leave a fund and drop below 5% | Refused with the reason. To switch funds, invest in the new one first, then withdraw |
 | Diversify only in the last minute to win Prize 4 | **Fixed:** diversification is now averaged over the whole event |
 | Read future prices or news | Only current prices, and history up to now, are public. The schedule and news data are on organiser routes only, which the route audit checks |
@@ -82,11 +82,12 @@ Each of these was tried as a test (`loopholes_test.go` and others). The ones mar
 - **A rival inside the venue.** Everyone behind one address looks the same to the server. The protections above are built so
   that one person's flood cannot use up other people's allowances, but a very large flood from inside the room can still slow the
   shared Wi-Fi itself. Ask the venue to keep the network for participants only and to block participants from each other.
-- **Lock-out griefing of new sign-ins.** Someone who knows a team's email can make ten wrong guesses and stop that team signing in
-  again for 2 minutes. Teams that are already signed in are not affected. Organisers can reset a password or sign a team in
-  again from the console.
-- **Two people using one account, or one person using two accounts with different mailboxes.** That is a rules matter. The
-  alias check, the event code and the organiser's ability to see who is online and remove a team are the tools for it.
+- **Lock-out griefing from inside the venue.** Someone on the same address as a team, who knows its email, can still lock that
+  pair out of new sign-ins for 2 minutes. Teams that are already signed in are not affected, and an organiser can clear the
+  locks with one button on the Participants page. Someone outside the venue cannot do it at all.
+- **Two people using one account, or one person with two real mailboxes.** With a list of approved emails, each listed person
+  can register once, and that closes the second-account route. Without a list it stays a rules matter: the alias check, the
+  event code and the organiser's ability to see who is online and remove a team are the tools for it.
 - **Caddy and the hardening script were written and syntax-checked but not run.** They need a real server. Run
   `deploy/harden.sh` and the rehearsal in `docs/deployment.md` on the real machine and check that you can still log in over SSH from
   a second terminal before you close the first.
