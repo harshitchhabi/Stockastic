@@ -14,7 +14,7 @@ export function FundDeskPage() {
   const [data, setData] = useState<MyFund | null>(null);
   const [form, setForm] = useState({ name: "", philosophy: "", risk: "Balanced", strategy: "" });
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [loadedProfile, setLoadedProfile] = useState(false);
+  const [, setLoadedProfile] = useState(false);
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(() => {

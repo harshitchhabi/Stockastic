@@ -25,7 +25,7 @@ export function PriceChart({ symbol, onHistory }: { symbol: string; onHistory?: 
     let series: import("lightweight-charts").ISeriesApi<"Line"> | undefined;
 
     async function init() {
-      const { createChart, ColorType } = await import("lightweight-charts");
+      const { createChart } = await import("lightweight-charts");
       if (disposed || !containerRef.current) return;
 
       chart = createChart(containerRef.current, {
