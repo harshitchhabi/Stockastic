@@ -2,6 +2,8 @@ package pgstore
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -122,5 +124,32 @@ func TestAResetStartsANewEpoch(t *testing.T) {
 	var qty int
 	if err := p.pool.QueryRow(ctx, "SELECT qty::int FROM v_positions WHERE account_id = 'a1' AND epoch = (SELECT epoch FROM projector_state)").Scan(&qty); err != nil || qty != 2 {
 		t.Fatalf("current-epoch position %d (%v), want 2", qty, err)
+	}
+}
+
+// A panic while turning one record into rows (here, forced by passing a nil transaction so the first tx.Exec call
+// panics on a nil interface, standing in for any future bug in apply) must be caught and reported as an ordinary,
+// skippable error — never allowed to crash the process. Trading must never go down for a bug in reading history.
+func TestAPanicWhileApplyingOneRecordIsCaughtNotCrashed(t *testing.T) {
+	epoch := 1
+	e := event{seq: 1, kind: "user", at: time.Now(), payload: `{"ID":"x","Email":"x@y.z"}`}
+	err := safeApply(context.Background(), nil, &epoch, e)
+	if err == nil {
+		t.Fatal("expected the panic to come back as an error, got nil")
+	}
+	if !dataErr(err) {
+		t.Fatalf("a recovered panic must be classified the same as a record the database rejects, so it is skipped rather than stalling everything: got %v", err)
+	}
+}
+
+// The background loop itself must survive a panic that somehow escapes safeApply (its own last-resort net).
+func TestTheBackgroundLoopSurvivesAPanicItself(t *testing.T) {
+	p := &Projector{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	n, err := p.runOnceSafely()
+	if err == nil {
+		t.Fatal("calling RunOnce with no database connection should panic on the nil pool; expected that to come back as an error")
+	}
+	if n != 0 {
+		t.Fatalf("n = %d, want 0", n)
 	}
 }

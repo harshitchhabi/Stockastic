@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -32,9 +34,14 @@ func NewProjector(ctx context.Context, dsn string, log *slog.Logger) (*Projector
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns = 4
+	// 8 connections: 1 for the background loop, headroom for several organisers reading team history at once. Well
+	// under Postgres's default 100-connection limit, alongside the single writer connection in pg.go.
+	cfg.MaxConns = 8
 	cfg.ConnConfig.RuntimeParams["application_name"] = "stockastic-projector"
 	cfg.ConnConfig.RuntimeParams["statement_timeout"] = "30000"
+	// A connection stuck mid-transaction (a bug, a client that vanished) must give itself back rather than sit on
+	// one of these 8 connections for the rest of the event.
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = "30000"
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -51,7 +58,7 @@ func (p *Projector) Start() {
 	go func() {
 		defer p.wg.Done()
 		for {
-			n, err := p.RunOnce(context.Background())
+			n, err := p.runOnceSafely()
 			wait := 500 * time.Millisecond
 			if err != nil {
 				p.log.Warn("lookup tables: could not take in new records, will retry", "err", err)
@@ -68,6 +75,18 @@ func (p *Projector) Start() {
 	}()
 }
 
+// runOnceSafely is RunOnce with a last-resort recover, in case a panic ever reaches here from somewhere safeApply
+// does not cover (a bug in the batch query itself, say). Trading must never go down for a bug in reading history.
+func (p *Projector) runOnceSafely() (n int, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.log.Error("lookup tables: recovered from a panic; trading is unaffected", "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("recovered from a panic: %v", r)
+		}
+	}()
+	return p.RunOnce(context.Background())
+}
+
 // Stop ends the background work and closes the connections.
 func (p *Projector) Stop() {
 	close(p.stop)
@@ -75,7 +94,28 @@ func (p *Projector) Stop() {
 	p.pool.Close()
 }
 
-func dataErr(err error) bool { return dataError(err) }
+// panicInApply is a panic recovered from turning one record into rows. It is treated exactly like a record the
+// database itself rejects (dataErr): logged and skipped, never let to crash the process. The lookup tables are a
+// convenience built on top of live trading, not load-bearing for it — no bug in reading history should be able to
+// take trading down with it, so nothing here is allowed to escape as an unrecovered panic.
+type panicInApply struct{ v any }
+
+func (p *panicInApply) Error() string { return fmt.Sprintf("panic: %v", p.v) }
+
+func dataErr(err error) bool {
+	var p *panicInApply
+	return dataError(err) || errors.As(err, &p)
+}
+
+// safeApply runs apply and turns any panic into an ordinary error instead of crashing the process.
+func safeApply(ctx context.Context, tx pgx.Tx, epoch *int, e event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = &panicInApply{r}
+		}
+	}()
+	return apply(ctx, tx, epoch, e)
+}
 
 // RunOnce takes in up to 500 new records. It returns how many.
 func (p *Projector) RunOnce(ctx context.Context) (int, error) {
@@ -128,7 +168,7 @@ func (p *Projector) batch(ctx context.Context, limit int) (int, error) {
 			if _, err := tx.Exec(ctx, "SAVEPOINT rec"); err != nil {
 				return 0, err
 			}
-			if err := apply(ctx, tx, &epoch, e); err != nil {
+			if err := safeApply(ctx, tx, &epoch, e); err != nil {
 				if !dataErr(err) {
 					return 0, err
 				}
@@ -140,7 +180,7 @@ func (p *Projector) batch(ctx context.Context, limit int) (int, error) {
 			last = e.seq
 			continue
 		}
-		if err := apply(ctx, tx, &epoch, e); err != nil {
+		if err := safeApply(ctx, tx, &epoch, e); err != nil {
 			return 0, err
 		}
 		last = e.seq
