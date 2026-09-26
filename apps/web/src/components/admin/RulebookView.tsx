@@ -1,14 +1,14 @@
 import type { RulebookStatus } from "@/lib/adminTypes";
 import { Badge, LoadError, usePoll } from "./shared";
 
-const LABEL = { tbf: "To be finalised", recommended: "Recommended", assumption: "Assumption" } as const;
-const TONE = { tbf: "down", recommended: "flag", assumption: "flag" } as const;
+const LABEL = { tbf: "To be finalised", recommended: "Recommended", assumption: "Assumption", confirmed: "Confirmed" } as const;
+const TONE = { tbf: "down", recommended: "flag", assumption: "flag", confirmed: "up" } as const;
 
 /** The rules the platform is running on right now, and which of them are still not final. Read-only. */
 export function RulebookView() {
   const { data, error, at } = usePoll<RulebookStatus>("/api/admin/rulebook", 60000);
   const count = (s: keyof typeof LABEL) => data?.provenance.filter((p) => p.status === s).length ?? 0;
-  const order = { tbf: 0, assumption: 1, recommended: 2 } as const;
+  const order = { tbf: 0, assumption: 1, recommended: 2, confirmed: 3 } as const;
 
   return (
     <div className="page">
@@ -32,6 +32,10 @@ export function RulebookView() {
             <div className="figure">
               <div className="label">Recommended values</div>
               <div className="v">{count("recommended")}</div>
+            </div>
+            <div className="figure">
+              <div className="label">Confirmed with the organisers</div>
+              <div className="v">{count("confirmed")}</div>
             </div>
           </div>
 

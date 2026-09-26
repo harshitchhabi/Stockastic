@@ -120,7 +120,7 @@ export interface AuditEntry {
 export interface RulebookStatus {
   version: string;
   source: string;
-  provenance: { path: string; status: "recommended" | "tbf" | "assumption"; section: string; note?: string }[];
+  provenance: { path: string; status: "recommended" | "tbf" | "assumption" | "confirmed"; section: string; note?: string }[];
   values: unknown;
 }
 

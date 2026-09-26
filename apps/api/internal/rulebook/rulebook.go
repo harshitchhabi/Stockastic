@@ -44,6 +44,9 @@ const (
 	StatusRecommended Status = "recommended"
 	StatusTBF         Status = "tbf"
 	StatusAssumption  Status = "assumption"
+	// StatusConfirmed is a value the organisers were explicitly asked about and decided, as opposed to
+	// StatusAssumption (a guess made in their absence) or StatusRecommended (the rulebook's own suggestion).
+	StatusConfirmed Status = "confirmed"
 )
 
 type Provenance struct {
@@ -363,7 +366,7 @@ func (r *Rulebook) validate(generic map[string]any) error {
 			bad("provenance path %q does not exist in the rulebook", path)
 		}
 		switch pv.Status {
-		case StatusRecommended, StatusTBF, StatusAssumption:
+		case StatusRecommended, StatusTBF, StatusAssumption, StatusConfirmed:
 		default:
 			bad("provenance %q has unknown status %q", path, pv.Status)
 		}
