@@ -1,28 +1,11 @@
 package scoring
 
 import (
-	"errors"
 	"math"
 
 	"stockastic/api/internal/money"
 	"stockastic/api/internal/rulebook"
 )
-
-// NavPerUnit is fund portfolio value / units outstanding (Sec 10); a fund with no units is at launch NAV.
-func NavPerUnit(fundValue money.Paise, unitsOutstanding, launchNav float64) float64 {
-	if unitsOutstanding <= 0 {
-		return launchNav
-	}
-	return fundValue.Rupees() / unitsOutstanding
-}
-
-// UnitsForAmount is units = amount allocated / NAV at that moment (Sec 10).
-func UnitsForAmount(amount money.Paise, nav float64) (float64, error) {
-	if nav <= 0 {
-		return 0, errors.New("NAV must be positive")
-	}
-	return amount.Rupees() / nav, nil
-}
 
 // MinInvestment is the lower of the absolute floor or a percentage of the investor's wallet (Sec 10).
 func MinInvestment(wallet money.Paise, r rulebook.Fund) money.Paise {
@@ -32,38 +15,6 @@ func MinInvestment(wallet money.Paise, r rulebook.Fund) money.Paise {
 		return pct
 	}
 	return abs
-}
-
-// Allocation rejections (Sec 10 entry rules).
-var (
-	ErrInsufficientCash     = errors.New("insufficient_cash")
-	ErrBelowMinimum         = errors.New("below_minimum")
-	ErrExceedsSingleFundCap = errors.New("exceeds_single_fund_cap")
-)
-
-type AllocationInput struct {
-	Amount money.Paise
-	// Wallet is cash + direct holdings + fund units at current NAV.
-	Wallet money.Paise
-	Cash   money.Paise
-	// ExistingFundValue is the investor's current position value in THIS fund.
-	ExistingFundValue money.Paise
-}
-
-// CheckAllocation enforces the Sec 10 entry rules: you cannot spend cash you lack, the amount must
-// meet the minimum, and the position in one fund (existing + new) may not exceed the wallet cap.
-func CheckAllocation(in AllocationInput, r rulebook.Fund) error {
-	if in.Amount > in.Cash {
-		return ErrInsufficientCash
-	}
-	if in.Amount < MinInvestment(in.Wallet, r) {
-		return ErrBelowMinimum
-	}
-	limit := math.Round(float64(in.Wallet) * r.MaxSingleFundWalletPercent / 100)
-	if float64(in.ExistingFundValue+in.Amount) > limit {
-		return ErrExceedsSingleFundCap
-	}
-	return nil
 }
 
 // CapFund is one fund's state within the current allocation window.
@@ -142,12 +93,4 @@ func MandatoryPool(portfolioValues []money.Paise, mandatoryPercent float64) mone
 		total += float64(v) * mandatoryPercent / 100
 	}
 	return money.Paise(math.Round(total))
-}
-
-// IsMandatoryCompliant reports whether valueInFunds is at least the mandatory share of the wallet.
-func IsMandatoryCompliant(wallet, valueInFunds money.Paise, mandatoryPercent float64) bool {
-	if wallet <= 0 {
-		return true
-	}
-	return float64(valueInFunds)*100+1e-6 >= float64(wallet)*mandatoryPercent
 }

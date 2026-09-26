@@ -61,25 +61,6 @@ func (b *bucketSet) allow(key string, now time.Time) (bool, time.Duration) {
 	return false, time.Duration((1 - k.tokens) / b.rate * float64(time.Second))
 }
 
-// peek reports whether a token is available without taking it.
-func (b *bucketSet) peek(key string, now time.Time) (bool, time.Duration) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	k := b.get(key, now)
-	if k.tokens >= 1 {
-		return true, 0
-	}
-	return false, time.Duration((1 - k.tokens) / b.rate * float64(time.Second))
-}
-
-// spend takes one token whether or not there is one to spare (a bucket can go below zero).
-func (b *bucketSet) spend(key string, now time.Time) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	k := b.get(key, now)
-	k.tokens = max(k.tokens-1, -b.burst)
-}
-
 func tooMany(c *gin.Context, wait time.Duration, code, msg string) {
 	secs := int(wait.Seconds()) + 1
 	c.Header("Retry-After", strconv.Itoa(secs))

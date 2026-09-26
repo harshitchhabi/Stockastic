@@ -85,9 +85,6 @@ func New(cfg Config) *Client {
 	return &Client{cfg: cfg, http: &http.Client{Timeout: 10 * time.Second}, keys: map[string]*rsa.PublicKey{}, slots: make(chan struct{}, 32)}
 }
 
-// Enabled reports whether Google sign-in can be used.
-func (c *Client) Enabled() bool { return c != nil }
-
 // AuthURL is where to send the browser to start signing in.
 func (c *Client) AuthURL(state, nonce string) string {
 	v := url.Values{

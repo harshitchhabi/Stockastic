@@ -29,20 +29,6 @@ func MinMaxNormalize(values []float64) []float64 {
 	return out
 }
 
-// MaxDrawdown is the largest peak-to-trough fall as a fraction of the peak (0 = never fell).
-func MaxDrawdown(series []float64) float64 {
-	peak, worst := math.Inf(-1), 0.0
-	for _, v := range series {
-		if v > peak {
-			peak = v
-		}
-		if peak > 0 {
-			worst = math.Max(worst, (peak-v)/peak)
-		}
-	}
-	return worst
-}
-
 // Herfindahl is the HHI of holding weights (cash excluded): 1 = a single holding, toward 0 = spread thin.
 func Herfindahl(holdingValues []float64) float64 {
 	var total float64

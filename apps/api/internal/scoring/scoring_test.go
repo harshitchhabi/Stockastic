@@ -1,7 +1,6 @@
 package scoring
 
 import (
-	"errors"
 	"math"
 	"testing"
 
@@ -101,49 +100,14 @@ func TestRankPhase1TieBreaksSec5(t *testing.T) {
 	})
 }
 
-func TestUnitsNAVAndEntryRulesSec10(t *testing.T) {
+func TestMinInvestmentSec10(t *testing.T) {
 	f := rb(t).Fund
-	if got := NavPerUnit(0, 0, f.LaunchNav); got != 100 {
-		t.Errorf("empty fund NAV = %v, want launch 100", got)
-	}
-	u, _ := UnitsForAmount(rs(50000), 100)
-	near(t, "units at NAV 100", u, 500)
-	u, _ = UnitsForAmount(rs(50000), 125)
-	near(t, "units at NAV 125", u, 400)
-	near(t, "NAV", NavPerUnit(rs(1158000), 10000, 100), 115.8)
-	if _, err := UnitsForAmount(rs(1), 0); err == nil {
-		t.Error("zero NAV must be rejected")
-	}
-
 	if got := MinInvestment(rs(1_000_000), f); got != rs(5000) {
 		t.Errorf("min for a 10L wallet = %v, want 5000", got)
 	}
 	if got := MinInvestment(rs(60_000), f); got != rs(3000) {
 		t.Errorf("min for a 60k wallet = %v, want 3000 (5%%)", got)
 	}
-
-	base := AllocationInput{Wallet: rs(1_000_000), Cash: rs(1_000_000)}
-	cases := []struct {
-		name string
-		in   AllocationInput
-		want error
-	}{
-		{"below minimum", with(base, rs(4999), 0), ErrBelowMinimum},
-		{"over the 60% single-fund cap", with(base, rs(600_001), 0), ErrExceedsSingleFundCap},
-		{"exactly 60% is allowed", with(base, rs(600_000), 0), nil},
-		{"cap includes what is already held", AllocationInput{Amount: rs(200_000), Wallet: rs(1_000_000), Cash: rs(500_000), ExistingFundValue: rs(450_000)}, ErrExceedsSingleFundCap},
-		{"cannot spend cash you lack", AllocationInput{Amount: rs(100_000), Wallet: rs(1_000_000), Cash: rs(50_000)}, ErrInsufficientCash},
-	}
-	for _, c := range cases {
-		if err := CheckAllocation(c.in, f); !errors.Is(err, c.want) {
-			t.Errorf("%s: got %v, want %v", c.name, err, c.want)
-		}
-	}
-}
-
-func with(b AllocationInput, amount, existing money.Paise) AllocationInput {
-	b.Amount, b.ExistingFundValue = amount, existing
-	return b
 }
 
 func TestAllocationCapsSec9And10(t *testing.T) {
@@ -192,12 +156,6 @@ func TestAllocationCapsSec9And10(t *testing.T) {
 	})
 }
 
-func TestMandatoryFivePercentSec9(t *testing.T) {
-	if !IsMandatoryCompliant(rs(1_000_000), rs(50_000), 5) || IsMandatoryCompliant(rs(1_000_000), rs(49_999), 5) {
-		t.Error("5% boundary wrong")
-	}
-}
-
 func TestPrizeScoringSec16(t *testing.T) {
 	r := rb(t)
 	t.Run("Prize 1: quality beats size", func(t *testing.T) {
@@ -233,8 +191,6 @@ func TestPrizeScoringSec16(t *testing.T) {
 		near(t, "prize1", p1.Performance+p1.RiskManagement+p1.InvestorProfitability+p1.Retention, 1)
 	})
 	t.Run("helpers", func(t *testing.T) {
-		near(t, "drawdown", MaxDrawdown([]float64{100, 120, 90, 110}), 0.25)
-		near(t, "monotone series", MaxDrawdown([]float64{1, 2, 3}), 0)
 		near(t, "hhi 50/50", Herfindahl([]float64{50, 50}), 0.5)
 		near(t, "hhi single", Herfindahl([]float64{100}), 1)
 		for _, v := range MinMaxNormalize([]float64{5, 5, 5}) {
