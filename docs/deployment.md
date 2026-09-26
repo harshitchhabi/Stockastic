@@ -101,9 +101,23 @@ The server creates its own tables on first start. It needs to create tables, so 
 **What is guaranteed.** A trade or any other change is acknowledged only after PostgreSQL has committed it to disk
 (`synchronous_commit` is on for the server's writes; do not switch it off in the database). If the connection drops in
 the middle of a write the server reconnects and retries for up to 20 seconds, and every record has its own id so a retry
-can never store it twice. If the database stays unreachable, or another server takes the write lock, the server stops
-at once (exit code 3) and systemd restarts it; nothing is acknowledged that is not stored. `/readyz` and the Systems page
-report a database that has stopped accepting writes.
+can never store it twice. If the database stays unreachable that long, or another server takes the write lock, the
+server stops at once (exit code 3) and systemd restarts it; nothing is acknowledged that is not stored. `/readyz` and
+the Systems page report a database that has stopped accepting writes.
+
+**An ordinary database bounce does not stop the event.** On every start (including every restart systemd does for
+you) the server tries to reach the database for up to 3 minutes, trying again with backoff rather than failing at
+once. So a Postgres package update, the machine still finishing boot, or a few seconds of network trouble is
+invisible to the teams — you will only see it as "could not reach the database yet; retrying" in the logs. Only a
+database that stays down past that, or a real misconfiguration, actually stops the server.
+
+**If the server does stop trying** (systemd gives up after 20 restarts in 5 minutes, to stop a genuine crash loop
+from filling the disk with logs — see `deploy/stockastic.service`): fix whatever was wrong (check
+`journalctl -u stockastic -n 100`), then bring it back with:
+```sh
+sudo systemctl reset-failed stockastic
+sudo systemctl start stockastic
+```
 
 **One server only.** A second copy of the server pointed at the same database cannot start (it fails to get the write
 lock). This protects against two servers acting on the same event.

@@ -1,9 +1,14 @@
 [Unit]
 Description=Stockastic event platform
-After=network-online.target
+After=network-online.target postgresql.service
 Wants=network-online.target
+# Start after PostgreSQL if it runs on this same machine. Harmless if it does not: a unit that does not exist is
+# simply skipped, it never blocks or fails this one.
 # A crash loop must not run forever and fill the disk with logs: stop trying after 20 starts in 5 minutes and
-# wait for an organiser. A single crash or reboot restarts by itself within seconds.
+# wait for an organiser. A single crash or reboot restarts by itself within seconds. An ordinary bounce of the
+# database (a package update restarting it, the machine still booting) is handled inside the server itself, which
+# retries opening the database for up to 3 minutes before giving up — so it does not use up these 20 tries at all;
+# they are reserved for a genuinely broken start (bad settings, a crash on every boot).
 StartLimitIntervalSec=300
 StartLimitBurst=20
 

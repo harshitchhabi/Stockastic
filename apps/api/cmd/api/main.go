@@ -35,6 +35,44 @@ func main() {
 	}
 }
 
+// openDatabaseWithRetry opens the database, trying again with backoff for a while before giving up. Postgres on
+// the same machine can be briefly unavailable for perfectly ordinary reasons — it is still starting up after a
+// reboot, a package update restarted it, or the machine hiccuped — and none of that should cost the event a full
+// stop. Without this, each attempt would fail at once and burn through systemd's limited restart budget
+// (deploy/stockastic.service) in well under a minute, after which the whole platform would sit dead until an
+// organiser noticed and ran it by hand. Retrying here instead means an ordinary bounce is invisible to everyone
+// but the log, and only a genuinely broken database (or a typo in DATABASE_URL) exhausts the budget and needs a
+// person.
+func openDatabaseWithRetry(ctx context.Context, log *slog.Logger, opt pgstore.Options) (*pgstore.Log, error) {
+	return openDatabaseRetrying(ctx, log, opt, 3*time.Minute)
+}
+
+func openDatabaseRetrying(ctx context.Context, log *slog.Logger, opt pgstore.Options, retryFor time.Duration) (*pgstore.Log, error) {
+	deadline := time.Now().Add(retryFor)
+	backoff := time.Second
+	for attempt := 1; ; attempt++ {
+		l, err := pgstore.Open(ctx, opt)
+		if err == nil {
+			if attempt > 1 {
+				log.Info("connected to the database", "attempts", attempt)
+			}
+			return l, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("after retrying for %s: %w", retryFor, err)
+		}
+		log.Warn("could not reach the database yet; retrying", "err", err, "attempt", attempt, "givingUpIn", time.Until(deadline).Round(time.Second).String())
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 10*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
 func level(s string) slog.Level {
 	switch s {
 	case "debug":
@@ -103,8 +141,7 @@ func run() error {
 	if cfg.DatabaseURL != "" {
 		// PostgreSQL is the durable record. Records are stored before they are acknowledged; the lookup tables
 		// (wallet history, activity, trades and so on) are filled from it in the background.
-		var pg *pgstore.Log
-		pg, err = pgstore.Open(context.Background(), pgstore.Options{
+		pg, err := openDatabaseWithRetry(context.Background(), log, pgstore.Options{
 			DSN: cfg.DatabaseURL, Rules: app.CompactRules(), Log: log,
 			OnBroken: func(err error) {
 				// The database stopped taking writes (or another server took over). Stop at once so nothing is
