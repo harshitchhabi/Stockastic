@@ -85,9 +85,17 @@ func run() error {
 		log.Warn("using the PLACEHOLDER price simulation (a plain random walk, no market events); set SCENARIO_PATH to the real scenario")
 	}
 
+	// The local disk still matters even when PostgreSQL holds the durable record: logs, the OS, and the
+	// server's own temporary files live here, and a machine with no free disk space fails in surprising ways.
+	// So the guard is always on cfg.DataDir; Postgres additionally has its own disk, watched on the database
+	// host (see docs/deployment.md).
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return fmt.Errorf("creating the data directory: %w", err)
+	}
+	disk := &store.DiskGuard{Dir: cfg.DataDir, MinFree: uint64(cfg.DiskMinFreeMB) << 20}
+
 	var (
 		wal     store.Log
-		disk    *store.DiskGuard
 		health  func() error
 		history store.History
 		closeDB = func() {}
@@ -137,7 +145,6 @@ func run() error {
 			log.Warn("discarded an unfinished final record from the data log (an unacknowledged write before a crash)", "bytes", f.Torn)
 		}
 		wal = f
-		disk = &store.DiskGuard{Dir: cfg.DataDir, MinFree: uint64(cfg.DiskMinFreeMB) << 20}
 	}
 	defer closeDB()
 

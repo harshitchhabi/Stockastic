@@ -114,15 +114,27 @@ lock). This protects against two servers acting on the same event.
 hashes. If they ever look wrong they can be emptied and rebuilt from `events` (the platform does not depend on
 them). You can query them directly, for example every team's cash change: `SELECT * FROM v_cash_change;`.
 
-**Backups.** Take `pg_dump` every few minutes during the event to S3, and keep RDS automated backups or an EBS snapshot
-hourly. To recover, restore the database and start the server; it replays `events`.
+**Backups.** `deploy/backup-postgres.sh` runs `pg_dump` and copies it to S3; put it on a cron job every 5 minutes
+(turn on bucket versioning). On RDS also keep its automated backups (point-in-time recovery) turned on; on the
+same-machine setup also take an EBS snapshot before the event and hourly during it.
+
+**To recover on a new machine or database:**
+```sh
+createdb -O stockastic stockastic          # an empty database
+aws s3 cp s3://your-bucket/stockastic.dump /tmp/stockastic.dump
+pg_restore --dbname="$DATABASE_URL" /tmp/stockastic.dump
+```
+Then start the server; it replays `events` and the lookup tables catch up on their own. Practise this once on a
+spare database before the event — a restore that has never been tried is not a backup.
 
 **Moving an event that already started on the log file:** stop the server, run
 `walimport -wal /var/lib/stockastic/data/stockastic.wal -db "$DATABASE_URL"` (an empty database is required), set
 `DATABASE_URL`, start the server, and check a few teams before opening the market.
 
 **Test it before the event:** with a spare database, run
-`TEST_DATABASE_URL=postgres://... go test ./internal/pgstore ./internal/httpapi` (these tests wipe that database).
+`TEST_DATABASE_URL=postgres://... go test ./internal/pgstore ./internal/httpapi` (these tests wipe that database
+and cover connections dying mid-write, a lost write lock, and a restart rebuilding identical state). They do not
+run `pg_dump`/`pg_restore` themselves, so do that round trip by hand once, as above, before the event.
 
 ## Backups (log file mode)
 

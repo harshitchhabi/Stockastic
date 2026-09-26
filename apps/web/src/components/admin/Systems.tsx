@@ -34,7 +34,7 @@ export function Systems() {
       <div className="tiles">
         <Tile label="People connected" value={data.connected} />
         <Tile label="Trades per minute" value={data.tradesPerMin} />
-        <Tile label="Data log" value={data.dbOk ? "Writable" : "Down"} tone={data.dbOk ? "up" : "down"} />
+        <Tile label="Durable record" value={data.dbOk ? "Writable" : "Down"} tone={data.dbOk ? "up" : "down"} />
         <Tile label="Trade save time (median)" value={`${data.commitP50Ms} ms`} />
         <Tile label="Trade save time (slowest 1%)" value={`${data.commitP99Ms} ms`} tone={slow ? "down" : undefined} sub={slow ? "slower than usual" : undefined} />
         <Tile label="Failed saves" value={data.journalErrors} tone={data.journalErrors > 0 ? "down" : "up"} sub="trades refused rather than lost" />

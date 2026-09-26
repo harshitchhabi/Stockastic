@@ -14,7 +14,8 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
 | Install Caddy with `deploy/Caddyfile` | HTTPS and request limits | Replace `event.example.com` with your domain |
 | Fill in `/etc/stockastic/env` from `deploy/env.example` | The server's settings | Make `JWT_SECRET` 32+ random characters (`openssl rand -hex 32`), the organiser password 12+ characters and not reused. `chmod 600` the file |
 | Copy the final data to the server by hand | It is git-ignored on purpose (future prices and news) | `universe.json`, `scenario.json`, `prices.json` in one folder, and `UNIVERSE_PATH` and `SCENARIO_PATH` pointing at them. Run `python tools/verify_final.py` on your computer first: it should say 22 of 22 |
-| Turn on backups | A copy of the data file off the machine | `deploy/backup.sh` on a cron job, to S3. Do one restore on a spare machine to prove it works |
+| Install PostgreSQL and set `DATABASE_URL` | The real, reliable system of record: exactly-once writes, and wallet/sign-in history the file cannot give you | `docs/deployment.md`, "PostgreSQL (the durable record)". Same machine is fine and free; keep it listening only on `127.0.0.1` |
+| Turn on backups | A copy of the database off the machine | `deploy/backup-postgres.sh` on a cron job (every 5 minutes), to S3, plus an hourly EBS snapshot. Do one restore on a spare machine or database to prove it works — `docs/deployment.md` has the exact commands |
 
 ## 2. Choose how people register (pick one or combine)
 
