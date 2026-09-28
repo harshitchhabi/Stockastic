@@ -91,3 +91,16 @@ func TestEnvFileDoesNotOverrideTheRealEnvironment(t *testing.T) {
 		t.Fatalf("a missing env file is fine, got %v", err)
 	}
 }
+
+func TestGoogleOnlyRegistrationNeedsGoogle(t *testing.T) {
+	setEnv(t, map[string]string{"JWT_SECRET": strings.Repeat("s", 40), "SIGNUP_GOOGLE_ONLY": "true", "GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "", "GOOGLE_REDIRECT_URL": ""})
+	if _, err := config.FromEnv(); err == nil || !strings.Contains(err.Error(), "SIGNUP_GOOGLE_ONLY") {
+		t.Fatalf("Google-only registration without Google was accepted: %v", err)
+	}
+	setEnv(t, map[string]string{"JWT_SECRET": strings.Repeat("s", 40), "SIGNUP_GOOGLE_ONLY": "true", "GOOGLE_CLIENT_ID": "id",
+		"GOOGLE_CLIENT_SECRET": "secret", "GOOGLE_REDIRECT_URL": "https://event.example.com/api/auth/google/callback", "GOOGLE_ALLOWED_DOMAINS": "vitstudent.ac.in"})
+	c, err := config.FromEnv()
+	if err != nil || !c.SignupGoogleOnly || len(c.GoogleAllowedDomains) != 1 || c.GoogleAllowedDomains[0] != "vitstudent.ac.in" {
+		t.Fatalf("config = %+v, %v", c, err)
+	}
+}

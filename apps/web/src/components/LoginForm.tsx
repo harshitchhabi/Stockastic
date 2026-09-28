@@ -15,6 +15,7 @@ export function LoginForm() {
   const [needsCode, setNeedsCode] = useState(false);
   const [listed, setListed] = useState(false);
   const [google, setGoogle] = useState(false);
+  const [googleOnly, setGoogleOnly] = useState(false);
 
   // Where "Continue with Google" sent us back with a problem.
   useEffect(() => {
@@ -33,6 +34,8 @@ export function LoginForm() {
       code: "A new account needs the event code. Enter it and try again.",
       closed: "Registration is closed.",
       full: "Registration is full. Ask an organiser.",
+      team_code: "That team code is not right. Ask your team leader for it and try again.",
+      team_full: "That team already has all its members.",
       failed: "Sign-in did not work. Try again.",
     };
     setError(text[reason] ?? "Sign-in did not work. Try again.");
@@ -42,16 +45,28 @@ export function LoginForm() {
   // Registration can be closed by the organisers: then there is only the log in form.
   useEffect(() => {
     api
-      .get<{ signupOpen: boolean; signupNeedsCode?: boolean; signupListed?: boolean; googleEnabled?: boolean }>("/api/status")
+      .get<{ signupOpen: boolean; signupNeedsCode?: boolean; signupListed?: boolean; googleEnabled?: boolean; googleOnlySignup?: boolean }>("/api/status")
       .then((s) => {
         setSignupOpen(s.signupOpen);
         setNeedsCode(s.signupNeedsCode === true);
         setListed(s.signupListed === true);
         setGoogle(s.googleEnabled === true);
+        setGoogleOnly(s.googleOnlySignup === true);
         if (!s.signupOpen) setMode("login");
       })
       .catch(() => {});
   }, []);
+
+  // Registering or joining with a password is off when only Google may add people; signing in with one never is
+  // (the organisers' accounts use passwords).
+  const passwordForm = mode === "login" || !googleOnly;
+
+  function goGoogle(extra: Record<string, string>) {
+    const q = new URLSearchParams(extra);
+    if (eventCode.trim()) q.set("code", eventCode.trim());
+    const qs = q.toString();
+    window.location.href = "/api/auth/google/start" + (qs ? "?" + qs : "");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -100,41 +115,51 @@ export function LoginForm() {
         {mode === "join" && (
           <input placeholder="Team code" value={teamCode} onChange={(e) => setTeamCode(e.target.value)} required autoComplete="off" autoCapitalize="characters" />
         )}
-        {mode === "join" && <input placeholder="Your name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
+        {mode === "join" && passwordForm && <input placeholder="Your name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
         {mode !== "login" && listed && <div className="dim">Use the email you registered for this event with the organisers.</div>}
         {mode !== "login" && needsCode && (
           <input placeholder="Event code (from the organisers)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} required autoComplete="off" />
         )}
-        <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input
-          placeholder="Password"
-          type="password"
-          minLength={mode !== "login" ? 8 : undefined}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        {passwordForm && <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />}
+        {passwordForm && (
+          <input
+            placeholder="Password"
+            type="password"
+            minLength={mode !== "login" ? 8 : undefined}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        )}
         {error && <div className="down">{error}</div>}
-        {google && mode !== "join" && (
+        {google && mode === "login" && (
           <>
-            {needsCode && mode === "login" && (
+            {needsCode && (
               <input placeholder="Event code (only needed the first time)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} autoComplete="off" />
             )}
-            <button
-              type="button"
-              style={{ padding: 11 }}
-              onClick={() => {
-                window.location.href = "/api/auth/google/start" + (eventCode.trim() ? `?code=${encodeURIComponent(eventCode.trim())}` : "");
-              }}
-            >
+            <button type="button" style={{ padding: 11 }} onClick={() => goGoogle({})}>
               Continue with Google
             </button>
-            {mode === "login" && <div className="dim">Joining someone else's team? Choose Join your team first.</div>}
+            <div className="dim">New here? Choose Register team or Join your team first.</div>
           </>
         )}
-        <button type="submit" className="solid" disabled={submitting} style={{ padding: 11 }}>
-          {submitting ? "…" : mode === "signup" ? "Register team" : mode === "join" ? "Join team" : "Enter the floor"}
-        </button>
+        {google && mode === "signup" && (
+          <button type="button" style={{ padding: 11 }} disabled={displayName.trim().length < 2 || (needsCode && !eventCode.trim())} onClick={() => goGoogle({ teamName: displayName.trim() })}>
+            Register team with Google
+          </button>
+        )}
+        {google && mode === "join" && (
+          <button type="button" style={{ padding: 11 }} disabled={!teamCode.trim() || (needsCode && !eventCode.trim())} onClick={() => goGoogle({ team: teamCode.trim() })}>
+            Join with Google
+          </button>
+        )}
+        {google && mode !== "login" && !googleOnly && <div className="dim">Or fill in the fields above to use a password instead.</div>}
+        {googleOnly && mode !== "login" && <div className="dim">Use your college Google account.</div>}
+        {passwordForm && (
+          <button type="submit" className="solid" disabled={submitting} style={{ padding: 11 }}>
+            {submitting ? "…" : mode === "signup" ? "Register team" : mode === "join" ? "Join team" : "Enter the floor"}
+          </button>
+        )}
       </form>
     </div>
   );

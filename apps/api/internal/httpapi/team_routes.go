@@ -49,6 +49,9 @@ func (s *Server) join(c *gin.Context) {
 	if !s.decode(c, &in) {
 		return
 	}
+	if s.googleOnly(c) {
+		return
+	}
 	if err := s.a.CheckSignupCode(in.EventCode); err != nil {
 		s.fail(c, err)
 		return
@@ -119,4 +122,13 @@ func (s *Server) adminTeamRoutes(adm *gin.RouterGroup) {
 	adm.POST("/accounts/:id/members/:mid/sign-out", s.act(func(u app.User, b body, c *gin.Context) error {
 		return s.a.SignOutMember(u, b.Reason, c.Param("id"), c.Param("mid"))
 	}))
+}
+
+// googleOnly refuses a registration by email and password when only Google may register people, and says so.
+func (s *Server) googleOnly(c *gin.Context) bool {
+	if !s.opt.GoogleOnlySignup || s.opt.Google == nil {
+		return false
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": "google_only", "message": "Register with your college Google account: use the Google button."})
+	return true
 }

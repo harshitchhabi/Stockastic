@@ -34,9 +34,17 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
    GOOGLE_REDIRECT_URL=https://YOUR-DOMAIN/api/auth/google/callback
-   GOOGLE_ALLOWED_DOMAINS=yourcollege.edu     (optional: only these email domains)
+   GOOGLE_ALLOWED_DOMAINS=vitstudent.ac.in    (only @vitstudent.ac.in accounts can sign in with Google)
+   SIGNUP_GOOGLE_ONLY=true                    (nobody can register with an email and password, so only real VIT accounts get in)
    ```
 5. Restart the server. "Continue with Google" appears on the sign-in page. Test it with your own account and with one outside the allowed domain.
+6. Teams: the leader chooses **Register team**, types the team name and presses **Register team with Google**. Teammates choose
+   **Join your team**, type the team code from the leader's Team page and press **Join with Google**. Later, everyone just uses
+   **Continue with Google** on the Log in tab. (Someone new who presses Continue with Google on the Log in tab registers a team named after
+   themselves; tell people at the briefing to use the Register or Join tab the first time.)
+7. Ask the college IT team early whether third-party apps are allowed for student accounts. If a test sign-in shows "Access blocked" or
+   "admin_policy_enforced", they need to allow your OAuth client ID in the Google Workspace admin console (Security, API controls, App access
+   control).
 
 The server checks Google's signature, the client id, the expiry, a one-time value for that sign-in, and that the email is verified. It
 was tested against a stand-in for Google, **not against the real one**, so the test in step 5 matters.

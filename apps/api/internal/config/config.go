@@ -42,7 +42,10 @@ type Config struct {
 	// Google sign-in: leave the client id empty to keep it off.
 	GoogleClientID, GoogleClientSecret, GoogleRedirectURL string
 	GoogleAllowedDomains                                  []string
-	LogLevel                                              string
+	// SignupGoogleOnly refuses new registrations by email and password: only Google sign-in can register a team or
+	// join one, so with GoogleAllowedDomains set every new person has a verified address at that domain.
+	SignupGoogleOnly bool
+	LogLevel         string
 	// WebDir, if set, serves the built web app from disk instead of the copy embedded in the binary.
 	WebDir string
 }
@@ -136,6 +139,9 @@ func FromEnv() (Config, error) {
 	if c.Autostart, err = getBool("AUTOSTART", false); err != nil {
 		return c, err
 	}
+	if c.SignupGoogleOnly, err = getBool("SIGNUP_GOOGLE_ONLY", false); err != nil {
+		return c, err
+	}
 	hours, err := strconv.Atoi(get("TOKEN_TTL_HOURS", "12"))
 	if err != nil || hours < 1 || hours > 72 {
 		return c, errors.New("config: TOKEN_TTL_HOURS must be a whole number from 1 to 72")
@@ -156,6 +162,9 @@ func FromEnv() (Config, error) {
 	}
 	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") || (c.GoogleClientID != "" && !strings.HasPrefix(c.GoogleRedirectURL, "http")) {
 		return c, errors.New("config: Google sign-in needs GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URL (an http or https address) together")
+	}
+	if c.SignupGoogleOnly && c.GoogleClientID == "" {
+		return c, errors.New("config: SIGNUP_GOOGLE_ONLY needs Google sign-in to be set up (GOOGLE_CLIENT_ID and the rest), or nobody could register")
 	}
 	if len(c.JWTSecret) < 32 {
 		return c, errors.New("config: JWT_SECRET is required and must be at least 32 characters")

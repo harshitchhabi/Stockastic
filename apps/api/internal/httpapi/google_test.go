@@ -283,7 +283,9 @@ func TestGoogleSignInFollowsTheRegistrationRules(t *testing.T) {
 	loc, _ = signIn(t, e, f, "/api/auth/google/start?code=ROOM-42", func(s string) string {
 		parts := strings.Split(s, ".")
 		parts[2] = base64.RawURLEncoding.EncodeToString([]byte("ROOM-42")) // same code, but re-encoded: the signature no longer matches
-		return strings.Join(parts[:3], ".") + "." + parts[3][:len(parts[3])-2] + "AA"
+		last := len(parts) - 1
+		parts[last] = parts[last][:len(parts[last])-2] + "AA"
+		return strings.Join(parts, ".")
 	})
 	if loc != "/#/signin-error=expired" {
 		t.Fatalf("a state with a damaged signature: %q", loc)
@@ -303,4 +305,77 @@ func TestGoogleSignInIsOffUntilConfigured(t *testing.T) {
 	if res.StatusCode == http.StatusFound {
 		t.Fatal("Google sign-in answered without being configured")
 	}
+}
+
+// With the college domain set: a leader registers the team with Google, a teammate joins it with Google and the
+// team code (not creating a second team), anyone outside the domain is refused, and a wrong code is reported.
+func TestGoogleTeamsAtOneCollege(t *testing.T) {
+	f := newFakeGoogle(t)
+	e := googleEnv(t, f, []string{"vitstudent.ac.in"})
+
+	f.email, f.name = "leader.one2024@vitstudent.ac.in", "Leader One"
+	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
+	lead := tokenIn(t, loc)
+	code := e.call("GET", "/api/team", lead, nil).Body["joinCode"].(string)
+
+	f.email, f.name, f.nonce = "mate.two2024@vitstudent.ac.in", "Mate Two", ""
+	loc, _ = signIn(t, e, f, "/api/auth/google/start?team="+code, nil)
+	mate := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil).Body
+	leadMe := e.call("GET", "/api/auth/me", lead, nil).Body
+	if mate["id"] != leadMe["id"] || mate["isLeader"] != false || mate["canTrade"] != false || mate["loginName"] != "Mate Two" {
+		t.Fatalf("the teammate did not join the leader's team: %v", mate)
+	}
+	// Signing in again later (no code needed) finds the teammate, not a new team.
+	f.nonce = ""
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	if again := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil).Body; again["memberId"] != mate["memberId"] {
+		t.Fatalf("a second sign-in did not find the teammate: %v", again)
+	}
+
+	f.email, f.nonce = "someone@gmail.com", ""
+	if loc, _ := signIn(t, e, f, "/api/auth/google/start?team="+code, nil); !strings.Contains(loc, "signin-error=domain") {
+		t.Fatalf("an address outside the college got in: %q", loc)
+	}
+	f.email, f.nonce = "third.x2024@vitstudent.ac.in", ""
+	if loc, _ := signIn(t, e, f, "/api/auth/google/start?team=WRONGCOD", nil); !strings.Contains(loc, "signin-error=team_code") {
+		t.Fatalf("a wrong team code: %q", loc)
+	}
+}
+
+// Google-only registration: the email-and-password forms cannot add anyone, Google can, and existing password
+// logins (the organiser's) still work.
+func TestGoogleOnlyRegistration(t *testing.T) {
+	f := newFakeGoogle(t)
+	extraHTTP = func(o *httpapi.Options) {
+		o.Google = oauth.New(oauth.Config{ClientID: "client-123", ClientSecret: "secret", RedirectURL: "https://event.test/api/auth/google/callback",
+			AllowedDomains: []string{"vitstudent.ac.in"}, AuthURL: f.srv.URL + "/auth", TokenURL: f.srv.URL + "/token", JWKSURL: f.srv.URL + "/certs"})
+		o.GoogleRedirect = "https://event.test/api/auth/google/callback"
+		o.StateKey = []byte(strings.Repeat("s", 40))
+		o.GoogleOnlySignup = true
+	}
+	t.Cleanup(func() { extraHTTP = nil })
+	e := newEnvWith(t, store.NewMem(), rb(t, 100), testScenario())
+
+	if st := e.call("GET", "/api/status", "", nil).Body; st["googleOnlySignup"] != true {
+		t.Fatalf("status = %v", st)
+	}
+	if r := e.call("POST", "/api/auth/signup", "", map[string]any{"displayName": "Fake", "email": "fake@vitstudent.ac.in", "password": "password-123"}); r.Status != 403 || r.Body["error"] != "google_only" {
+		t.Fatalf("a password sign-up got through: %d %s", r.Status, r.Raw)
+	}
+	f.email, f.name = "real.lead2024@vitstudent.ac.in", "Real Lead"
+	loc, _ := signIn(t, e, f, "/api/auth/google/start?teamName=Bull+Squad", nil)
+	lead := tokenIn(t, loc)
+	if me := e.call("GET", "/api/auth/me", lead, nil).Body; me["displayName"] != "Bull Squad" {
+		t.Fatalf("the team registered with Google is named %v, want the team name typed in", me["displayName"])
+	}
+	code := e.call("GET", "/api/team", lead, nil).Body["joinCode"].(string)
+	if r := e.call("POST", "/api/auth/join", "", map[string]any{"teamCode": code, "name": "Fake", "email": "fake2@vitstudent.ac.in", "password": "password-123"}); r.Status != 403 {
+		t.Fatalf("a password join got through: %d %s", r.Status, r.Raw)
+	}
+	f.email, f.name, f.nonce = "real.mate2024@vitstudent.ac.in", "Real Mate", ""
+	loc, _ = signIn(t, e, f, "/api/auth/google/start?team="+code, nil)
+	if me := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil).Body; me["isLeader"] != false {
+		t.Fatalf("a Google join failed: %v", me)
+	}
+	e.admin() // the organiser still signs in with a password
 }

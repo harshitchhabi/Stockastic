@@ -47,6 +47,8 @@ type Options struct {
 	// GoogleRedirect is the registered return address; the cookie is marked Secure when it is https.
 	GoogleRedirect string
 	StateKey       []byte
+	// GoogleOnlySignup refuses registering or joining with an email and password: only Google can add people.
+	GoogleOnlySignup bool
 	// Static, if set, is served for every path that is not an API or WebSocket path (the built web app).
 	Static fs.FS
 }
@@ -84,7 +86,7 @@ func New(opt Options) (http.Handler, error) {
 
 	api := r.Group("/api")
 	api.GET("/status", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != "", "signupListed": s.a.AllowlistCount() > 0, "googleEnabled": s.opt.Google != nil})
+		c.JSON(http.StatusOK, gin.H{"signupOpen": s.a.SignupOpen(), "signupNeedsCode": s.a.SignupCode() != "", "signupListed": s.a.AllowlistCount() > 0, "googleEnabled": s.opt.Google != nil, "googleOnlySignup": s.opt.GoogleOnlySignup && s.opt.Google != nil})
 	})
 	s.googleRoutes(api)
 	api.POST("/auth/signup", s.signup)
@@ -467,6 +469,9 @@ func (s *Server) issue(c *gin.Context, l app.Login) {
 func (s *Server) signup(c *gin.Context) {
 	var in credentials
 	if !s.decode(c, &in) {
+		return
+	}
+	if s.googleOnly(c) {
 		return
 	}
 	// The event code is checked before the address allowance is used, so guessing at it cannot use up the

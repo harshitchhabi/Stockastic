@@ -46,26 +46,29 @@ func (g *googleFlow) sign(payload string) string {
 
 // makeState is nonce.expiry.eventCode signed. The event code the person typed rides along so a new account can be
 // checked against it after the round trip.
-func (g *googleFlow) makeState(nonce, eventCode string) string {
-	p := nonce + "." + strconv.FormatInt(time.Now().Add(stateTTL).Unix(), 10) + "." + base64.RawURLEncoding.EncodeToString([]byte(eventCode))
+func (g *googleFlow) makeState(nonce, eventCode, teamCode, teamName string) string {
+	p := nonce + "." + strconv.FormatInt(time.Now().Add(stateTTL).Unix(), 10) + "." + base64.RawURLEncoding.EncodeToString([]byte(eventCode)) +
+		"." + base64.RawURLEncoding.EncodeToString([]byte(teamCode)) + "." + base64.RawURLEncoding.EncodeToString([]byte(teamName))
 	return p + "." + g.sign(p)
 }
 
-func (g *googleFlow) readState(state string) (nonce, eventCode string, ok bool) {
+func (g *googleFlow) readState(state string) (nonce, eventCode, teamCode, teamName string, ok bool) {
 	i := strings.LastIndex(state, ".")
 	if i < 0 || !hmac.Equal([]byte(g.sign(state[:i])), []byte(state[i+1:])) {
-		return "", "", false
+		return "", "", "", "", false
 	}
 	parts := strings.Split(state[:i], ".")
-	if len(parts) != 3 {
-		return "", "", false
+	if len(parts) != 5 {
+		return "", "", "", "", false
 	}
 	exp, err := strconv.ParseInt(parts[1], 10, 64)
 	code, err2 := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || err2 != nil || time.Now().Unix() > exp {
-		return "", "", false
+	team, err3 := base64.RawURLEncoding.DecodeString(parts[3])
+	name, err4 := base64.RawURLEncoding.DecodeString(parts[4])
+	if err != nil || err2 != nil || err3 != nil || err4 != nil || time.Now().Unix() > exp {
+		return "", "", "", "", false
 	}
-	return parts[0], string(code), true
+	return parts[0], string(code), string(team), string(name), true
 }
 
 // use marks a nonce as spent; it returns false if it already was, so a return cannot be replayed.
@@ -102,9 +105,17 @@ func (s *Server) googleStart(c *gin.Context) {
 	if len(code) > 40 {
 		code = code[:40]
 	}
+	team := c.Query("team") // a teammate joining a team with its code
+	if len(team) > 20 {
+		team = team[:20]
+	}
+	teamName := c.Query("teamName") // a leader registering a new team
+	if r := []rune(teamName); len(r) > 40 {
+		teamName = string(r[:40])
+	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: stateCookie, Value: nonce, Path: "/api/auth/google", MaxAge: int(stateTTL.Seconds()),
 		HttpOnly: true, Secure: s.google.secure, SameSite: http.SameSiteLaxMode})
-	c.Redirect(http.StatusFound, s.opt.Google.AuthURL(s.google.makeState(nonce, code), nonce))
+	c.Redirect(http.StatusFound, s.opt.Google.AuthURL(s.google.makeState(nonce, code, team, teamName), nonce))
 }
 
 // googleFail sends the person back to the sign-in page with a short reason (never any detail from Google).
@@ -118,7 +129,7 @@ func (s *Server) googleCallback(c *gin.Context) {
 		googleFail(c, "cancelled")
 		return
 	}
-	nonce, eventCode, ok := s.google.readState(c.Query("state"))
+	nonce, eventCode, teamCode, teamName, ok := s.google.readState(c.Query("state"))
 	cookie, err := c.Cookie(stateCookie)
 	if !ok || err != nil || !hmac.Equal([]byte(cookie), []byte(nonce)) || !s.google.use(nonce) {
 		googleFail(c, "expired")
@@ -145,7 +156,7 @@ func (s *Server) googleCallback(c *gin.Context) {
 		googleFail(c, "google")
 		return
 	}
-	u, err := s.a.ExternalSignIn(claims.Email, claims.Name, eventCode)
+	u, err := s.a.ExternalSignIn(claims.Email, claims.Name, eventCode, teamCode, teamName)
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrAccountLocked):
@@ -158,6 +169,10 @@ func (s *Server) googleCallback(c *gin.Context) {
 			googleFail(c, "closed")
 		case errors.Is(err, app.ErrAccountsFull):
 			googleFail(c, "full")
+		case errors.Is(err, app.ErrBadTeamCode):
+			googleFail(c, "team_code")
+		case errors.Is(err, app.ErrTeamFull):
+			googleFail(c, "team_full")
 		default:
 			s.log.Warn("google sign-in: could not sign in", "err", err)
 			googleFail(c, "failed")

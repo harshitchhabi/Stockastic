@@ -18,7 +18,7 @@ export function TeamMembers({ id, name }: { id: string; name: string }) {
         The team leader signs in with the team's own login. Teammates join with the team code and have their own logins. Only one of them places the
         team's trades and moves its money: <strong>{data.traderName}</strong>.
       </p>
-      <div className="meta" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <span>
           Team code <span className="mono">{data.joinCode}</span>
         </span>

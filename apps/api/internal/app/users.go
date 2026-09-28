@@ -251,7 +251,11 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 // ExternalSignIn signs in the account that has this (verified) email, or registers a new one with the normal
 // registration rules (open registration, the list of approved emails, the event code, the account cap, one
 // mailbox one person). The account has a random password nobody knows: they sign in with Google.
-func (a *App) ExternalSignIn(email, name, eventCode string) (Login, error) {
+//
+// teamCode, if given, means the person is joining that team as a teammate rather than registering a new team.
+//
+// teamName, when registering a new team, is the team's name (the person's own name is used if it is empty).
+func (a *App) ExternalSignIn(email, name, eventCode, teamCode, teamName string) (Login, error) {
 	if u, ok := a.users.byEmailAddr(email); ok {
 		if u.Locked {
 			return Login{}, ErrAccountLocked
@@ -272,6 +276,12 @@ func (a *App) ExternalSignIn(email, name, eventCode string) (Login, error) {
 	pw := make([]byte, 24)
 	if _, err := rand.Read(pw); err != nil {
 		return Login{}, err
+	}
+	if strings.TrimSpace(teamCode) != "" {
+		return a.JoinTeam(teamCode, display, email, hex.EncodeToString(pw), eventCode)
+	}
+	if tn, ok := cleanName(teamName); ok && len([]rune(tn)) >= 2 && len([]rune(tn)) <= 40 {
+		display = tn
 	}
 	u, err := a.Signup(display, email, hex.EncodeToString(pw), eventCode)
 	return Login{Team: u}, err
