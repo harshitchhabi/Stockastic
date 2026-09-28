@@ -31,7 +31,7 @@ const (
 	CloseTooMany = 4429
 
 	defaultMaxConns    = 4000
-	defaultPerAccount  = 4
+	defaultPerAccount  = 10
 	maxUnauthenticated = 1500 // sockets that have opened but not yet sent a valid login at one time
 	msgsPerSecond      = 20.0 // inbound messages one connection may send, sustained
 	msgBurst           = 40.0

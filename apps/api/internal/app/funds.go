@@ -463,7 +463,7 @@ func (a *App) capRooms(window int, navs map[string]float64) map[string]money.Pai
 		in := a.Funds.Inflow(window, f.ID)
 		cs = append(cs, scoring.CapFund{FundID: f.ID, Headcount: 1, InflowThisWindow: in, Active: !f.Disqualified})
 	}
-	_, states := scoring.AllocationCaps(cs, pool, len(all), 1)
+	_, states := scoring.AllocationCaps(cs, pool, len(all), 1, money.FromRupees(a.RB.Fund.MinInvestmentAbsolute))
 	out := map[string]money.Paise{}
 	for _, s := range states {
 		out[s.FundID] = s.Room

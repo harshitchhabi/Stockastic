@@ -151,7 +151,7 @@ func FromEnv() (Config, error) {
 	if c.MaxSockets, err = intIn("MAX_SOCKETS", 4000, 10, 100000); err != nil {
 		return c, err
 	}
-	if c.MaxSocketsPerAccount, err = intIn("MAX_SOCKETS_PER_ACCOUNT", 4, 1, 50); err != nil {
+	if c.MaxSocketsPerAccount, err = intIn("MAX_SOCKETS_PER_ACCOUNT", 10, 1, 50); err != nil {
 		return c, err
 	}
 	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") || (c.GoogleClientID != "" && !strings.HasPrefix(c.GoogleRedirectURL, "http")) {

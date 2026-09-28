@@ -8,7 +8,7 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
 | Do | Why | How |
 |---|---|---|
 | Buy a domain name (about ₹500 to ₹1,000 a year) | HTTPS and Google sign-in both need one | Point its DNS `A` record at the server's fixed (Elastic) IP |
-| Create the AWS server | The event runs on one machine | `docs/deployment.md`: a `c6i.xlarge` in `ap-south-1`, Ubuntu 24.04, a `gp3` disk, an Elastic IP |
+| Create the AWS server | The event runs on one machine | `docs/deployment.md`: a `c6i.2xlarge` in `ap-south-1`, Ubuntu 24.04, a `gp3` disk, an Elastic IP |
 | Set the AWS security group | The first wall against network floods | Allow only ports 80 and 443 from anywhere and port 22 from your address (or anywhere, with key-only SSH). AWS Shield Standard is on by default and free |
 | Run `deploy/harden.sh` | Key-only SSH, firewall, automatic bans, updates | Put your SSH key on the server first, run the script, then open a second terminal and log in **before** closing the first |
 | Install Caddy with `deploy/Caddyfile` | HTTPS and request limits | Replace `event.example.com` with your domain |
@@ -54,7 +54,7 @@ These are set to placeholders and are all one value in `rulebook.json` (or a but
 
 ## 4. Rehearse on the real machine
 
-1. Load test with `cmd/loadsim -users 700` and attack test with `cmd/abusesim` against a throwaway copy, from another machine.
+1. Load test with `cmd/loadsim -users 1000` and attack test with `cmd/abusesim` against a throwaway copy, from another machine.
 2. Kill the server process mid-run (`kill -9`), let systemd restart it, and check nothing was lost.
 3. Fill the disk to below `DISK_MIN_FREE_MB` on a test copy and see that trades are refused and the Systems page says so.
 4. Run a shortened event end to end with real accounts: register, Phase 1, freeze, form the funds, allocation window, Phase 2, final freeze, prizes. The organiser page has a button for every step.

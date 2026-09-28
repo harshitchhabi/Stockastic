@@ -190,7 +190,7 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		for i := range funds {
 			funds[i] = scoring.CapFund{FundID: string(rune('a' + i)), Headcount: rb.Teams.FundTeamSize, Active: true}
 		}
-		_, caps := scoring.AllocationCaps(funds, money.FromRupees(1_200_000), rb.Qualification.FundCount, rb.Teams.FundTeamSize)
+		_, caps := scoring.AllocationCaps(funds, money.FromRupees(1_200_000), rb.Qualification.FundCount, rb.Teams.FundTeamSize, money.FromRupees(rb.Fund.MinInvestmentAbsolute))
 		if caps[0].Tranche != money.FromRupees(100_000) {
 			t.Errorf("pool split 12 ways = %v, want 100,000 each", caps[0].Tranche)
 		}

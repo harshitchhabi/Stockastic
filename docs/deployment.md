@@ -1,6 +1,6 @@
 # Deploying for the event
 
-For 300 to 750 people over five hours. The recommendations below come from running the real server under
+For about 1,000 people (about 350 teams of 3, one account per team) over five hours. The recommendations below come from running the real server under
 `apps/api/cmd/loadsim`, not from guesses. Where a number was not measured, it says so.
 
 ## What was measured
@@ -27,8 +27,8 @@ network traffic per browser is close to nothing. The two things that can still m
 ## The two things to watch
 
 1. **Everyone logging in at once.** Password checking is deliberately slow work (bcrypt). It uses every core, and
-   a login storm queues behind it. 750 simultaneous logins took about 1.1 s worst case on 12 cores. On a 2-core
-   server expect roughly six times that (an estimate from the core count, not a measurement). Use 4 or more cores, and ask teams to log in during the briefing
+   a login storm queues behind it. 1,000 simultaneous logins (one per device) took about 1.2 s worst case on 12 cores. On 8 cores
+   expect about 2 s and on 4 cores about 3.5 s (estimates from the core count, not measurements). Use 8 cores, and ask teams to log in during the briefing
    blocks (the first 20 minutes of the timeline), not at the moment trading opens.
 2. **A long restart with a huge log.** Recovery reads the whole log. It is fast but grows with the event. Trades, fund
    events, the once-a-minute fund series and the audit log are kept in full, so allow up to 30 seconds after a full event.
@@ -46,7 +46,7 @@ an accidental double start.
 
 | | Recommendation | Why |
 |---|---|---|
-| Machine | AWS `c6i.xlarge` (4 vCPU, 8 GB) or bigger | Cores for the login storm. Memory use is tiny (under 150 MB measured) |
+| Machine | AWS `c6i.2xlarge` (8 vCPU, 16 GB) | Cores for the login storm of about 1,000 devices. Memory use is small (about 200 MB measured with 1,000 connected devices), leaving plenty for PostgreSQL on the same machine |
 | Region | `ap-south-1` (Mumbai) if the venue is in India | Lowest delay for the participants |
 | OS | Ubuntu 24.04 LTS | The server is one static binary: `CGO_ENABLED=0 GOOS=linux go build ./cmd/api` |
 | Storage | `gp3` EBS volume, 3000 IOPS, or local NVMe (instance store) | Every trade waits for one disk sync, so sync speed sets the delay. NVMe is fastest. For EBS, `io2` is faster than `gp3` |
@@ -163,7 +163,7 @@ discarded on restart, and was never confirmed to anyone).
 
 ## Before the event
 
-1. Run `loadsim` against the real machine (not the laptop) with `-users 750`, and again at the rulebook pace.
+1. Run `loadsim` against the real machine (not the laptop) with `-users 1000`, and again at the rulebook pace.
    The numbers above are a baseline, not a promise for a different disk and CPU.
 2. Kill the server with `kill -9` in the middle of the load test, then start it again (systemd does this by
    itself). It must come back within seconds with every trade, balance, fund position and price exactly as before, and

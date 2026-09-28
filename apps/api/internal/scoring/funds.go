@@ -41,7 +41,13 @@ type CapState struct {
 // allowance is blocked until EVERY active fund has filled the same level, and then the level rises
 // by one tranche. The window's hard close ends it regardless — callers stop asking after close and
 // nothing carries over (cap-stall closure), so this function has no notion of carry-over at all.
-func AllocationCaps(funds []CapFund, pool money.Paise, fundCount, standardHeadcount int) (int, []CapState) {
+//
+// minTicket is the smallest investment anyone may make. A fund with less room than that left at its level
+// cannot legally take another rupee, so it counts as having reached the cap. Without this, a fund stranded a few
+// thousand rupees short of its tranche could never be filled and the level could never rise for anyone: every
+// team still owing its mandatory share would be stuck for the rest of the window.
+func AllocationCaps(funds []CapFund, pool money.Paise, fundCount, standardHeadcount int, minTicket money.Paise) (int, []CapState) {
+	tol := max(minTicket-1, 0)
 	tranche := func(f CapFund) money.Paise {
 		return money.Paise(int64(pool) * int64(f.Headcount) / (int64(fundCount) * int64(standardHeadcount)))
 	}
@@ -61,7 +67,7 @@ func AllocationCaps(funds []CapFund, pool money.Paise, fundCount, standardHeadco
 				minFilled = 0
 				break
 			}
-			if filled := int64(f.InflowThisWindow) / int64(t); filled < minFilled {
+			if filled := int64(f.InflowThisWindow+tol) / int64(t); filled < minFilled {
 				minFilled = filled
 			}
 		}

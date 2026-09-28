@@ -298,7 +298,7 @@ func TestSocketsAreLimited(t *testing.T) {
 
 	// More sockets than one account may hold: the newest wins and the oldest are closed.
 	var conns []*websocket.Conn
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 13; i++ {
 		c := wsDial(t, e, tok)
 		wsReady(t, c)
 		conns = append(conns, c)
@@ -309,8 +309,9 @@ func TestSocketsAreLimited(t *testing.T) {
 		}
 	}()
 	time.Sleep(300 * time.Millisecond)
-	if n := e.a.Hub.Sockets(id); n != 4 {
-		t.Fatalf("an account holds %d sockets, want at most 4", n)
+	// A team of 3 shares one account, each with a few devices or tabs: up to 10 live connections.
+	if n := e.a.Hub.Sockets(id); n != 10 {
+		t.Fatalf("an account holds %d sockets, want at most 10", n)
 	}
 	if code := wsClosedWith(conns[0]); code != 4429 {
 		t.Fatalf("the oldest socket was closed with %d, want 4429", code)

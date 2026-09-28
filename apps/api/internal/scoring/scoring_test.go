@@ -119,37 +119,49 @@ func TestAllocationCapsSec9And10(t *testing.T) {
 		if pool != rs(100_000) {
 			t.Fatalf("pool = %v", pool)
 		}
-		lvl, st := AllocationCaps([]CapFund{f("A", 0, 6, true), f("B", 0, 6, true)}, pool, 2, 6)
+		lvl, st := AllocationCaps([]CapFund{f("A", 0, 6, true), f("B", 0, 6, true)}, pool, 2, 6, rs(5000))
 		if lvl != 1 || st[0].Tranche != rs(50_000) || st[1].Tranche != rs(50_000) {
 			t.Errorf("level=%d states=%v", lvl, st)
 		}
 	})
 	t.Run("a full fund waits for the rest, then the level rises", func(t *testing.T) {
 		pool := rs(200_000)
-		lvl, st := AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("B", rs(40_000), 6, true)}, pool, 2, 6)
+		lvl, st := AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("B", rs(40_000), 6, true)}, pool, 2, 6, rs(5000))
 		if lvl != 1 || st[0].Room != 0 || st[1].Room != rs(60_000) {
 			t.Errorf("level=%d states=%v", lvl, st)
 		}
-		lvl, st = AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("B", rs(100_000), 6, true)}, pool, 2, 6)
+		lvl, st = AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("B", rs(100_000), 6, true)}, pool, 2, 6, rs(5000))
 		if lvl != 2 || st[0].Room != rs(100_000) {
 			t.Errorf("after catching up: level=%d states=%v", lvl, st)
 		}
 	})
+	t.Run("a fund left with less room than the minimum investment counts as full, so the level still rises", func(t *testing.T) {
+		// Tranche 100,000. B has 97,000: 3,000 of room, less than the 5,000 minimum, so nobody can fill it.
+		lvl, st := AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("B", rs(97_000), 6, true)}, rs(200_000), 2, 6, rs(5000))
+		if lvl != 2 || st[1].Room != rs(103_000) {
+			t.Errorf("level=%d states=%v; want level 2 with B able to take 103,000", lvl, st)
+		}
+		// With 5,000 or more of room left, B can still be filled, so the level waits for it.
+		lvl, _ = AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("B", rs(95_000), 6, true)}, rs(200_000), 2, 6, rs(5000))
+		if lvl != 1 {
+			t.Errorf("level=%d; B can still take exactly the 5,000 minimum, so the level must wait", lvl)
+		}
+	})
 	t.Run("short-handed fund is prorated by headcount/6 (Sec 6)", func(t *testing.T) {
-		_, st := AllocationCaps([]CapFund{f("full", 0, 6, true), f("short", 0, 4, true)}, rs(120_000), 2, 6)
+		_, st := AllocationCaps([]CapFund{f("full", 0, 6, true), f("short", 0, 4, true)}, rs(120_000), 2, 6, rs(5000))
 		if st[0].Tranche != rs(60_000) || st[1].Tranche != rs(40_000) {
 			t.Errorf("tranches = %v / %v, want 60000 / 40000", st[0].Tranche, st[1].Tranche)
 		}
 	})
 	t.Run("a disqualified fund takes no inflow and cannot hold up the level", func(t *testing.T) {
-		lvl, st := AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("dq", 0, 6, false)}, rs(200_000), 2, 6)
+		lvl, st := AllocationCaps([]CapFund{f("A", rs(100_000), 6, true), f("dq", 0, 6, false)}, rs(200_000), 2, 6, rs(5000))
 		if lvl != 2 || st[1].Room != 0 {
 			t.Errorf("level=%d states=%v", lvl, st)
 		}
 	})
 	t.Run("an unfilled fund forfeits: the level is defined only by funds that filled", func(t *testing.T) {
 		// One fund never fills. It stays at level 1 for everyone until the hard close; nothing carries over.
-		lvl, _ := AllocationCaps([]CapFund{f("A", rs(500_000), 6, true), f("stalled", 0, 6, true)}, rs(200_000), 2, 6)
+		lvl, _ := AllocationCaps([]CapFund{f("A", rs(500_000), 6, true), f("stalled", 0, 6, true)}, rs(200_000), 2, 6, rs(5000))
 		if lvl != 1 {
 			t.Errorf("level = %d; a stalled fund holds the level at 1 until the window hard-closes", lvl)
 		}
