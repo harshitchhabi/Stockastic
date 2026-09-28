@@ -634,7 +634,7 @@ func (a *App) GrantShares(actor User, reason, accountID, symbol string, qty int6
 		return 0, trading.ErrUnknownSymbol
 	}
 	if qty < 1 || qty > maxQty {
-		return 0, bad("invalid_quantity", "Quantity must be a whole number of at least 1.")
+		return 0, bad("invalid_quantity", "Quantity must be a whole number from 1 to 1,00,00,000.")
 	}
 	price := dto.Paise(priceRupees)
 	if priceRupees <= 0 || price <= 0 {

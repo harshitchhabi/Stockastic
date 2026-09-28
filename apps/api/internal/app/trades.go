@@ -64,7 +64,7 @@ func (r TradeRequest) toRequest(account string, stage string) (trading.Request, 
 		return q, bad("invalid_side", "Choose buy or sell.")
 	}
 	if r.Qty < 1 || r.Qty > maxQty {
-		return q, bad("invalid_quantity", "Quantity must be a whole number of at least 1.")
+		return q, bad("invalid_quantity", "Quantity must be a whole number from 1 to 1,00,00,000.")
 	}
 	if r.ExpectedPrice != 0 {
 		if math.IsNaN(r.ExpectedPrice) || math.IsInf(r.ExpectedPrice, 0) || r.ExpectedPrice < 0 {

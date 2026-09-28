@@ -138,7 +138,7 @@ func (a *App) RevokeShares(actor User, reason, id, symbol string, qty int64) err
 		return trading.ErrUnknownSymbol
 	}
 	if qty < 1 || qty > maxQty {
-		return bad("invalid_quantity", "Quantity must be a whole number of at least 1.")
+		return bad("invalid_quantity", "Quantity must be a whole number from 1 to 1,00,00,000.")
 	}
 	return a.Do(actor, fmt.Sprintf("Took back %d x %s", qty, symbol), u.DisplayName, reason, func() error {
 		return a.takeShares(id, symbol, qty)
