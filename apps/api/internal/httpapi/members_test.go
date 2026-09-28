@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -305,4 +306,42 @@ func TestEachTeammateShowsOnlineSeparately(t *testing.T) {
 		t.Fatalf("the teammate left, got leader %v, teammate %v", l, m)
 	}
 	c2.Close()
+}
+
+// The rules players read: written from the rulebook until an organiser edits them; only organisers can edit; an
+// edit survives a restart; empty text brings the default back. None of this changes the game itself.
+func TestRulesShownToPlayers(t *testing.T) {
+	wal := store.NewMem()
+	r := rb(t, 100)
+	e := newEnv(t, wal, r)
+	adm := e.admin()
+	tok, _ := e.signup("Reader")
+	def := e.call("GET", "/api/rules", tok, nil).Body
+	text, _ := def["text"].(string)
+	for _, want := range []string{"# Trading", "₹10,00,000", "25%", "60 seconds", "at least 5%"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("the default rules do not mention %q:\n%s", want, text)
+		}
+	}
+	if def["edited"] != false {
+		t.Fatalf("edited = %v", def["edited"])
+	}
+	if r := e.call("POST", "/api/admin/rules", tok, map[string]any{"text": "# Mine"}); r.Status != 403 {
+		t.Fatalf("a team edited the rules: %d", r.Status)
+	}
+	if r := e.call("POST", "/api/admin/rules", adm, map[string]any{"text": "# Our rules\n- Be kind."}); r.Status != 200 {
+		t.Fatalf("organiser edit: %d %s", r.Status, r.Raw)
+	}
+	e2 := e.restart(r)
+	tok2 := e2.call("POST", "/api/auth/login", "", map[string]any{"email": "reader@test.local", "password": "password-123"}).Body["token"].(string)
+	if got := e2.call("GET", "/api/rules", tok2, nil).Body; got["text"] != "# Our rules\n- Be kind." || got["edited"] != true {
+		t.Fatalf("after a restart the rules are %v", got)
+	}
+	if r := e2.call("POST", "/api/admin/rules", e2.admin(), map[string]any{"text": strings.Repeat("x", 30001)}); r.Status != 400 {
+		t.Fatalf("an over-long text was accepted: %d", r.Status)
+	}
+	e2.call("POST", "/api/admin/rules", e2.admin(), map[string]any{"text": ""})
+	if got := e2.call("GET", "/api/rules", tok2, nil).Body; got["edited"] != false || !strings.Contains(got["text"].(string), "# Trading") {
+		t.Fatalf("empty text did not bring the default back: %v", got["edited"])
+	}
 }

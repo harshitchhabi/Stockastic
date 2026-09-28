@@ -12,6 +12,7 @@ import { Disputes } from "./Disputes";
 import { AdminStandings } from "./AdminStandings";
 import { AuditLog } from "./AuditLog";
 import { RulebookView } from "./RulebookView";
+import { RulesEditor } from "./RulesEditor";
 import { TeamPage } from "./TeamPage";
 import { FundsAdmin } from "./FundsAdmin";
 import { MarketEvents } from "./MarketEvents";
@@ -33,6 +34,7 @@ const PAGES = [
   { id: "standings", label: "Standings", view: AdminStandings },
   { id: "audit", label: "Audit log", view: AuditLog },
   { id: "rulebook", label: "Rulebook", view: RulebookView },
+  { id: "rules", label: "Rules for players", view: RulesEditor },
 ] as const;
 
 type PageId = (typeof PAGES)[number]["id"];

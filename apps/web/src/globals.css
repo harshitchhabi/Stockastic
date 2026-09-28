@@ -1077,3 +1077,18 @@ textarea {
 .dot-status.on {
   background: var(--up);
 }
+
+/* The Rules page: headings, paragraphs and bullet points written by the organisers. */
+.rules-text p {
+  margin: 0 0 10px;
+  line-height: 1.55;
+}
+.rules-list {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  list-style: disc;
+}
+.rules-list li {
+  margin: 0 0 6px;
+  line-height: 1.55;
+}

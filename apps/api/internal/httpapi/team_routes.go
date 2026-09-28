@@ -91,6 +91,7 @@ func (s *Server) teamRoutes(me *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
+	me.GET("/rules", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Rules()) })
 	me.GET("/watchlist", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"symbols": s.a.WatchlistOf(user(c).ID)})
 	})
@@ -144,6 +145,10 @@ func (s *Server) adminTeamRoutes(adm *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, v)
 	})
+	adm.GET("/rules", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"text": s.a.Rules().Text, "edited": s.a.Rules().Edited, "default": s.a.DefaultRules()})
+	})
+	adm.POST("/rules", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.SetRules(u, b.Reason, b.Text) }))
 	adm.POST("/accounts/:id/trader", s.act(func(u app.User, b body, c *gin.Context) error {
 		return s.a.SetTraderAdmin(u, b.Reason, c.Param("id"), b.MemberID)
 	}))

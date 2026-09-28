@@ -88,6 +88,8 @@ type App struct {
 	memberMu  sync.Mutex          // serialises changes to members
 	watch     map[string][]string // each team's starred companies
 	watchMu   sync.Mutex
+	rulesText string // the rules players read, as an organiser last wrote them ("" = the default)
+	rulesMu   sync.Mutex
 	emailMu   sync.Mutex // one new login at a time claims an email (teams and teammates share one address space)
 	companies map[string]universe.Company
 	symbols   []string
@@ -463,6 +465,8 @@ func (a *App) restore() error {
 				a.signupCode.Store(st.Text)
 			case settingAllow:
 				a.setAllowed(st.Text)
+			case settingRules:
+				a.rulesText = st.Text
 			}
 		case store.KindWatch:
 			var w Watchlist
