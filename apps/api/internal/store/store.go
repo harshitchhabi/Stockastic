@@ -46,6 +46,7 @@ const (
 	KindReset    = "reset"   // the organiser reset the event: everything before this record (except accounts and the audit log) is void
 	KindFund     = "fund"    // a fund event: formation, profile, allocation, redemption, checkpoint, strategy log
 	KindMember   = "member"  // a teammate's own login inside a team (the latest version of each member)
+	KindWatch    = "watch"   // a team's starred companies (the latest list of each team)
 )
 
 // Log is an append-only, replayable record of everything durable.

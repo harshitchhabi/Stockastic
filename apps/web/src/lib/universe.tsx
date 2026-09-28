@@ -43,7 +43,7 @@ const FLUSH_MS = 500;
 export function UniverseProvider({ children }: { children: React.ReactNode }) {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [starred, setStarred] = useState<Set<string>>(loadStarred);
+  const [starred, setStarred] = useState<Set<string>>(() => new Set());
   const bases = useRef(new Map<string, number>());
   const pending = useRef(new Map<string, number>());
 
@@ -63,6 +63,40 @@ export function UniverseProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(load, [load]);
+
+  // The watchlist is the team's, kept on the server: every teammate sees the same stars on every device.
+  const loadStars = useCallback(() => {
+    api
+      .get<{ symbols: string[] }>("/api/watchlist")
+      .then((w) => {
+        const server = new Set(w.symbols);
+        // Stars saved in this browser before the watchlist was shared are carried over once.
+        const local = loadStarred();
+        if (server.size === 0 && local.size > 0) {
+          void api.put("/api/watchlist", { symbols: [...local] }).catch(() => {});
+          setStarred(local);
+        } else {
+          setStarred(server);
+        }
+        try {
+          localStorage.removeItem(STAR_KEY);
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(loadStars, [loadStars]);
+  useEffect(() => {
+    const socket = getSocket();
+    const onWatch = (w: { symbols: string[] }) => setStarred(new Set(w.symbols));
+    socket.on("watchlist", onWatch);
+    socket.on("connect", loadStars);
+    return () => {
+      socket.off("watchlist", onWatch);
+      socket.off("connect", loadStars);
+    };
+  }, [loadStars]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -89,18 +123,18 @@ export function UniverseProvider({ children }: { children: React.ReactNode }) {
     };
   }, [load]);
 
-  const toggleStar = useCallback((symbol: string) => {
-    setStarred((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(symbol)) next.add(symbol);
-      try {
-        localStorage.setItem(STAR_KEY, JSON.stringify([...next]));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
+  const toggleStar = useCallback(
+    (symbol: string) => {
+      setStarred((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(symbol)) next.add(symbol);
+        // Save for the whole team; if that fails, the server's list comes back and replaces this guess.
+        api.put("/api/watchlist", { symbols: [...next] }).catch(() => loadStars());
+        return next;
+      });
+    },
+    [loadStars]
+  );
 
   const value = useMemo<Universe>(() => {
     const companies: Company[] = symbols.map((s) => {

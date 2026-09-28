@@ -274,10 +274,13 @@ type Login struct {
 	Member *Member
 }
 
-// Name is the person's own name: the teammate's, or the team's for the leader's login.
+// Name is the person's own name: the teammate's, or the leader's (the team's name if the leader never gave one).
 func (l Login) Name() string {
 	if l.Member != nil {
 		return l.Member.Name
+	}
+	if l.Team.LeaderName != "" {
+		return l.Team.LeaderName
 	}
 	return l.Team.DisplayName
 }
@@ -365,6 +368,9 @@ func (a *App) traderName(team User) string {
 			return m.Name
 		}
 	}
+	if team.LeaderName != "" {
+		return team.LeaderName
+	}
 	return "the team leader"
 }
 
@@ -377,10 +383,13 @@ type TeamMemberView struct {
 	Trader   bool   `json:"trader"`
 	JoinedAt int64  `json:"joinedAt"`
 	Locked   bool   `json:"locked,omitempty"`
+	Online   bool   `json:"online"`
 }
 
 type TeamView struct {
+	LeaderOnline bool             `json:"leaderOnline"`
 	TeamName     string           `json:"teamName"`
+	LeaderName   string           `json:"leaderName"`
 	IsLeader     bool             `json:"isLeader"`
 	YouTrade     bool             `json:"youTrade"`
 	LeaderTrades bool             `json:"leaderTrades"`
@@ -392,8 +401,9 @@ type TeamView struct {
 
 func (a *App) teamMembersView(team User, withEmails bool) []TeamMemberView {
 	out := []TeamMemberView{}
+	on := a.Hub.LoginsOnline(team.ID)
 	for _, m := range a.members.ofTeam(team.ID) {
-		v := TeamMemberView{ID: m.ID, Name: m.Name, Trader: team.TraderMember == m.ID, JoinedAt: m.CreatedAt.UnixMilli(), Locked: m.Locked}
+		v := TeamMemberView{ID: m.ID, Name: m.Name, Trader: team.TraderMember == m.ID, JoinedAt: m.CreatedAt.UnixMilli(), Locked: m.Locked, Online: on[m.ID] > 0}
 		if withEmails {
 			v.Email = m.Email
 		}
@@ -412,7 +422,7 @@ func (a *App) MyTeam(l Login) (TeamView, error) {
 			return TeamView{}, err
 		}
 	}
-	v := TeamView{TeamName: team.DisplayName, IsLeader: leader, YouTrade: a.CanTrade(Login{Team: team, Member: l.Member}),
+	v := TeamView{LeaderOnline: a.Hub.LoginsOnline(team.ID)[""] > 0, TeamName: team.DisplayName, LeaderName: team.LeaderName, IsLeader: leader, YouTrade: a.CanTrade(Login{Team: team, Member: l.Member}),
 		LeaderTrades: team.TraderMember == "", TraderName: a.traderName(team), TeamSize: a.TeamSize(),
 		Members: a.teamMembersView(team, leader)}
 	if leader {
@@ -457,7 +467,9 @@ func (a *App) setTrader(teamID, memberID string) error {
 
 // TeamMembersAdmin is every member of a team with their emails, and the team's code.
 type TeamMembersAdmin struct {
+	LeaderOnline bool             `json:"leaderOnline"`
 	JoinCode     string           `json:"joinCode"`
+	LeaderName   string           `json:"leaderName"`
 	TeamSize     int              `json:"teamSize"`
 	TraderName   string           `json:"traderName"`
 	LeaderTrades bool             `json:"leaderTrades"`
@@ -474,7 +486,7 @@ func (a *App) TeamMembers(teamID string) (TeamMembersAdmin, error) {
 			return TeamMembersAdmin{}, err
 		}
 	}
-	return TeamMembersAdmin{JoinCode: u.JoinCode, TeamSize: a.TeamSize(), TraderName: a.traderName(u), LeaderTrades: u.TraderMember == "",
+	return TeamMembersAdmin{LeaderOnline: a.Hub.LoginsOnline(teamID)[""] > 0, JoinCode: u.JoinCode, LeaderName: u.LeaderName, TeamSize: a.TeamSize(), TraderName: a.traderName(u), LeaderTrades: u.TraderMember == "",
 		Members: a.teamMembersView(u, true)}, nil
 }
 

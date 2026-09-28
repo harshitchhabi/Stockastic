@@ -6,7 +6,7 @@ import { UniverseProvider, useUniverse } from "@/lib/universe";
 import { pagePath, useRoute, type Page } from "@/lib/router";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import type { PublicConfig } from "@/lib/types";
+import type { PublicConfig, Trade } from "@/lib/types";
 import { ExplorePage } from "./pages/ExplorePage";
 import { WatchlistPage } from "./pages/WatchlistPage";
 import { HoldingsPage } from "./pages/HoldingsPage";
@@ -40,6 +40,14 @@ function Shell() {
     api
       .get<PublicConfig>("/api/config")
       .then((c) => setStandingsVisible(c.leaderboard.visibleToParticipants === true))
+      .catch(() => {});
+  }, []);
+
+  // The team's most recent trade, whoever in the team placed it and whenever this page was opened.
+  useEffect(() => {
+    api
+      .get<Trade[]>("/api/trades/mine")
+      .then((ts) => setLastTrade(ts.reduce<number | null>((m, t) => (m == null || t.timestamp > m ? t.timestamp : m), null)))
       .catch(() => {});
   }, []);
 

@@ -450,6 +450,8 @@ type credentials struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
 	EventCode   string `json:"eventCode"`
+	// YourName is the leader's own name when registering a team (DisplayName is the team's name).
+	YourName string `json:"yourName"`
 }
 
 type session struct {
@@ -488,6 +490,11 @@ func (s *Server) signup(c *gin.Context) {
 	if err != nil {
 		s.fail(c, err)
 		return
+	}
+	if strings.TrimSpace(in.YourName) != "" {
+		if err := s.a.SetLeaderName(app.Login{Team: u}, in.YourName); err == nil {
+			u, _ = s.a.User(u.ID)
+		}
 	}
 	s.track(c, u.ID, "signup", "")
 	s.issue(c, app.Login{Team: u})

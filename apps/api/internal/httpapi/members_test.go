@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"stockastic/api/internal/store"
 )
@@ -228,4 +229,80 @@ func postNoFatal(e *env, path string, body any) (int, map[string]any) {
 	var m map[string]any
 	_ = json.NewDecoder(res.Body).Decode(&m)
 	return res.StatusCode, m
+}
+
+// The watchlist belongs to the team: a star from one teammate shows for the others, other teams do not see it,
+// unknown companies are dropped, and it survives a restart. The leader's own name is shown to teammates.
+func TestTeamWatchlistAndLeaderName(t *testing.T) {
+	wal := store.NewMem()
+	r := rb(t, 100)
+	e := newEnv(t, wal, r)
+	lead := e.call("POST", "/api/auth/signup", "", map[string]any{"displayName": "Orbit", "email": "orbit@test.local", "password": "password-123", "yourName": "Ravi Kumar"})
+	if lead.Status != 200 {
+		t.Fatalf("signup: %d %s", lead.Status, lead.Raw)
+	}
+	lt := lead.Body["token"].(string)
+	code := teamCode(t, e, lt)
+	mate := join(e, code, "meera").Body["token"].(string)
+	other, _ := e.signup("Other")
+
+	if v := e.call("GET", "/api/team", mate, nil).Body; v["leaderName"] != "Ravi Kumar" {
+		t.Fatalf("the teammate sees the leader as %v", v["leaderName"])
+	}
+	if me := e.call("GET", "/api/auth/me", mate, nil).Body; me["traderName"] != "Ravi Kumar" {
+		t.Fatalf("trader name = %v", me["traderName"])
+	}
+	if r := e.call("PUT", "/api/watchlist", mate, map[string]any{"symbols": []string{"acme", "GLOBEX", "NOPE", "ACME"}}); r.Status != 200 {
+		t.Fatalf("set watchlist: %d %s", r.Status, r.Raw)
+	}
+	got := fmt.Sprint(e.call("GET", "/api/watchlist", lt, nil).Body["symbols"])
+	if got != "[ACME GLOBEX]" {
+		t.Fatalf("the leader sees %s, want the teammate's stars [ACME GLOBEX]", got)
+	}
+	if o := fmt.Sprint(e.call("GET", "/api/watchlist", other, nil).Body["symbols"]); o != "[]" {
+		t.Fatalf("another team sees %s", o)
+	}
+	e2 := e.restart(r)
+	l2 := e2.call("POST", "/api/auth/login", "", map[string]any{"email": "orbit@test.local", "password": "password-123"}).Body["token"].(string)
+	if got := fmt.Sprint(e2.call("GET", "/api/watchlist", l2, nil).Body["symbols"]); got != "[ACME GLOBEX]" {
+		t.Fatalf("after a restart: %s", got)
+	}
+	// A teammate cannot rename the leader; the leader can.
+	if r := e2.call("POST", "/api/team/leader-name", e2.call("POST", "/api/auth/login", "", map[string]any{"email": "meera@member.local", "password": "password-123"}).Body["token"].(string), map[string]any{"name": "X Y"}); r.Status != 400 {
+		t.Fatalf("a teammate renamed the leader: %d", r.Status)
+	}
+	if r := e2.call("POST", "/api/team/leader-name", l2, map[string]any{"name": "Ravi K"}); r.Status != 200 {
+		t.Fatalf("leader rename: %d %s", r.Status, r.Raw)
+	}
+}
+
+// Each person's own connection shows them online, separately from their teammates.
+func TestEachTeammateShowsOnlineSeparately(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	lead, _ := e.signup("Pulse")
+	mate := join(e, teamCode(t, e, lead), "kiran").Body["token"].(string)
+	online := func() (bool, bool) {
+		v := e.call("GET", "/api/team", lead, nil).Body
+		ms := v["members"].([]any)
+		return v["leaderOnline"] == true, ms[0].(map[string]any)["online"] == true
+	}
+	if l, m := online(); l || m {
+		t.Fatalf("nobody is connected yet, got leader %v, teammate %v", l, m)
+	}
+	c := wsDial(t, e, mate)
+	wsReady(t, c)
+	if l, m := online(); l || !m {
+		t.Fatalf("only the teammate is connected, got leader %v, teammate %v", l, m)
+	}
+	c2 := wsDial(t, e, lead)
+	wsReady(t, c2)
+	if l, m := online(); !l || !m {
+		t.Fatalf("both are connected, got leader %v, teammate %v", l, m)
+	}
+	c.Close()
+	time.Sleep(300 * time.Millisecond)
+	if l, m := online(); !l || m {
+		t.Fatalf("the teammate left, got leader %v, teammate %v", l, m)
+	}
+	c2.Close()
 }

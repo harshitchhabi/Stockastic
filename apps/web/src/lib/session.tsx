@@ -6,7 +6,7 @@ import type { Account } from "./types";
 interface SessionContextValue {
   account: Account | null;
   loading: boolean;
-  signup: (displayName: string, email: string, password: string, eventCode?: string) => Promise<void>;
+  signup: (displayName: string, email: string, password: string, eventCode?: string, yourName?: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   join: (teamCode: string, name: string, email: string, password: string, eventCode?: string) => Promise<void>;
   logout: () => void;
@@ -54,12 +54,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => authEvents.removeEventListener("unauthenticated", onUnauthenticated);
   }, []);
 
-  const signup = useCallback(async (displayName: string, email: string, password: string, eventCode?: string) => {
+  const signup = useCallback(async (displayName: string, email: string, password: string, eventCode?: string, yourName?: string) => {
     const res = await api.post<{ token: string; account: Account }>("/api/auth/signup", {
       displayName,
       email,
       password,
       eventCode,
+      yourName,
     });
     setToken(res.token);
     setAccount(res.account);

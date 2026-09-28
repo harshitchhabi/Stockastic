@@ -3,9 +3,11 @@ import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { useSession } from "@/lib/session";
 
-type Member = { id: string; name: string; email?: string; trader: boolean; joinedAt: number };
+type Member = { id: string; name: string; email?: string; trader: boolean; joinedAt: number; online: boolean };
 type TeamView = {
+  leaderOnline: boolean;
   teamName: string;
+  leaderName: string;
   isLeader: boolean;
   youTrade: boolean;
   leaderTrades: boolean;
@@ -24,6 +26,7 @@ export function TeamPage() {
   const [team, setTeam] = useState<TeamView | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [myName, setMyName] = useState("");
 
   const load = useCallback(() => {
     api
@@ -35,7 +38,11 @@ export function TeamPage() {
   useEffect(() => {
     const socket = getSocket();
     socket.on("portfolio", load); // someone joined, or who trades changed
-    return () => socket.off("portfolio", load);
+    const t = setInterval(load, 10_000); // who is online
+    return () => {
+      socket.off("portfolio", load);
+      clearInterval(t);
+    };
   }, [load]);
 
   async function run(f: () => Promise<unknown>, ok: string) {
@@ -96,6 +103,7 @@ export function TeamPage() {
         <thead>
           <tr>
             <th style={{ textAlign: "left" }}>Name</th>
+            <th style={{ textAlign: "left" }}>Online</th>
             {team.isLeader && <th style={{ textAlign: "left" }}>Email</th>}
             <th>Trades</th>
             {team.isLeader && <th />}
@@ -104,7 +112,10 @@ export function TeamPage() {
         <tbody>
           <tr>
             <td style={{ textAlign: "left" }}>
-              {team.teamName} <span className="label">· team leader</span>
+              {team.leaderName || (team.isLeader ? "You" : "Team leader")} <span className="label">· team leader</span>
+            </td>
+            <td style={{ textAlign: "left" }}>
+              <Online on={team.leaderOnline} />
             </td>
             {team.isLeader && <td style={{ textAlign: "left" }}>{account.email}</td>}
             <td>{team.leaderTrades ? "Yes" : ""}</td>
@@ -121,6 +132,9 @@ export function TeamPage() {
           {team.members.map((m) => (
             <tr key={m.id}>
               <td style={{ textAlign: "left" }}>{m.name}</td>
+              <td style={{ textAlign: "left" }}>
+                <Online on={m.online} />
+              </td>
               {team.isLeader && <td style={{ textAlign: "left" }}>{m.email}</td>}
               <td>{m.trader ? "Yes" : ""}</td>
               {team.isLeader && (
@@ -137,7 +151,30 @@ export function TeamPage() {
         </tbody>
       </table>
       {message && <div className={message.ok ? "up" : "down"}>{message.text}</div>}
-      {!team.isLeader && <p className="dim">Only the team leader can change who trades. An organiser can help if the leader is away.</p>}
+      {team.isLeader && !team.leaderName && (
+        <form
+          className="row-field"
+          style={{ marginTop: 16, maxWidth: 420 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => api.post("/api/team/leader-name", { name: myName }), "Saved.");
+          }}
+        >
+          <input placeholder="Your name, shown to your teammates" value={myName} onChange={(e) => setMyName(e.target.value)} minLength={2} maxLength={40} required />
+          <button type="submit" disabled={busy}>
+            Save
+          </button>
+        </form>
+      )}
     </div>
+  );
+}
+
+function Online({ on }: { on: boolean }) {
+  return (
+    <span className={on ? "up" : "dim"}>
+      <span className={`dot-status ${on ? "on" : ""}`} />
+      {on ? "Online" : "Offline"}
+    </span>
   );
 }

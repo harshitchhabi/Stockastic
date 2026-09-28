@@ -6,6 +6,7 @@ export function LoginForm() {
   const { login, signup, join } = useSession();
   const [mode, setMode] = useState<"login" | "signup" | "join">("login");
   const [teamCode, setTeamCode] = useState("");
+  const [yourName, setYourName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -73,7 +74,7 @@ export function LoginForm() {
     setError(null);
     setSubmitting(true);
     try {
-      if (mode === "signup") await signup(displayName, email, password, eventCode);
+      if (mode === "signup") await signup(displayName, email, password, eventCode, yourName);
       else if (mode === "join") await join(teamCode, displayName, email, password, eventCode);
       else await login(email, password);
     } catch (err) {
@@ -115,6 +116,7 @@ export function LoginForm() {
         {mode === "join" && (
           <input placeholder="Team code" value={teamCode} onChange={(e) => setTeamCode(e.target.value)} required autoComplete="off" autoCapitalize="characters" />
         )}
+        {mode === "signup" && passwordForm && <input placeholder="Your name (team leader)" value={yourName} onChange={(e) => setYourName(e.target.value)} required minLength={2} />}
         {mode === "join" && passwordForm && <input placeholder="Your name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
         {mode !== "login" && listed && <div className="dim">Use the email you registered for this event with the organisers.</div>}
         {mode !== "login" && needsCode && (

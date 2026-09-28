@@ -78,6 +78,40 @@ func (s *Server) teamRoutes(me *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, v)
 	})
+	me.POST("/team/leader-name", func(c *gin.Context) {
+		var b struct {
+			Name string `json:"name"`
+		}
+		if !s.decode(c, &b) {
+			return
+		}
+		if err := s.a.SetLeaderName(login(c), b.Name); err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+	me.GET("/watchlist", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"symbols": s.a.WatchlistOf(user(c).ID)})
+	})
+	me.PUT("/watchlist", func(c *gin.Context) {
+		var b struct {
+			Symbols []string `json:"symbols"`
+		}
+		if !s.decode(c, &b) {
+			return
+		}
+		if len(b.Symbols) > 500 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "too_many", "message": "That is more companies than there are."})
+			return
+		}
+		out, err := s.a.SetWatchlist(user(c).ID, b.Symbols)
+		if err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"symbols": out})
+	})
 	me.POST("/team/code", func(c *gin.Context) {
 		code, err := s.a.NewTeamCode(login(c))
 		if err != nil {

@@ -41,6 +41,8 @@ const (
 type Identity struct {
 	AccountID string
 	Role      string
+	// Login is which person in the team this is: a teammate's id, or empty for the team's own (leader's) login.
+	Login string
 }
 
 // Authenticator verifies a token and returns the identity behind it.
@@ -128,6 +130,17 @@ func (h *Hub) Sockets(accountID string) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.byAccount[accountID])
+}
+
+// LoginsOnline counts an account's open connections per person (keyed by Identity.Login).
+func (h *Hub) LoginsOnline(accountID string) map[string]int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := map[string]int{}
+	for c := range h.byAccount[accountID] {
+		out[c.id.Login]++
+	}
+	return out
 }
 
 // DisconnectAccount closes every connection an account has, with a close code the web app understands

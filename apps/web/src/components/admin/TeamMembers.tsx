@@ -1,7 +1,7 @@
 import { ActionButton, useDo, usePoll } from "./shared";
 
-type Member = { id: string; name: string; email: string; trader: boolean; joinedAt: number; locked?: boolean };
-type Members = { joinCode: string; teamSize: number; traderName: string; leaderTrades: boolean; members: Member[] };
+type Member = { id: string; name: string; email: string; trader: boolean; joinedAt: number; locked?: boolean; online: boolean };
+type Members = { leaderOnline: boolean; joinCode: string; leaderName: string; teamSize: number; traderName: string; leaderTrades: boolean; members: Member[] };
 
 /** The people in one team: who trades for it, its join code, and substitutions. */
 export function TeamMembers({ id, name }: { id: string; name: string }) {
@@ -34,6 +34,7 @@ export function TeamMembers({ id, name }: { id: string; name: string }) {
         <thead>
           <tr>
             <th style={{ textAlign: "left" }}>Name</th>
+            <th style={{ textAlign: "left" }}>Online</th>
             <th style={{ textAlign: "left" }}>Email</th>
             <th>Trades</th>
             <th />
@@ -42,7 +43,11 @@ export function TeamMembers({ id, name }: { id: string; name: string }) {
         <tbody>
           <tr>
             <td style={{ textAlign: "left" }}>
-              Team leader <span className="label">· the team's own login</span>
+              {data.leaderName || "Team leader"} <span className="label">· team leader, the team's own login</span>
+            </td>
+            <td style={{ textAlign: "left" }} className={data.leaderOnline ? "up" : "dim"}>
+              <span className={`dot-status ${data.leaderOnline ? "on" : ""}`} />
+              {data.leaderOnline ? "Online" : "Offline"}
             </td>
             <td />
             <td>{data.leaderTrades ? "Yes" : ""}</td>
@@ -59,6 +64,10 @@ export function TeamMembers({ id, name }: { id: string; name: string }) {
           {data.members.map((m) => (
             <tr key={m.id}>
               <td style={{ textAlign: "left" }}>{m.name}</td>
+              <td style={{ textAlign: "left" }} className={m.online ? "up" : "dim"}>
+                <span className={`dot-status ${m.online ? "on" : ""}`} />
+                {m.online ? "Online" : "Offline"}
+              </td>
               <td style={{ textAlign: "left" }}>{m.email}</td>
               <td>{m.trader ? "Yes" : ""}</td>
               <td>

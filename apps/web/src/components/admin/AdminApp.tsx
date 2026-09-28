@@ -98,12 +98,10 @@ function Frame() {
       </div>
 
       <footer className="statusbar" aria-live="polite">
-        {notice ? (
+        {notice && (
           <span className={notice.ok ? "" : "down"}>
             {new Date(notice.at).toLocaleTimeString()} · {notice.text}
           </span>
-        ) : (
-          <span>Every action here is recorded with your name and the time</span>
         )}
       </footer>
     </div>

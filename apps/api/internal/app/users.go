@@ -66,6 +66,8 @@ type User struct {
 	TraderMember string `json:",omitempty"`
 	// JoinCode is what teammates enter to join this team (see members.go).
 	JoinCode string `json:",omitempty"`
+	// LeaderName is the team leader's own name (DisplayName is the team's name).
+	LeaderName string `json:",omitempty"`
 }
 
 type userStore struct {
@@ -280,10 +282,14 @@ func (a *App) ExternalSignIn(email, name, eventCode, teamCode, teamName string) 
 	if strings.TrimSpace(teamCode) != "" {
 		return a.JoinTeam(teamCode, display, email, hex.EncodeToString(pw), eventCode)
 	}
+	person := display
 	if tn, ok := cleanName(teamName); ok && len([]rune(tn)) >= 2 && len([]rune(tn)) <= 40 {
 		display = tn
 	}
 	u, err := a.Signup(display, email, hex.EncodeToString(pw), eventCode)
+	if err == nil {
+		u, _ = a.updateUser(u.ID, func(x *User) error { x.LeaderName = person; return nil })
+	}
 	return Login{Team: u}, err
 }
 

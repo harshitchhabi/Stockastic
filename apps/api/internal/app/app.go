@@ -85,7 +85,9 @@ type App struct {
 
 	users     *userStore
 	members   *memberStore
-	memberMu  sync.Mutex // serialises changes to members
+	memberMu  sync.Mutex          // serialises changes to members
+	watch     map[string][]string // each team's starred companies
+	watchMu   sync.Mutex
 	emailMu   sync.Mutex // one new login at a time claims an email (teams and teammates share one address space)
 	companies map[string]universe.Company
 	symbols   []string
@@ -159,7 +161,7 @@ func New(cfg Config) (*App, error) {
 	}
 	a := &App{
 		cfg: cfg, RB: cfg.Rulebook, wal: cfg.WAL, now: cfg.Now, Signer: cfg.Signer,
-		users: newUserStore(), members: newMemberStore(), companies: map[string]universe.Company{}, started: cfg.Now(),
+		users: newUserStore(), members: newMemberStore(), watch: map[string][]string{}, companies: map[string]universe.Company{}, started: cfg.Now(),
 		tickets: map[string]*TicketRec{}, commits: newDurations(1000), errs: &errRing{},
 		recent: map[string][]trading.Trade{}, p1Trades: map[string]int{}, peaks: map[string]money.Paise{},
 		snapshots: map[string]FreezeSnapshot{}, paused: map[string]bool{}, pres: map[string]presence{},
@@ -239,6 +241,7 @@ func CompactRules() map[string]store.Rule {
 	return map[string]store.Rule{
 		store.KindUser:    {Latest: 1, Key: field("ID")},
 		store.KindMember:  {Latest: 1, Key: field("ID")},
+		store.KindWatch:   {Latest: 1, Key: field("team")},
 		store.KindClock:   {Latest: 1},
 		store.KindNews:    {Latest: 1, Key: field("Item", "ID")},
 		store.KindTicket:  {Latest: 1, Key: field("Ticket", "ID")},
@@ -461,6 +464,12 @@ func (a *App) restore() error {
 			case settingAllow:
 				a.setAllowed(st.Text)
 			}
+		case store.KindWatch:
+			var w Watchlist
+			if err := decode(raw, &w); err != nil {
+				return err
+			}
+			a.watch[w.Team] = w.Symbols
 		case store.KindMember:
 			var m Member
 			if err := decode(raw, &m); err != nil {
@@ -617,7 +626,11 @@ func (a *App) wsAuth(token string) (wsapi.Identity, bool) {
 	if u.IsAdmin {
 		role = "admin"
 	}
-	return wsapi.Identity{AccountID: u.ID, Role: role}, true
+	id2 := wsapi.Identity{AccountID: u.ID, Role: role}
+	if l.Member != nil {
+		id2.Login = l.Member.ID
+	}
+	return id2, true
 }
 
 func (a *App) onWSReady(c *wsapi.Client) { a.Hub.Send(c, "controlState", a.ControlState()) }
