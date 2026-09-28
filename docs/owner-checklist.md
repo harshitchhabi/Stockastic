@@ -11,7 +11,7 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
 | Create the AWS server | The event runs on one machine | `docs/deployment.md`: a `c6i.2xlarge` in `ap-south-1`, Ubuntu 24.04, a `gp3` disk, an Elastic IP |
 | Set the AWS security group | The first wall against network floods | Allow only ports 80 and 443 from anywhere and port 22 from your address (or anywhere, with key-only SSH). AWS Shield Standard is on by default and free |
 | Run `deploy/harden.sh` | Key-only SSH, firewall, automatic bans, updates | Put your SSH key on the server first, run the script, then open a second terminal and log in **before** closing the first |
-| Install Caddy with `deploy/Caddyfile` | HTTPS and request limits | Replace `event.example.com` with your domain |
+| Install Caddy with `deploy/Caddyfile` | HTTPS and request limits | It is already set to `stockastic.dreammerchantsevent.me` |
 | Fill in `/etc/stockastic/env` from `deploy/env.example` | The server's settings | Make `JWT_SECRET` 32+ random characters (`openssl rand -hex 32`), the organiser password 12+ characters and not reused. `chmod 600` the file |
 | Copy the final data to the server by hand | It is git-ignored on purpose (future prices and news) | `universe.json`, `scenario.json`, `prices.json` in one folder, and `UNIVERSE_PATH` and `SCENARIO_PATH` pointing at them. Run `python tools/verify_final.py` on your computer first: it should say 22 of 22 |
 | Install PostgreSQL and set `DATABASE_URL` | The real, reliable system of record: exactly-once writes, and wallet/sign-in history the file cannot give you | `docs/deployment.md`, "PostgreSQL (the durable record)". Same machine is fine and free; keep it listening only on `127.0.0.1` |
@@ -27,13 +27,13 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
 ### Setting up Google sign-in (free, about 20 minutes)
 
 1. Go to the Google Cloud console (console.cloud.google.com), create a project, and open **APIs and Services**.
-2. **OAuth consent screen**: choose *External*, fill in the app name, your email, and links to a home page (`https://YOUR-DOMAIN/`) and a privacy page (`https://YOUR-DOMAIN/privacy.html`, already part of the site: edit `apps/web/public/privacy.html` to add a contact address). Then click **Publish app** so it is in *production*. In testing mode Google allows only 100 people.
-3. **Credentials**: create an **OAuth client ID** of type *Web application*. Under *Authorized redirect URIs* add exactly `https://YOUR-DOMAIN/api/auth/google/callback`.
+2. **OAuth consent screen**: choose *External*, fill in the app name, your email, and links to a home page (`https://stockastic.dreammerchantsevent.me/`) and a privacy page (`https://stockastic.dreammerchantsevent.me/privacy.html`, already part of the site: edit `apps/web/public/privacy.html` to add a contact address). Then click **Publish app** so it is in *production*. In testing mode Google allows only 100 people.
+3. **Credentials**: create an **OAuth client ID** of type *Web application*. Under *Authorized redirect URIs* add exactly `https://stockastic.dreammerchantsevent.me/api/auth/google/callback`.
 4. Copy the client ID and secret into `/etc/stockastic/env`:
    ```
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
-   GOOGLE_REDIRECT_URL=https://YOUR-DOMAIN/api/auth/google/callback
+   GOOGLE_REDIRECT_URL=https://stockastic.dreammerchantsevent.me/api/auth/google/callback
    GOOGLE_ALLOWED_DOMAINS=vitstudent.ac.in    (only @vitstudent.ac.in accounts can sign in with Google)
    SIGNUP_GOOGLE_ONLY=true                    (nobody can register with an email and password, so only real VIT accounts get in)
    ```

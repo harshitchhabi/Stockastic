@@ -1,4 +1,4 @@
-# HTTPS in front of the server. Replace the name with your own domain (its DNS must point at this machine).
+# HTTPS in front of the server, for stockastic.dreammerchantsevent.me (its DNS A record must point at this machine's Elastic IP).
 # Caddy gets and renews the certificate by itself, and passes WebSockets through.
 {
 	servers {
@@ -11,7 +11,7 @@
 	}
 }
 
-event.example.com {
+stockastic.dreammerchantsevent.me {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
