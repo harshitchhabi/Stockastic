@@ -21,7 +21,7 @@ import (
 
 var publicRoutes = map[string]bool{
 	"GET /healthz": true, "GET /readyz": true, "GET /ws": true, "GET /api/status": true,
-	"POST /api/auth/signup": true, "POST /api/auth/login": true,
+	"POST /api/auth/signup": true, "POST /api/auth/login": true, "POST /api/auth/join": true,
 }
 
 // Every route that is not public needs a login, and every organiser route needs an organiser. This walks the
@@ -39,7 +39,7 @@ func TestEveryRouteIsProtected(t *testing.T) {
 		if publicRoutes[r.Method+" "+r.Path] {
 			continue
 		}
-		path := strings.NewReplacer(":id", "x", ":symbol", "ACME", ":i", "0", ":name", "phase1", ":account", "x").Replace(r.Path)
+		path := strings.NewReplacer(":id", "x", ":symbol", "ACME", ":i", "0", ":name", "phase1", ":account", "x", ":mid", "x").Replace(r.Path)
 		if strings.Contains(path, ":") {
 			t.Fatalf("route %s has a parameter the test does not fill in", r.Path)
 		}
