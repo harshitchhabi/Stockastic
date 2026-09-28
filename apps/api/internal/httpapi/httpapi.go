@@ -30,6 +30,7 @@ import (
 const (
 	maxBody     = 64 << 10
 	ctxUser     = "user"
+	ctxLogin    = "login"
 	requestWait = 8 * time.Second
 )
 
@@ -88,6 +89,7 @@ func New(opt Options) (http.Handler, error) {
 	s.googleRoutes(api)
 	api.POST("/auth/signup", s.signup)
 	api.POST("/auth/login", s.login)
+	api.POST("/auth/join", s.join)
 
 	me := api.Group("", s.requireUser, s.accountGate)
 	me.GET("/auth/me", s.me)
@@ -95,12 +97,13 @@ func New(opt Options) (http.Handler, error) {
 	me.GET("/symbols", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Companies()) })
 	me.GET("/symbols/:symbol/history", s.history)
 	me.GET("/portfolio/me", s.portfolio)
-	me.POST("/trades", s.trade)
+	me.POST("/trades", s.traderOnly, s.trade)
 	me.GET("/trades/mine", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.MyTrades(s.a.AcctOf(user(c)))) })
 	me.GET("/leaderboard", s.leaderboard)
 	me.GET("/news", s.news)
 	me.POST("/disputes", s.raiseDispute)
 	me.GET("/disputes/mine", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.TicketsOf(user(c).ID)) })
+	s.teamRoutes(me)
 
 	adm := api.Group("/admin", s.requireUser, s.accountGate, requireAdmin)
 	adm.GET("/overview", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Overview()) })
@@ -199,6 +202,7 @@ func New(opt Options) (http.Handler, error) {
 		return s.a.ResetPassword(u, b.Reason, c.Param("id"), b.Password)
 	}))
 	adm.POST("/accounts/:id/role", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.SetRole(u, b.Reason, c.Param("id"), b.Role) }))
+	s.adminTeamRoutes(adm)
 	adm.POST("/accounts/:id/sign-out", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.SignOut(u, b.Reason, c.Param("id")) }))
 	adm.POST("/accounts/:id/lock", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Lock(u, b.Reason, c.Param("id")) }))
 	adm.POST("/accounts/:id/unlock", s.act(func(u app.User, b body, c *gin.Context) error { return s.a.Unlock(u, b.Reason, c.Param("id")) }))
@@ -300,12 +304,13 @@ func (s *Server) requireUser(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	u, ok := s.a.User(id)
-	if !ok || !s.a.SessionOK(u, ver) {
+	l, ok := s.a.Resolve(id, ver)
+	if !ok {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	c.Set(ctxUser, u)
+	c.Set(ctxUser, l.Team) // everything the team does is done as the team account
+	c.Set(ctxLogin, l)     // and this says which person in the team is signed in
 	c.Next()
 }
 
@@ -386,6 +391,9 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrNotTrader, 403, "The other team in your fund places its trades. You can watch the fund from here."},
 		{funds.ErrUnknownFund, 404, "No such fund."},
 		{app.ErrUnknownUser, 404, "No such account."},
+		{app.ErrUnknownMember, 404, "No such teammate."},
+		{app.ErrBadTeamCode, 400, "That team code is not right. Ask your team leader for it."},
+		{app.ErrTeamFull, 409, "This team already has all its members."},
 		{app.ErrUnknownTicket, 404, "No such dispute."},
 		{ledger.ErrInsufficientCash, 422, "Not enough cash for this order."},
 		{ledger.ErrInsufficientShares, 422, "You do not hold enough shares to sell."},
@@ -447,13 +455,13 @@ type session struct {
 	Account dto.Account `json:"account"`
 }
 
-func (s *Server) issue(c *gin.Context, u app.User) {
-	tok, err := s.a.Signer.Issue(u.ID, u.SessionVersion)
+func (s *Server) issue(c *gin.Context, l app.Login) {
+	tok, err := s.a.IssueToken(l)
 	if err != nil {
 		s.fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, session{Token: tok, Account: s.a.Account(u)})
+	c.JSON(http.StatusOK, session{Token: tok, Account: s.a.AccountFor(l)})
 }
 
 func (s *Server) signup(c *gin.Context) {
@@ -477,7 +485,7 @@ func (s *Server) signup(c *gin.Context) {
 		return
 	}
 	s.track(c, u.ID, "signup", "")
-	s.issue(c, u)
+	s.issue(c, app.Login{Team: u})
 }
 
 func (s *Server) login(c *gin.Context) {
@@ -493,7 +501,7 @@ func (s *Server) login(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_attempts", "message": "Too many wrong passwords for this email. Wait a few minutes."})
 		return
 	}
-	u, err := s.a.Login(in.Email, in.Password)
+	l, err := s.a.Authenticate(in.Email, in.Password)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidCredentials) && guarded {
 			s.logins.failed(in.Email, c.ClientIP())
@@ -505,8 +513,8 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 	s.logins.ok(in.Email, c.ClientIP())
-	s.track(c, u.ID, "login", "")
-	s.issue(c, u)
+	s.track(c, l.Team.ID, "login", memberDetail(l))
+	s.issue(c, l)
 }
 
 // track notes what a person did, with the address and browser it came from.
@@ -514,7 +522,7 @@ func (s *Server) track(c *gin.Context, account, typ, detail string) {
 	s.a.Track(account, typ, c.ClientIP(), c.GetHeader("User-Agent"), detail)
 }
 
-func (s *Server) me(c *gin.Context) { c.JSON(http.StatusOK, s.a.Account(user(c))) }
+func (s *Server) me(c *gin.Context) { c.JSON(http.StatusOK, s.a.AccountFor(login(c))) }
 
 // ---- reads ----
 
@@ -632,6 +640,7 @@ type body struct {
 	Symbol          string     `json:"symbol"`
 	Qty             int64      `json:"qty"`
 	Price           float64    `json:"price"`
+	MemberID        string     `json:"memberId"`
 	Paused          bool       `json:"paused"`
 	Direction       string     `json:"direction"`
 	FillID          string     `json:"fillId"`

@@ -32,6 +32,15 @@ export interface Account {
   role: Role;
   isAdmin: boolean;
   cashBalance: number;
+  /** Who is signed in: the team leader (the team's own login) or a teammate with their own login. */
+  loginName: string;
+  loginEmail: string;
+  memberId?: string;
+  isLeader: boolean;
+  /** Whether this login may trade and move the team's money; traderName is who does. */
+  canTrade: boolean;
+  traderName: string;
+  teamSize: number;
 }
 
 export interface Holding {

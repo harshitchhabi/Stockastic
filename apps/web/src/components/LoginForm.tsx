@@ -3,8 +3,9 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 export function LoginForm() {
-  const { login, signup } = useSession();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const { login, signup, join } = useSession();
+  const [mode, setMode] = useState<"login" | "signup" | "join">("login");
+  const [teamCode, setTeamCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,6 +59,7 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       if (mode === "signup") await signup(displayName, email, password, eventCode);
+      else if (mode === "join") await join(teamCode, displayName, email, password, eventCode);
       else await login(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : `${mode} failed`);
@@ -81,28 +83,39 @@ export function LoginForm() {
           </button>
           {signupOpen && (
             <button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
-              Sign up
+              Register team
+            </button>
+          )}
+          {signupOpen && (
+            <button type="button" aria-pressed={mode === "join"} onClick={() => setMode("join")}>
+              Join your team
             </button>
           )}
         </div>
+        {mode === "signup" && <div className="dim">One person registers the team and becomes its leader. The others then choose Join your team.</div>}
         {mode === "signup" && (
-          <input placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+          <input placeholder="Team name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
         )}
-        {mode === "signup" && listed && <div className="dim">Use the email you registered for this event with the organisers.</div>}
-        {mode === "signup" && needsCode && (
+        {mode === "join" && <div className="dim">Ask your team leader for the team code (on their Team page).</div>}
+        {mode === "join" && (
+          <input placeholder="Team code" value={teamCode} onChange={(e) => setTeamCode(e.target.value)} required autoComplete="off" autoCapitalize="characters" />
+        )}
+        {mode === "join" && <input placeholder="Your name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
+        {mode !== "login" && listed && <div className="dim">Use the email you registered for this event with the organisers.</div>}
+        {mode !== "login" && needsCode && (
           <input placeholder="Event code (from the organisers)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} required autoComplete="off" />
         )}
         <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input
           placeholder="Password"
           type="password"
-          minLength={mode === "signup" ? 8 : undefined}
+          minLength={mode !== "login" ? 8 : undefined}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
         />
         {error && <div className="down">{error}</div>}
-        {google && (
+        {google && mode !== "join" && (
           <>
             {needsCode && mode === "login" && (
               <input placeholder="Event code (only needed the first time)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} autoComplete="off" />
@@ -116,10 +129,11 @@ export function LoginForm() {
             >
               Continue with Google
             </button>
+            {mode === "login" && <div className="dim">Joining someone else's team? Choose Join your team first.</div>}
           </>
         )}
         <button type="submit" className="solid" disabled={submitting} style={{ padding: 11 }}>
-          {submitting ? "…" : mode === "signup" ? "Create account" : "Enter the floor"}
+          {submitting ? "…" : mode === "signup" ? "Register team" : mode === "join" ? "Join team" : "Enter the floor"}
         </button>
       </form>
     </div>

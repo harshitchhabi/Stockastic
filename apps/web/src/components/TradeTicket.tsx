@@ -110,8 +110,9 @@ export function TradeTicket({ symbol, tradingFrozen, onTraded }: { symbol: strin
           {done && <div className="up">{done}</div>}
           {tradingFrozen && <div className="down">Trading is frozen by the organisers.</div>}
           {viewOnly && <div className="down">{desk?.traderName} places this fund's trades. You can watch the fund from here.</div>}
+          {account && !account.canTrade && <div className="dim">Only {account.traderName} can buy and sell for your team. You can watch everything from here.</div>}
 
-          <button type="submit" className="solid" disabled={!account || busy || tradingFrozen || viewOnly || price == null || n < 1} style={{ padding: 10 }}>
+          <button type="submit" className="solid" disabled={!account || !account.canTrade || busy || tradingFrozen || viewOnly || price == null || n < 1} style={{ padding: 10 }}>
             {busy ? "Trading…" : `${side === "buy" ? "Buy" : "Sell"} ${n > 0 ? n : ""} ${symbol}`}
           </button>
         </form>

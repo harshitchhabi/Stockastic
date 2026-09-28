@@ -4,6 +4,7 @@ import type { TeamDetail } from "@/lib/adminTypes";
 import type { SymbolInfo } from "@/lib/types";
 import { ago } from "@/lib/format";
 import { TeamRecord } from "./TeamRecord";
+import { TeamMembers } from "./TeamMembers";
 import { ActionButton, Badge, ChoiceControl, LoadError, useDo, useNow, usePoll } from "./shared";
 
 const money = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -129,6 +130,8 @@ export function TeamPage({ id }: { id: string }) {
           <div className="v">{money(w.cash)}</div>
         </div>
       </div>
+
+      <TeamMembers id={id} name={a.displayName} />
 
       <h2 className="section">Wallet</h2>
       <div className="two-col" style={{ gap: 48 }}>

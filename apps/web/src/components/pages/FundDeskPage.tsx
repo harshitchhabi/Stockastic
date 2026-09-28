@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { getSocket } from "@/lib/socket";
 import { useUniverse } from "@/lib/universe";
 import { companyPath, pagePath } from "@/lib/router";
@@ -10,6 +11,7 @@ const RISKS = ["Conservative", "Balanced", "Aggressive"];
 
 /** The fund manager's desk: the fund's figures and holdings, its published profile, and the fees so far. */
 export function FundDeskPage() {
+  const { account } = useSession();
   const { bySymbol } = useUniverse();
   const [data, setData] = useState<MyFund | null>(null);
   const [form, setForm] = useState({ name: "", philosophy: "", risk: "Balanced", strategy: "" });
@@ -179,7 +181,7 @@ export function FundDeskPage() {
           <input value={form.strategy} maxLength={60} onChange={(e) => setForm({ ...form, strategy: e.target.value })} />
         </label>
         <div>
-          <button type="submit" className="solid">
+          <button type="submit" className="solid" disabled={account?.canTrade === false} title={account?.canTrade === false ? "Only the person trading for your team can change the profile" : undefined}>
             Publish
           </button>
         </div>

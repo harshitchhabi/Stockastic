@@ -80,7 +80,7 @@ type limits struct {
 func newLimits() *limits {
 	return &limits{
 		ip:     newBuckets(3000, 6000),
-		user:   newBuckets(40, 80),
+		user:   newBuckets(60, 150), // shared by up to 3 people in a team, each with their own screen
 		admin:  newBuckets(300, 600),
 		signup: newBuckets(50, 1000),
 	}
@@ -94,7 +94,7 @@ func newLimits() *limits {
 func (s *Server) ipGate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch p := c.Request.URL.Path; {
-		case strings.HasPrefix(c.GetHeader("Authorization"), "Bearer "), p == "/ws", p == "/api/auth/login", p == "/api/auth/signup":
+		case strings.HasPrefix(c.GetHeader("Authorization"), "Bearer "), p == "/ws", p == "/api/auth/login", p == "/api/auth/signup", p == "/api/auth/join":
 			c.Next()
 			return
 		}

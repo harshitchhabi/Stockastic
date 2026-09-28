@@ -20,7 +20,7 @@ func (s *Server) fundRoutes(me, adm *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, m)
 	})
-	me.PUT("/funds/mine/profile", func(c *gin.Context) {
+	me.PUT("/funds/mine/profile", s.traderOnly, func(c *gin.Context) {
 		var r app.ProfileRequest
 		if !s.decode(c, &r) {
 			return
@@ -31,7 +31,7 @@ func (s *Server) fundRoutes(me, adm *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
-	me.POST("/funds/:id/allocate", func(c *gin.Context) {
+	me.POST("/funds/:id/allocate", s.traderOnly, func(c *gin.Context) {
 		var r app.AllocationRequest
 		if !s.decode(c, &r) {
 			return
@@ -43,7 +43,7 @@ func (s *Server) fundRoutes(me, adm *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, res)
 	})
-	me.POST("/funds/:id/redeem", func(c *gin.Context) {
+	me.POST("/funds/:id/redeem", s.traderOnly, func(c *gin.Context) {
 		var r app.AllocationRequest
 		if !s.decode(c, &r) {
 			return
@@ -56,7 +56,7 @@ func (s *Server) fundRoutes(me, adm *gin.RouterGroup) {
 		c.JSON(http.StatusOK, res)
 	})
 	me.GET("/strategy-log", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.MyLogs(user(c))) })
-	me.POST("/strategy-log", func(c *gin.Context) {
+	me.POST("/strategy-log", s.traderOnly, func(c *gin.Context) {
 		var r struct {
 			Text string `json:"text"`
 		}

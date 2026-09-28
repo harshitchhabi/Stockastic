@@ -84,6 +84,9 @@ type App struct {
 	Signer    *auth.Signer
 
 	users     *userStore
+	members   *memberStore
+	memberMu  sync.Mutex // serialises changes to members
+	emailMu   sync.Mutex // one new login at a time claims an email (teams and teammates share one address space)
 	companies map[string]universe.Company
 	symbols   []string
 	started   time.Time
@@ -156,7 +159,7 @@ func New(cfg Config) (*App, error) {
 	}
 	a := &App{
 		cfg: cfg, RB: cfg.Rulebook, wal: cfg.WAL, now: cfg.Now, Signer: cfg.Signer,
-		users: newUserStore(), companies: map[string]universe.Company{}, started: cfg.Now(),
+		users: newUserStore(), members: newMemberStore(), companies: map[string]universe.Company{}, started: cfg.Now(),
 		tickets: map[string]*TicketRec{}, commits: newDurations(1000), errs: &errRing{},
 		recent: map[string][]trading.Trade{}, p1Trades: map[string]int{}, peaks: map[string]money.Paise{},
 		snapshots: map[string]FreezeSnapshot{}, paused: map[string]bool{}, pres: map[string]presence{},
@@ -235,6 +238,7 @@ func CompactRules() map[string]store.Rule {
 	}
 	return map[string]store.Rule{
 		store.KindUser:    {Latest: 1, Key: field("ID")},
+		store.KindMember:  {Latest: 1, Key: field("ID")},
 		store.KindClock:   {Latest: 1},
 		store.KindNews:    {Latest: 1, Key: field("Item", "ID")},
 		store.KindTicket:  {Latest: 1, Key: field("Ticket", "ID")},
@@ -457,6 +461,12 @@ func (a *App) restore() error {
 			case settingAllow:
 				a.setAllowed(st.Text)
 			}
+		case store.KindMember:
+			var m Member
+			if err := decode(raw, &m); err != nil {
+				return err
+			}
+			a.members.put(m)
 		case store.KindReset:
 			a.resetState()
 			clockState, releases, trades = nil, map[string]news.Release{}, 0
@@ -598,8 +608,9 @@ func (a *App) wsAuth(token string) (wsapi.Identity, bool) {
 	if err != nil {
 		return wsapi.Identity{}, false
 	}
-	u, ok := a.users.get(id)
-	if !ok || u.Status == StatusDisqualified || !u.sessionOK(ver) {
+	l, ok := a.Resolve(id, ver)
+	u := l.Team
+	if !ok || u.Status == StatusDisqualified {
 		return wsapi.Identity{}, false
 	}
 	role := u.Role

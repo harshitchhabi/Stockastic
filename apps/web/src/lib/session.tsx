@@ -8,6 +8,7 @@ interface SessionContextValue {
   loading: boolean;
   signup: (displayName: string, email: string, password: string, eventCode?: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  join: (teamCode: string, name: string, email: string, password: string, eventCode?: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
 }
@@ -75,6 +76,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     reconnectSocket();
   }, []);
 
+  const join = useCallback(async (teamCode: string, name: string, email: string, password: string, eventCode?: string) => {
+    const res = await api.post<{ token: string; account: Account }>("/api/auth/join", { teamCode, name, email, password, eventCode });
+    setToken(res.token);
+    setAccount(res.account);
+    reconnectSocket();
+  }, []);
+
   const logout = useCallback(() => {
     closeSocket();
     setToken(null);
@@ -92,7 +100,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <SessionContext.Provider value={{ account, loading, signup, login, logout, refresh }}>
+    <SessionContext.Provider value={{ account, loading, signup, login, join, logout, refresh }}>
       {children}
     </SessionContext.Provider>
   );

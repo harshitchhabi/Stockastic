@@ -12,7 +12,8 @@ const pct = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}%`;
  * while a window is open; units are bought at the fund's NAV at that moment.
  */
 export function FundsPage() {
-  const { refresh } = useSession();
+  const { account, refresh } = useSession();
+  const canAct = account?.canTrade !== false;
   const [view, setView] = useState<FundsView | null>(null);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -84,6 +85,7 @@ export function FundsPage() {
         <h1>Funds</h1>
         <span className={`chip ${view.windowOpen ? "" : "alert"}`}>{view.windowOpen ? `Allocation window ${view.window} is open` : "Allocation window closed"}</span>
       </div>
+      {!canAct && account && <p className="dim">Only {account.traderName} can move your team's money in and out of funds. You can watch everything from here.</p>}
 
       <div className="figures">
         <div className="figure">
@@ -150,15 +152,15 @@ export function FundsPage() {
                       style={{ width: 96 }}
                       value={amounts[f.id] ?? ""}
                       onChange={(e) => setAmounts((p) => ({ ...p, [f.id]: e.target.value }))}
-                      disabled={!view.windowOpen}
+                      disabled={!view.windowOpen || !canAct}
                     />
-                    <button className="solid" disabled={!view.windowOpen || busy !== null || !Number(amounts[f.id])} onClick={() => act(f, "allocate")}>
+                    <button className="solid" disabled={!canAct || !view.windowOpen || busy !== null || !Number(amounts[f.id])} onClick={() => act(f, "allocate")}>
                       Invest
                     </button>
-                    <button disabled={!view.windowOpen || busy !== null || f.myUnits <= 0 || !Number(amounts[f.id])} onClick={() => act(f, "redeem")}>
+                    <button disabled={!canAct || !view.windowOpen || busy !== null || f.myUnits <= 0 || !Number(amounts[f.id])} onClick={() => act(f, "redeem")}>
                       Withdraw
                     </button>
-                    <button className="ghost" disabled={!view.windowOpen || busy !== null || f.myUnits <= 0} onClick={() => act(f, "redeem", true)}>
+                    <button className="ghost" disabled={!canAct || !view.windowOpen || busy !== null || f.myUnits <= 0} onClick={() => act(f, "redeem", true)}>
                       All
                     </button>
                   </div>
@@ -176,6 +178,8 @@ export function FundsPage() {
 
 /** Prize 3: 2 to 3 sentences at each checkpoint, what you did and why. No entry, no eligibility. */
 function StrategyLog() {
+  const { account } = useSession();
+  const canAct = account?.canTrade !== false;
   const [logs, setLogs] = useState<StrategyLogEntry[]>([]);
   const [text, setText] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -210,7 +214,7 @@ function StrategyLog() {
       <form onSubmit={submit} className="stack" style={{ maxWidth: 640 }}>
         <textarea rows={3} maxLength={600} value={text} onChange={(e) => setText(e.target.value)} placeholder="What did you do, and why?" required />
         <div>
-          <button type="submit" className="solid" disabled={!text.trim()}>
+          <button type="submit" className="solid" disabled={!canAct || !text.trim()} title={canAct ? undefined : "Only the person trading for your team can save the log"}>
             Save entry
           </button>
         </div>

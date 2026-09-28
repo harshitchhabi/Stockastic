@@ -27,6 +27,15 @@ type Account struct {
 	Role        string  `json:"role"`
 	IsAdmin     bool    `json:"isAdmin"`
 	CashBalance float64 `json:"cashBalance"`
+	// Who is signed in: the team leader (the team's own login) or a teammate with their own login.
+	LoginName  string `json:"loginName"`
+	LoginEmail string `json:"loginEmail"`
+	MemberID   string `json:"memberId,omitempty"`
+	IsLeader   bool   `json:"isLeader"`
+	// CanTrade is whether this login may trade and move the team's money; TraderName is who does.
+	CanTrade   bool   `json:"canTrade"`
+	TraderName string `json:"traderName"`
+	TeamSize   int    `json:"teamSize"`
 }
 
 type Company struct {

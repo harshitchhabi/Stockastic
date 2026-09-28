@@ -62,6 +62,10 @@ type User struct {
 	// SessionVersion is stamped into every login token. Signing a team out raises it, which cancels all
 	// of that team's earlier tokens at once.
 	SessionVersion int
+	// TraderMember is the teammate who trades for the team; empty means the team leader (this login) does.
+	TraderMember string `json:",omitempty"`
+	// JoinCode is what teammates enter to join this team (see members.go).
+	JoinCode string `json:",omitempty"`
 }
 
 type userStore struct {
@@ -156,6 +160,14 @@ func (s *userStore) put(u User) error {
 	return nil
 }
 
+// emailKeyUsed reports whether an address that is the same person's (a "+tag" or Gmail dot variant) has an account.
+func (s *userStore) emailKeyUsed(email string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.canon[emailKey(email)]
+	return ok
+}
+
 func (s *userStore) count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -209,8 +221,15 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 	}
 	u := User{ID: ids.New(), Email: normEmail(addr.Address), DisplayName: displayName, PasswordHash: hash,
 		Role: RoleInvestor, Status: StatusActive, CreatedAt: a.now()}
-	// Reserve the email first so two concurrent signups cannot both succeed.
-	if err := a.users.putNew(u); err != nil {
+	// Reserve the email first so two concurrent signups cannot both succeed, and not one a teammate already uses.
+	a.emailMu.Lock()
+	if a.members.emailUsed(u.Email) {
+		a.emailMu.Unlock()
+		return User{}, ErrEmailTaken
+	}
+	err = a.users.putNew(u)
+	a.emailMu.Unlock()
+	if err != nil {
 		return User{}, err
 	}
 	if err := a.persistUser(u); err != nil {
@@ -232,12 +251,15 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 // ExternalSignIn signs in the account that has this (verified) email, or registers a new one with the normal
 // registration rules (open registration, the list of approved emails, the event code, the account cap, one
 // mailbox one person). The account has a random password nobody knows: they sign in with Google.
-func (a *App) ExternalSignIn(email, name, eventCode string) (User, error) {
+func (a *App) ExternalSignIn(email, name, eventCode string) (Login, error) {
 	if u, ok := a.users.byEmailAddr(email); ok {
 		if u.Locked {
-			return User{}, ErrAccountLocked
+			return Login{}, ErrAccountLocked
 		}
-		return u, nil
+		return Login{Team: u}, nil
+	}
+	if m, ok := a.members.byEmailAddr(email); ok { // a teammate who joined with this email
+		return a.memberLogin(m)
 	}
 	display, ok := cleanName(name)
 	if r := []rune(display); !ok || len(r) < 2 {
@@ -249,9 +271,10 @@ func (a *App) ExternalSignIn(email, name, eventCode string) (User, error) {
 	}
 	pw := make([]byte, 24)
 	if _, err := rand.Read(pw); err != nil {
-		return User{}, err
+		return Login{}, err
 	}
-	return a.Signup(display, email, hex.EncodeToString(pw), eventCode)
+	u, err := a.Signup(display, email, hex.EncodeToString(pw), eventCode)
+	return Login{Team: u}, err
 }
 
 // IsAdminEmail reports whether an address belongs to an organiser account.

@@ -49,7 +49,9 @@ type user struct {
 	email string
 	id    string
 	token string
-	c     *http.Client // one connection per team, like a browser
+	// watcher is a teammate with their own login: they see the team's dashboard but may not trade.
+	watcher bool
+	c       *http.Client // one connection per team, like a browser
 }
 
 var (
@@ -61,11 +63,13 @@ var (
 	steady    = flag.Duration("steady", 60*time.Second, "how long to trade at the steady pace")
 	subs      = flag.Int("subs", 1, "companies each browser has open (order book subscriptions)")
 	storm     = flag.Int("storm", 200, "most teams logging in at the very same instant (a venue rarely exceeds this)")
+	mates     = flag.Int("teammates", 0, "teammates who join each team with their own login and only watch (the leader trades)")
 
 	client = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{MaxIdleConns: 2000, MaxIdleConnsPerHost: 2000, IdleConnTimeout: 90 * time.Second}}
 
 	statSignup, statLogin, statOrder, statBurst, statWSLag, statDepth, statPortfolio stats
 	orderOK, orderRate, orderErr, wsMsgs, wsBytes, wsDropped, wsConnected            atomic.Int64
+	watcherRefused, watcherLeak, watcherReadErr                                      atomic.Int64
 	sent                                                                             sync.Map // clientOrderId -> start time
 	statusMu                                                                         sync.Mutex
 	statuses                                                                         = map[string]int{}
@@ -162,13 +166,44 @@ func main() {
 		users[i] = u
 	})
 
+	// ---- 1b. teammates join each team with its code ----
+	var watchers []*user
+	if *mates > 0 {
+		fmt.Printf("%d teammates join each team with the team code ...\n", *mates)
+		var wm sync.Mutex
+		parallel(*nUsers, 16, func(i int) {
+			lead := users[i]
+			var team struct{ JoinCode string }
+			_ = json.Unmarshal(must(callC(lead.c, "GET", "/api/team", lead.token, nil)), &team)
+			for k := 0; k < *mates; k++ {
+				m := &user{idx: i, email: fmt.Sprintf("mate%d-%d@sim.test", i, k), watcher: true,
+					c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{MaxIdleConnsPerHost: 2, IdleConnTimeout: 5 * time.Minute}}}
+				st, b, err := callC(m.c, "POST", "/api/auth/join", "", map[string]any{"teamCode": team.JoinCode, "name": fmt.Sprintf("Mate %d-%d", i, k), "email": m.email, "password": "sim-password-1"})
+				if err != nil || st != 200 {
+					fmt.Fprintf(os.Stderr, "join %d-%d: %d %v %s\n", i, k, st, err, b)
+					os.Exit(1)
+				}
+				var out struct {
+					Token   string
+					Account struct{ ID string }
+				}
+				_ = json.Unmarshal(b, &out)
+				m.token, m.id = out.Token, out.Account.ID
+				wm.Lock()
+				watchers = append(watchers, m)
+				wm.Unlock()
+			}
+		})
+	}
+	everyone := append(append([]*user{}, users...), watchers...)
+
 	// ---- 2. everyone logs in at the same moment (the start-of-event storm) ----
-	fmt.Printf("all %d teams log in at once ...\n", *nUsers)
+	fmt.Printf("all %d people log in at once ...\n", len(everyone))
 	var gate sync.WaitGroup
 	gate.Add(1)
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, *storm)
-	for _, u := range users {
+	for _, u := range everyone {
 		wg.Add(1)
 		go func(u *user) {
 			defer wg.Done()
@@ -205,13 +240,13 @@ func main() {
 
 	// ---- 4. every team opens a live socket and looks at a company ----
 	wsURL := "ws" + strings.TrimPrefix(*base, "http") + "/ws"
-	fmt.Printf("opening %d WebSockets ...\n", *nUsers)
+	fmt.Printf("opening %d WebSockets ...\n", len(everyone))
 	stop := make(chan struct{})
 	var wsWG sync.WaitGroup
 	var readyMu sync.Mutex
 	var statReady stats
-	parallel(*nUsers, 32, func(i int) {
-		u := users[i]
+	parallel(len(everyone), 32, func(i int) {
+		u := everyone[i]
 		t0 := time.Now()
 		c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err != nil {
@@ -346,6 +381,35 @@ func main() {
 			}
 		}(u)
 	}
+	// Teammates watch: they read the team's portfolio and charts, and once each tries to trade, which must be refused.
+	for _, w := range watchers {
+		tw.Add(1)
+		go func(w *user) {
+			defer tw.Done()
+			tried := false
+			for time.Now().Before(deadline) {
+				time.Sleep(time.Duration(3000+rand.Intn(4000)) * time.Millisecond)
+				s := syms[rand.Intn(len(syms))]
+				t0 := time.Now()
+				if st, _, err := callC(w.c, "GET", "/api/portfolio/me", w.token, nil); err != nil || st != 200 {
+					watcherReadErr.Add(1)
+				}
+				statPortfolio.add(time.Since(t0))
+				if st, _, err := callC(w.c, "GET", "/api/symbols/"+s.Symbol+"/history", w.token, nil); err != nil || st != 200 {
+					watcherReadErr.Add(1)
+				}
+				if !tried {
+					tried = true
+					st, _, _ := callC(w.c, "POST", "/api/trades", w.token, map[string]any{"clientTradeId": fmt.Sprintf("w-%s-%d", w.email, time.Now().UnixNano()), "symbol": s.Symbol, "side": "buy", "qty": 1})
+					if st == 403 {
+						watcherRefused.Add(1)
+					} else {
+						watcherLeak.Add(1)
+					}
+				}
+			}
+		}(w)
+	}
 	tw.Wait()
 
 	// ---- 6. the worst moment: every team hits the same company in the same instant ----
@@ -391,6 +455,10 @@ func main() {
 	fmt.Println(statDepth.line("read price history"))
 	fmt.Println(statPortfolio.line("read portfolio"))
 	fmt.Printf("\ntrades accepted %d, refused by the trade limit %d, errors %d\n", orderOK.Load(), orderRate.Load(), orderErr.Load())
+	if len(watchers) > 0 {
+		fmt.Printf("teammates %d: trade attempts refused %d, trades that got through %d (must be 0), failed reads %d\n",
+			len(watchers), watcherRefused.Load(), watcherLeak.Load(), watcherReadErr.Load())
+	}
 	statusMu.Lock()
 	for k, v := range statuses {
 		fmt.Printf("    not accepted: %-40s x%d\n", k, v)

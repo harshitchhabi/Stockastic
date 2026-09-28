@@ -13,6 +13,7 @@ import { HoldingsPage } from "./pages/HoldingsPage";
 import { CompanyPage } from "./pages/CompanyPage";
 import { FundsPage } from "./pages/FundsPage";
 import { FundDeskPage } from "./pages/FundDeskPage";
+import { TeamPage } from "./pages/TeamPage";
 import { Leaderboard } from "./Leaderboard";
 import { NewsFeed } from "./NewsFeed";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -75,6 +76,7 @@ function Shell() {
     ...(account.role === "investor" ? [{ page: "funds" as Page, label: "Funds" }] : []),
     ...(account.role === "fund_manager" ? [{ page: "desk" as Page, label: "Fund desk" }] : []),
     ...(standingsVisible ? [{ page: "standings" as Page, label: "Standings" }] : []),
+    ...(account.teamSize > 1 && !account.isAdmin ? [{ page: "team" as Page, label: "Team" }] : []),
   ];
 
   // The role decides which pages exist; anything else falls back to Explore.
@@ -97,7 +99,9 @@ function Shell() {
         </nav>
         {tradingFrozen && <span className="chip alert">Trading frozen</span>}
         <span style={{ marginLeft: "auto" }} className="dim">
-          {account.displayName} <span className="label">· {account.role.replace("_", " ")}</span>
+          {account.displayName}
+          {!account.isLeader && <span> · {account.loginName}</span>} <span className="label">· {account.role.replace("_", " ")}</span>
+          {!account.canTrade && <span className="label"> · watching</span>}
         </span>
         <span>
           <span className="label">{account.role === "fund_manager" ? "Fund cash " : "Cash "}</span>
@@ -124,6 +128,7 @@ function Shell() {
             {page === "company" && route.symbol && <CompanyPage key={route.symbol} symbol={route.symbol} tradingFrozen={tradingFrozen} />}
             {page === "funds" && <FundsPage />}
             {page === "desk" && <FundDeskPage />}
+            {page === "team" && <TeamPage />}
             {page === "standings" && (
               <div className="page">
                 <Leaderboard />
