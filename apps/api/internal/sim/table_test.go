@@ -60,9 +60,43 @@ func TestPricesFollowTheTableExactlyAndOnlyWhileTheMarketIsOpen(t *testing.T) {
 	if r.price("B") != money.FromRupees(198) {
 		t.Fatalf("second step: B = %v", r.price("B"))
 	}
-	r.run(100) // past the end of the table: prices stay on the last row
-	if r.price("A") != money.FromRupees(103) {
-		t.Fatalf("after the table ended: A = %v", r.price("A"))
+	r.run(10) // the table's last row
+	if r.price("A") != money.FromRupees(103) || r.price("D") != money.FromRupees(404.5) {
+		t.Fatalf("last step: A = %v, D = %v", r.price("A"), r.price("D"))
+	}
+}
+
+// If the event runs longer than the data, prices do not freeze: each company carries on from where the table ended,
+// moving by about as much as it did in the table (a company that never moved stays put), the same way every time.
+func TestPricesKeepMovingAfterTheTableEnds(t *testing.T) {
+	run := func() *rig {
+		r := newRig(t, writeTable(t, tableScenario), companies(), 0)
+		r.run(30) // to the last row
+		r.run(600)
+		return r
+	}
+	r := run()
+	moved := 0
+	for sym, last := range map[string]float64{"A": 103, "B": 197, "D": 404.5} {
+		p := r.price(sym)
+		if p != money.FromRupees(last) {
+			moved++
+		}
+		if d := float64(p)/float64(money.FromRupees(last)) - 1; d > 0.5 || d < -0.5 {
+			t.Errorf("%s went from %v to %v in 60 steps: far more than it ever moved in the table", sym, last, p.Rupees())
+		}
+	}
+	if moved != 3 {
+		t.Fatalf("after the table ended only %d of 3 moving companies kept moving", moved)
+	}
+	if r.price("C") != money.FromRupees(300) {
+		t.Errorf("C never moved in the table but moved after it: %v", r.price("C"))
+	}
+	again := run()
+	for _, sym := range []string{"A", "B", "C", "D"} {
+		if again.price(sym) != r.price(sym) {
+			t.Fatalf("%s: %v one time, %v the next: the market after the table must be repeatable", sym, r.price(sym), again.price(sym))
+		}
 	}
 }
 
@@ -159,5 +193,33 @@ func TestABrokenTableIsRefused(t *testing.T) {
 	}
 	if err := sc.Validate(companies()); err == nil {
 		t.Fatal("a table with the wrong companies was accepted")
+	}
+}
+
+// A restart after the table has ended carries on with exactly the prices an uninterrupted server would have made.
+func TestARestartAfterTheTableContinuesExactly(t *testing.T) {
+	sc := writeTable(t, tableScenario)
+	straight := newRig(t, sc, companies(), 0)
+	straight.run(900)
+
+	a := newRig(t, sc, companies(), 0)
+	a.run(400)
+	last := a.saved[len(a.saved)-1]
+	b := newRig(t, sc, companies(), 0)
+	b.now, b.clk.elapsed = a.now, a.clk.elapsed
+	restored := map[string]money.Paise{}
+	for _, c := range companies() {
+		restored[c.Symbol] = a.price(c.Symbol)
+	}
+	for k, v := range last.Prices {
+		restored[k] = money.Paise(v)
+	}
+	b.prices.SetAll(restored, a.now)
+	b.e.Adopt(last)
+	b.run(500)
+	for _, c := range companies() {
+		if b.price(c.Symbol) != straight.price(c.Symbol) {
+			t.Errorf("%s after a restart = %d, uninterrupted = %d", c.Symbol, b.price(c.Symbol), straight.price(c.Symbol))
+		}
 	}
 }

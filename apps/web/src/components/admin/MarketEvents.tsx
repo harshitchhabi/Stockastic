@@ -59,7 +59,11 @@ export function MarketEvents() {
         <Badge tone={data.newsManual ? "flag" : "up"}>{data.newsManual ? "News is manual" : "News is automatic"}</Badge>
         <span className="dim">
           {fired} of {items.length} released
-          {data.fromTable ? ` · prices from the data table, step ${data.ticks} of ${data.tableSteps}` : ` · ${data.ticks} price updates`}
+          {data.fromTable
+            ? data.ticks < data.tableSteps
+              ? ` · prices from the data table, step ${data.ticks} of ${data.tableSteps}`
+              : ` · the data table has ended (${data.tableSteps} steps): prices carry on moving at its pace`
+            : ` · ${data.ticks} price updates`}
         </span>
         <span style={{ marginLeft: "auto" }}>
           <ActionButton
@@ -77,7 +81,8 @@ export function MarketEvents() {
       </div>
       <p className="dim" style={{ marginTop: 0 }}>
         Times are minutes of {unit}. In Phase 2 fund managers see each item first and the public 60 seconds later. Bull and bear run announcements go to everyone at once.
-        {data.fromTable && " Prices follow the data table exactly: holding, moving or rewording news changes what people read, not what prices do."}
+        {data.fromTable &&
+          " Prices follow the data table exactly: holding, moving or rewording news changes what people read, not what prices do. If the event runs past the end of the table, prices keep moving from where it ended, by about as much as each company moved in it."}
       </p>
       <div className="btn-row" style={{ alignItems: "flex-end" }}>
         <label className="field" style={{ width: 200 }}>

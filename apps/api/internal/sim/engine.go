@@ -96,6 +96,9 @@ type Engine struct {
 	st State
 	// fired is the set form of st.Fired.
 	fired map[string]bool
+	// afterTable is each company's size of move (percent per price change) once a price table has run out,
+	// measured from the table itself so the market carries on as it was.
+	afterTable map[string]float64
 }
 
 // New builds an engine. The scenario is validated against the company list.
@@ -118,7 +121,32 @@ func New(sc Scenario, d Deps) (*Engine, error) {
 	for _, c := range cos {
 		e.byID[c.Symbol] = c
 	}
+	if t := sc.table; t != nil {
+		e.afterTable = tableVolatility(t)
+	}
 	return e, nil
+}
+
+// tableVolatility is, for each company, the standard deviation of its step-to-step change in the table, in percent.
+func tableVolatility(t *PriceTable) map[string]float64 {
+	out := make(map[string]float64, len(t.Symbols))
+	for i, sym := range t.Symbols {
+		var sum, sq float64
+		n := 0
+		for k := 1; k < len(t.Rows); k++ {
+			if prev := t.Rows[k-1][i]; prev > 0 {
+				r := (t.Rows[k][i]/prev - 1) * 100
+				sum += r
+				sq += r * r
+				n++
+			}
+		}
+		if n > 1 {
+			mean := sum / float64(n)
+			out[sym] = math.Sqrt(math.Max(sq/float64(n)-mean*mean, 0))
+		}
+	}
+	return out
 }
 
 // TickSeconds is how often prices change, in seconds of open-market time.
@@ -357,9 +385,10 @@ func (e *Engine) applyPendingLocked(now time.Time) bool {
 // stepLocked works out every company's next price.
 func (e *Engine) stepLocked(elapsed time.Duration) map[string]money.Paise {
 	cur := e.d.Prices.All()
-	if t := e.sc.table; t != nil {
-		// Prices follow the table exactly. Past its last step they stay where they ended.
-		row := t.Rows[min(e.st.Tick, len(t.Rows)-1)]
+	if t := e.sc.table; t != nil && e.st.Tick < len(t.Rows) {
+		// Prices follow the table exactly. News effects are already in it, so none are kept to play out later.
+		e.st.Shocks = nil
+		row := t.Rows[e.st.Tick]
 		out := make(map[string]money.Paise, len(row))
 		for i, sym := range t.Symbols {
 			if px := money.FromRupees(row[i]); px != cur[sym] {
@@ -368,6 +397,8 @@ func (e *Engine) stepLocked(elapsed time.Duration) map[string]money.Paise {
 		}
 		return out
 	}
+	// Past the table's last step (the event ran longer than the data), prices carry on moving from where the table
+	// ended, each company by about as much as it moved in the table, and news released by hand still moves them.
 	mins := elapsed.Minutes()
 	out := make(map[string]money.Paise, len(e.cos))
 	for i, c := range e.cos {
@@ -375,7 +406,11 @@ func (e *Engine) stepLocked(elapsed time.Duration) map[string]money.Paise {
 			out[c.Symbol] = pathPrice(path, mins)
 			continue
 		}
-		pct := e.volatility(c) * e.normal(e.st.Tick, i)
+		vol := e.volatility(c)
+		if e.sc.table != nil && vol == 0 {
+			vol = e.afterTable[c.Symbol]
+		}
+		pct := vol * e.normal(e.st.Tick, i)
 		pct += e.regimeDrift(c, mins)
 		for _, sh := range e.st.Shocks {
 			if (sh.Symbol != "" && sh.Symbol == c.Symbol) || (sh.Sector != "" && sh.Sector == c.Sector) {
@@ -397,9 +432,6 @@ func (e *Engine) stepLocked(elapsed time.Duration) map[string]money.Paise {
 
 // bound keeps a price on the tick grid and inside the scenario's floor and cap.
 func (e *Engine) bound(px money.Paise) money.Paise {
-	if e.sc.table != nil {
-		return px
-	}
 	if e.sc.RoundTo > 0 {
 		step := float64(money.FromRupees(e.sc.RoundTo))
 		px = money.Paise(math.Round(float64(px)/step) * step)
@@ -428,7 +460,17 @@ func (e *Engine) volatility(c universe.Company) float64 {
 // scenario seed, so a restarted server continues with exactly the numbers it would have used.
 func (e *Engine) normal(tick, idx int) float64 {
 	seed := e.sc.Seed*1_000_003 + int64(tick)*7_919 + int64(idx)*104_729
-	return rand.New(rand.NewSource(seed)).NormFloat64()
+	// Scramble the seed first: generators seeded with numbers this close together give draws that are related
+	// from one price change to the next (each move tending to undo the last), so prices would barely drift.
+	return rand.New(rand.NewSource(int64(splitmix64(uint64(seed))))).NormFloat64()
+}
+
+// splitmix64 spreads nearby numbers far apart.
+func splitmix64(x uint64) uint64 {
+	x += 0x9e3779b97f4a7c15
+	x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9
+	x = (x ^ (x >> 27)) * 0x94d049bb133111eb
+	return x ^ (x >> 31)
 }
 
 func hash32(s string) uint32 {
