@@ -106,8 +106,8 @@ fixed address. If you change networks, run `ufw allow from <new address> to any 
 | Variable | Default | Meaning |
 |---|---|---|
 | `SIGNUP_CODE` | none | Registration needs this code. Organisers can change it live |
-| `MAX_ACCOUNTS` | 2000 | Most accounts that can exist |
+| `MAX_ACCOUNTS` | 2000 | Most team accounts that can exist (teammates do not count) |
 | `MAX_SOCKETS` | 4000 | Most live connections |
-| `MAX_SOCKETS_PER_ACCOUNT` | 10 | Most sockets one account (a team of 3, several devices or tabs each) can hold |
+| `MAX_SOCKETS_PER_ACCOUNT` | 10 | Most sockets one person can hold (several devices or tabs); a newer one replaces that person's oldest, never a teammate's |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | Addresses whose `X-Forwarded-For` header is believed |
 | `DISK_MIN_FREE_MB` | 200 | Trades are refused when free disk space is lower |

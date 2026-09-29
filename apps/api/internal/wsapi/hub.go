@@ -249,13 +249,20 @@ func (h *Hub) Shutdown() {
 
 func (h *Hub) add(c *Client) {
 	h.mu.Lock()
-	// One account may hold only a few sockets. A newer one replaces the oldest, so a page refreshed quickly
-	// is never locked out by its own dying connection, and nobody can hold hundreds of sockets open.
+	// One person may hold only a few sockets. A newer one replaces that person's oldest, so a page refreshed
+	// quickly is never locked out by its own dying connection, and nobody can hold hundreds of sockets open. The
+	// limit is per person, not per team: one teammate's many tabs never push another teammate's screen off.
+	mine := 0
+	for o := range h.byAccount[c.id.AccountID] {
+		if o.id.Login == c.id.Login {
+			mine++
+		}
+	}
 	var evict []*Client
-	for len(h.byAccount[c.id.AccountID])-len(evict) >= h.perAccount {
+	for mine-len(evict) >= h.perAccount {
 		var oldest *Client
 		for o := range h.byAccount[c.id.AccountID] {
-			if !contains(evict, o) && (oldest == nil || o.since.Before(oldest.since)) {
+			if o.id.Login == c.id.Login && !contains(evict, o) && (oldest == nil || o.since.Before(oldest.since)) {
 				oldest = o
 			}
 		}

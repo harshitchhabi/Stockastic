@@ -127,7 +127,7 @@ func New(opt Options) (http.Handler, error) {
 		return s.a.ClockResume(u, b.Reason, b.CompressBlockID)
 	}))
 	adm.POST("/clock/nudge", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockNudge(u, b.Reason, b.Minutes) }))
-	adm.POST("/clock/next", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockNext(u, b.Reason) }))
+	adm.POST("/clock/next", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockNext(u, b.Reason, b.BlockID) }))
 	adm.POST("/clock/jump", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockJump(u, b.Reason, b.BlockID) }))
 	adm.POST("/control/freeze", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.SetFrozen(u, b.Reason, b.Frozen) }))
 	adm.POST("/control/market", s.act(func(u app.User, b body, _ *gin.Context) error {

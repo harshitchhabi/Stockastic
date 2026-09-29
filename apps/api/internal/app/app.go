@@ -128,6 +128,8 @@ type App struct {
 	// evMu keeps a reset of the event from running in the middle of a trade or a fund operation: those hold it
 	// for reading, a reset holds it for writing.
 	evMu sync.RWMutex
+	// stepMu lets one Next step happen at a time.
+	stepMu sync.Mutex
 	// fundMu serialises fund operations (allocations, redemptions, checkpoints) so units and NAV stay consistent.
 	fundMu sync.Mutex
 

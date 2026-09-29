@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -379,5 +383,42 @@ func TestTheEventMovesOnlyWhenTheOrganiserSaysSo(t *testing.T) {
 	}
 	if r := next(); r.Status != 200 || !e.a.Clock.MarketOpen() {
 		t.Fatalf("to Phase 2 trading: %d %s", r.Status, r.Raw)
+	}
+}
+
+// Next step names the step it is for: if two organisers press it together, or one press arrives twice, the event
+// moves one step, never two.
+func TestNextStepCannotSkipAStep(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	adm := e.admin()
+	step := func() float64 {
+		return num(e.call("GET", "/api/admin/overview", adm, nil).Body["clock"].(map[string]any)["blockIndex"])
+	}
+	if r := e.call("POST", "/api/admin/clock/next", adm, map[string]any{"blockId": "p1_trading"}); r.Status != 200 {
+		t.Fatalf("start: %d %s", r.Status, r.Raw)
+	}
+	var wg sync.WaitGroup
+	var ok atomic.Int64
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/admin/clock/next", strings.NewReader(`{"blockId":"p1_freeze"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+adm)
+			if res, err := http.DefaultClient.Do(req); err == nil {
+				if res.StatusCode == 200 {
+					ok.Add(1)
+				}
+				res.Body.Close()
+			}
+		}()
+	}
+	wg.Wait()
+	if ok.Load() != 1 || step() != 1 {
+		t.Fatalf("10 presses of Next step for the same step: %d went through, now on step %v (want 1 and step index 1)", ok.Load(), step())
+	}
+	if r := e.call("POST", "/api/admin/clock/next", adm, map[string]any{"blockId": "p1_freeze"}); r.Status != 400 || r.Body["error"] != "step_changed" {
+		t.Fatalf("a stale press: %d %s", r.Status, r.Raw)
 	}
 }

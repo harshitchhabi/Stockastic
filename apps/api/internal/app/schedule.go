@@ -237,15 +237,32 @@ func (a *App) ResetEvent(actor User, everything bool) error {
 // ClockNext moves the event to its next step: from not started to the first step, and then one step at a time. The
 // organisers run the event this way; no step ends by itself. Window 0 cannot open before the funds are formed,
 // because investors would have nowhere to put their money.
-func (a *App) ClockNext(actor User, reason string) error {
+//
+// to, when given, is the step the organiser pressed the button for. If the event has already moved on (another
+// organiser pressed it first, or the same press arrived twice) nothing happens, so a step can never be skipped.
+func (a *App) ClockNext(actor User, reason, to string) error {
+	a.stepMu.Lock()
+	defer a.stepMu.Unlock()
 	p := a.Clock.Position()
+	blocks := a.Clock.Blocks()
+	if to != "" {
+		want := ""
+		switch {
+		case !p.Started && len(blocks) > 0:
+			want = blocks[0].ID
+		case p.Started && !p.Ended && p.Index+1 < len(blocks):
+			want = blocks[p.Index+1].ID
+		}
+		if want != to {
+			return bad("step_changed", "The event has already moved on (perhaps another organiser pressed Next step). Check the steps and try again.")
+		}
+	}
 	if !p.Started {
 		return a.ClockStartAt(actor, "")
 	}
 	if p.Ended {
 		return bad("event_closed", "The event has already closed.")
 	}
-	blocks := a.Clock.Blocks()
 	next := p.Index + 1
 	if next >= len(blocks) {
 		return bad("no_next_step", "This is the last step.")

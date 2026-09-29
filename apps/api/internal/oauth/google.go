@@ -82,7 +82,9 @@ func New(cfg Config) *Client {
 	if cfg.JWKSURL == "" {
 		cfg.JWKSURL = googleJWKS
 	}
-	return &Client{cfg: cfg, http: &http.Client{Timeout: 10 * time.Second}, keys: map[string]*rsa.PublicKey{}, slots: make(chan struct{}, 32)}
+	return &Client{cfg: cfg, http: &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment, MaxIdleConnsPerHost: exchangeSlots, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second,
+	}}, keys: map[string]*rsa.PublicKey{}, slots: make(chan struct{}, exchangeSlots)}
 }
 
 // AuthURL is where to send the browser to start signing in.
@@ -99,13 +101,21 @@ func (c *Client) AuthURL(state, nonce string) string {
 	return c.cfg.AuthURL + "?" + v.Encode()
 }
 
-// Exchange swaps the one-time code for an identity token. At most 32 exchanges run at once; the rest wait a few
-// seconds and then give up, so a flood cannot pile up outgoing requests.
+// exchangeSlots is how many sign-ins may talk to Google at once, and exchangeWait how long the rest queue for a turn.
+// At the start of an event a whole hall presses the button together: with Google answering in about 0.3 seconds,
+// 128 at a time clears 1000 people in a few seconds, well inside the wait.
+const (
+	exchangeSlots = 128
+	exchangeWait  = 30 * time.Second
+)
+
+// Exchange swaps the one-time code for an identity token. At most exchangeSlots exchanges run at once; the rest
+// queue for up to exchangeWait and then give up, so a flood cannot pile up outgoing requests without limit.
 func (c *Client) Exchange(ctx context.Context, code string) (string, error) {
 	select {
 	case c.slots <- struct{}{}:
 		defer func() { <-c.slots }()
-	case <-time.After(5 * time.Second):
+	case <-time.After(exchangeWait):
 		return "", errors.New("google sign-in is busy")
 	case <-ctx.Done():
 		return "", ctx.Err()

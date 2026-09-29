@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"stockastic/api/internal/store"
 )
 
@@ -344,4 +346,43 @@ func TestRulesShownToPlayers(t *testing.T) {
 	if got := e2.call("GET", "/api/rules", tok2, nil).Body; got["edited"] != false || !strings.Contains(got["text"].(string), "# Trading") {
 		t.Fatalf("empty text did not bring the default back: %v", got["edited"])
 	}
+}
+
+// The live-connection limit is per person: a leader with many tabs replaces only their own oldest, and never pushes
+// a teammate's screen off.
+func TestOneTeammatesTabsNeverPushAnotherOff(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	e.a.Hub.SetLimits(0, 3)
+	lead, _ := e.signup("Tabs")
+	mate := join(e, teamCode(t, e, lead), "tara").Body["token"].(string)
+	m := wsDial(t, e, mate)
+	wsReady(t, m)
+	var tabs []*websocket.Conn
+	for i := 0; i < 6; i++ {
+		c := wsDial(t, e, lead)
+		wsReady(t, c)
+		tabs = append(tabs, c)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := e.a.Hub.LoginsOnline(e.call("GET", "/api/auth/me", lead, nil).Body["id"].(string)); n[""] != 3 || n[teammateID(t, e, lead)] != 1 {
+		t.Fatalf("connections per person after the leader opened 6 tabs (limit 3): %v", n)
+	}
+	// the teammate's socket still works
+	_ = m.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := m.WriteJSON(map[string]any{"t": "ping"}); err != nil {
+		t.Fatalf("the teammate's screen was pushed off: %v", err)
+	}
+	if _, _, err := m.ReadMessage(); err != nil {
+		t.Fatalf("the teammate's screen was pushed off: %v", err)
+	}
+	for _, c := range tabs {
+		c.Close()
+	}
+	m.Close()
+}
+
+func teammateID(t *testing.T, e *env, leaderTok string) string {
+	t.Helper()
+	ms := e.call("GET", "/api/team", leaderTok, nil).Body["members"].([]any)
+	return ms[0].(map[string]any)["id"].(string)
 }

@@ -67,7 +67,7 @@ export function ControlRoom() {
                       ? "The market opens."
                       : undefined
             }
-            run={() => run("/api/admin/clock/next", {}, `Now: ${next.label}`)}
+            run={() => run("/api/admin/clock/next", { blockId: next.id }, `Now: ${next.label}`)}
           />
         )}
         <ActionButton

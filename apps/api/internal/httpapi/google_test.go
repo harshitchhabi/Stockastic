@@ -32,6 +32,8 @@ type fakeGoogle struct {
 	email, name, nonce, aud string
 	verified                bool
 	signWith                *rsa.PrivateKey
+	// delay is how long Google takes to answer a code, for crowd tests
+	delay time.Duration
 }
 
 func newFakeGoogle(t *testing.T) *fakeGoogle {
@@ -50,6 +52,18 @@ func newFakeGoogle(t *testing.T) *fakeGoogle {
 		}}})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		// A crowd test's code carries each person's own email and nonce: "crowd|email|nonce".
+		if parts := strings.Split(r.FormValue("code"), "|"); len(parts) == 3 && parts[0] == "crowd" {
+			time.Sleep(f.delay)
+			tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+				"iss": "https://fake-google.test", "aud": "client-123", "sub": "sub-" + parts[1], "exp": time.Now().Add(time.Hour).Unix(),
+				"email": parts[1], "email_verified": true, "name": parts[1], "nonce": parts[2],
+			})
+			tok.Header["kid"] = "k1"
+			s, _ := tok.SignedString(f.key)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id_token": s})
+			return
+		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		if r.FormValue("code") != "good-code" {

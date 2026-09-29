@@ -22,7 +22,7 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
 - **Approved emails (strongest, if you have a list).** Participants page, "Approved emails". Only listed people can register, once each.
 - **Event code.** Announce a code in the room and set it on the Participants page. Change it after the room is full.
 - **Google sign-in.** Off until you set it up (below). Best for one account per real person, and nobody forgets a password.
-- Always: **close registration** once everyone is in, and keep `MAX_ACCOUNTS` a little above the number of people you expect.
+- Always: **close registration** once everyone is in, and keep `MAX_ACCOUNTS` (teams, not people) above the most teams you could get: 1100 covers everyone registering alone.
 
 ### Setting up Google sign-in (free, about 20 minutes)
 
