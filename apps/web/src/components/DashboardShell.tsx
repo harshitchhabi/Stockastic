@@ -70,9 +70,14 @@ function Shell() {
     // The organiser reset the whole event: reload so every screen starts clean.
     const onReset = () => window.location.reload();
     socket.on("eventReset", onReset);
+    // The server refused this sign-in (signed out by an organiser, or the event started fresh): check with the
+    // server, and if it is no longer valid the app goes back to the sign-in screen.
+    const onRefused = () => void api.get("/api/auth/me").catch(() => {});
+    socket.on("unauthenticated", onRefused);
     socket.on("connect", onRole);
     return () => {
       socket.off("eventReset", onReset);
+      socket.off("unauthenticated", onRefused);
       socket.off("trade", onTrade);
       socket.off("portfolio", onRole);
       socket.off("fundsFormed", onRole);

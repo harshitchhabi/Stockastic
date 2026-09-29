@@ -93,7 +93,8 @@ func (s *Server) fundRoutes(me, adm *gin.RouterGroup) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 	adm.POST("/schedule/template", s.act(func(u app.User, _ body, _ *gin.Context) error { return s.a.LoadTemplateSchedule(u) }))
-	adm.POST("/event/reset", s.act(func(u app.User, _ body, _ *gin.Context) error { return s.a.ResetEvent(u) }))
+	adm.POST("/event/reset", s.act(func(u app.User, _ body, _ *gin.Context) error { return s.a.ResetEvent(u, false) }))
+	adm.POST("/event/start-fresh", s.act(func(u app.User, _ body, _ *gin.Context) error { return s.a.ResetEvent(u, true) }))
 	adm.POST("/snapshots/:name", s.act(func(u app.User, _ body, c *gin.Context) error { return s.a.TakeSnapshot(u, c.Param("name")) }))
 	adm.GET("/strategy-logs", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"entrants": s.a.LogEntrants()})

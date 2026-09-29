@@ -50,6 +50,7 @@ so a rulebook with five windows shows five switches with no console change.
 | `PUT /api/admin/schedule` | `blocks: [{ id, label, minutes, stage, marketOpen, allocationWindow, freezeSnapshot }]` | replaces the whole schedule, before or during the event. The clock keeps its time. The rulebook timeline is only a template: nothing in the code depends on any block name |
 | `POST /api/admin/schedule/template` | | loads the rulebook timeline as the schedule |
 | `POST /api/admin/event/reset` | | resets the whole event: cash and shares back to the start, opening prices, clock before the start, and funds, trades, news, disputes and snapshots erased. Accounts, passwords and the schedule are kept; warnings and roles are cleared. Survives a restart |
+| `POST /api/admin/event/start-fresh` | | starts completely fresh: everything the reset clears, and every team, teammate and watchlist deleted too, with everyone signed out. Only the organisers' logins, the audit log, the rules text and the sign-up settings remain; people register again, with the same emails if they like. Survives a restart. An ordinary restart never resets anything |
 | `POST /api/admin/snapshots/{phase1\|final}` | | freezes every team's value now (also done by a schedule block with `freezeSnapshot`). Once each |
 | `POST /api/admin/funds/dissolve` | | takes the funds apart so they can be formed again. Refused once anyone has invested |
 | `POST /api/admin/funds/{id}/trader` | `accountId` | chooses which of the fund's two teams places its trades |

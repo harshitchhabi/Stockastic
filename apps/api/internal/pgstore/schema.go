@@ -119,7 +119,8 @@ CREATE OR REPLACE VIEW v_team_activity AS
 -- accounts that have signed in from the same address, as a hint (many people can share one venue address)
 CREATE OR REPLACE VIEW v_shared_addresses AS
   SELECT ip, count(DISTINCT account_id) AS accounts, array_agg(DISTINCT account_id) AS account_ids
-  FROM activity WHERE type = 'login' AND ip IS NOT NULL GROUP BY ip HAVING count(DISTINCT account_id) > 1;
+  FROM activity WHERE type = 'login' AND ip IS NOT NULL AND epoch = (SELECT epoch FROM projector_state WHERE id = 1)
+  GROUP BY ip HAVING count(DISTINCT account_id) > 1;
 `
 
 func migrate(ctx context.Context, c *pgx.Conn) error {

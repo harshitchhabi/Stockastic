@@ -162,6 +162,25 @@ func (s *userStore) put(u User) error {
 	return nil
 }
 
+// removeTeams deletes every account except the organisers' and returns the ids removed.
+func (s *userStore) removeTeams() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var gone []string
+	for id, u := range s.byID {
+		if u.IsAdmin {
+			continue
+		}
+		gone = append(gone, id)
+		delete(s.byID, id)
+		delete(s.byEmail, normEmail(u.Email))
+		if s.canon[emailKey(u.Email)] == id {
+			delete(s.canon, emailKey(u.Email))
+		}
+	}
+	return gone
+}
+
 // emailKeyUsed reports whether an address that is the same person's (a "+tag" or Gmail dot variant) has an account.
 func (s *userStore) emailKeyUsed(email string) bool {
 	s.mu.RLock()

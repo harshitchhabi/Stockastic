@@ -11,6 +11,7 @@ import (
 	"stockastic/api/internal/rulebook"
 	"stockastic/api/internal/store"
 	"stockastic/api/internal/trading"
+	"stockastic/api/internal/wsapi"
 )
 
 // ---- the organiser owns the schedule ----
@@ -161,12 +162,40 @@ func (a *App) resetState() {
 	}
 }
 
+// resetRecord is what a reset writes to the log. Everything also deletes every team and teammate.
+type resetRecord struct {
+	At         int64 `json:"at"`
+	Everything bool  `json:"everything,omitempty"`
+}
+
+// dropTeams deletes every team account, teammate and watchlist, keeping only the organisers. It returns the
+// accounts removed.
+func (a *App) dropTeams() []string {
+	gone := a.users.removeTeams()
+	a.members.clear()
+	a.watchMu.Lock()
+	a.watch = map[string][]string{}
+	a.watchMu.Unlock()
+	a.presMu.Lock()
+	a.pres = map[string]presence{}
+	a.presMu.Unlock()
+	return gone
+}
+
 // ResetEvent starts the whole event over: every team is back to its starting cash with no shares, prices are
 // back to their opening values, the clock is before the start, and funds, trades, news and disputes are gone.
 // Teams keep their accounts and passwords; warnings and disqualifications are cleared and everyone is an
 // investor again. The audit log is kept.
-func (a *App) ResetEvent(actor User) error {
-	return a.Do(actor, "Reset the whole event", "event", "", func() error {
+//
+// With everything, every team and teammate is deleted too and everyone is signed out: only the organisers'
+// logins, the audit log and the organisers' settings (rules text, sign-up code and list) remain, and people
+// register again from the start.
+func (a *App) ResetEvent(actor User, everything bool) error {
+	what := "Reset the whole event"
+	if everything {
+		what = "Started completely fresh: deleted every team"
+	}
+	return a.Do(actor, what, "event", "", func() error {
 		a.evMu.Lock()
 		defer a.evMu.Unlock()
 		a.fundMu.Lock()
@@ -174,8 +203,12 @@ func (a *App) ResetEvent(actor User) error {
 		if err := a.cfg.Disk.Check(); err != nil {
 			return err
 		}
-		if err := a.wal.Append(store.KindReset, map[string]any{"at": a.now().UnixMilli()}); err != nil {
+		if err := a.wal.Append(store.KindReset, resetRecord{At: a.now().UnixMilli(), Everything: everything}); err != nil {
 			return err
+		}
+		var gone []string
+		if everything {
+			gone = a.dropTeams()
 		}
 		a.resetState()
 		for _, u := range a.users.all() {
@@ -192,6 +225,9 @@ func (a *App) ResetEvent(actor User) error {
 		a.persistClock()
 		a.broadcastControl()
 		a.Hub.ToAll("eventReset", map[string]any{"at": dto.MS(a.now())})
+		for _, id := range gone {
+			a.Hub.DisconnectAccount(id, wsapi.CloseUnauthenticated, "the event was started fresh")
+		}
 		return nil
 	})
 }

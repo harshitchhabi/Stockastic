@@ -77,6 +77,13 @@ export function ControlRoom() {
           description="Every team goes back to its starting cash with no shares, prices go back to their opening values, and trades, funds, news, disputes and snapshots are erased. Teams keep their accounts and passwords, and warnings are cleared. This cannot be undone."
           run={() => run("/api/admin/event/reset", {}, "The event was reset")}
         />
+        <ActionButton
+          danger
+          label="Start completely fresh"
+          title="Start completely fresh"
+          description="Deletes every team and teammate, with all their trades, funds, watchlists, news and disputes, and signs everyone out. Prices and the clock go back to the start. Only the organisers' logins, the audit log, the rules text and the sign-up settings remain. Everyone registers again from the beginning. This cannot be undone."
+          run={() => run("/api/admin/event/start-fresh", {}, "Everything was cleared. People can register again.")}
+        />
       </div>
 
       <h2 className="section">Steps</h2>

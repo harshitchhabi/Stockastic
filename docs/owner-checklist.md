@@ -66,7 +66,7 @@ These are set to placeholders and are all one value in `rulebook.json` (or a but
 2. Kill the server process mid-run (`kill -9`), let systemd restart it, and check nothing was lost.
 3. Fill the disk to below `DISK_MIN_FREE_MB` on a test copy and see that trades are refused and the Systems page says so.
 4. Run a shortened event end to end with real accounts: register, Phase 1, close Phase 1, form the funds, window 0, Phase 2, the other windows, and the final close. The Control room's **Next step** button does each step.
-5. Use **Reset the whole event** to clear the rehearsal, and check every team is back to its starting cash.
+5. Clear the rehearsal from the Control room: **Start completely fresh** deletes every rehearsal team so everyone registers again on the day (use this if the rehearsal used test accounts), while **Reset the whole event** keeps the teams and puts each back to its starting cash. A server restart on its own never clears anything.
 
 ## 5. On the day
 

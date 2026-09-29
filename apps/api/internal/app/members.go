@@ -81,6 +81,13 @@ func (s *memberStore) put(m Member) {
 	}
 }
 
+// clear deletes every teammate.
+func (s *memberStore) clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byID, s.byEmail, s.canon = map[string]*Member{}, map[string]*Member{}, map[string]string{}
+}
+
 func (s *memberStore) get(id string) (Member, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

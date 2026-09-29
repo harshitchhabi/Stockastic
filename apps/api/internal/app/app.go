@@ -481,6 +481,11 @@ func (a *App) restore() error {
 			}
 			a.members.put(m)
 		case store.KindReset:
+			var r resetRecord
+			_ = decode(raw, &r)
+			if r.Everything {
+				a.dropTeams()
+			}
 			a.resetState()
 			clockState, releases, trades = nil, map[string]news.Release{}, 0
 		case store.KindFund:

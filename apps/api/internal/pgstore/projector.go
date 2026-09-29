@@ -230,6 +230,14 @@ func apply(ctx context.Context, tx pgx.Tx, epoch *int, e event) error {
 	switch e.kind {
 	case store.KindReset:
 		*epoch++
+		var r struct {
+			Everything bool `json:"everything"`
+		}
+		if json.Unmarshal(raw, &r) == nil && r.Everything {
+			// every team was deleted: only the organisers' accounts remain
+			_, err := tx.Exec(ctx, `DELETE FROM accounts WHERE NOT is_admin`)
+			return err
+		}
 	case "user":
 		var u struct {
 			ID, Email, DisplayName, Role, Status string
