@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, authEvents, getToken, setToken } from "./api";
+import { api, authEvents, getToken, setToken, TOKEN_KEY } from "./api";
 import { closeSocket, reconnectSocket } from "./socket";
 import type { Account } from "./types";
 
@@ -92,7 +92,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAccount(null);
     };
     authEvents.addEventListener("unauthenticated", onUnauthenticated);
-    return () => authEvents.removeEventListener("unauthenticated", onUnauthenticated);
+    // Another tab of this browser signed out, or signed in as someone else: follow it, so no tab stays signed in
+    // (with a live connection) as someone who has left.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== TOKEN_KEY && e.key !== null) return;
+      if (!e.newValue) {
+        closeSocket();
+        setAccount(null);
+      } else if (e.newValue !== e.oldValue) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      authEvents.removeEventListener("unauthenticated", onUnauthenticated);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const signup = useCallback(async (displayName: string, email: string, password: string, eventCode?: string, yourName?: string) => {
@@ -153,6 +168,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // Cancel this sign-in on the server too (it reads the token now, before it is cleared below). If the server
+    // cannot be reached, the browser still forgets the sign-in.
+    if (getToken()) void api.post("/api/auth/logout").catch(() => {});
     closeSocket();
     setToken(null);
     setAccount(null);

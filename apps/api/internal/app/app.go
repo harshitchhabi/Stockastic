@@ -85,6 +85,7 @@ type App struct {
 
 	users     *userStore
 	members   *memberStore
+	revoked   *revokedSet         // sign-ins cancelled by signing out
 	memberMu  sync.Mutex          // serialises changes to members
 	watch     map[string][]string // each team's starred companies
 	watchMu   sync.Mutex
@@ -165,7 +166,7 @@ func New(cfg Config) (*App, error) {
 	}
 	a := &App{
 		cfg: cfg, RB: cfg.Rulebook, wal: cfg.WAL, now: cfg.Now, Signer: cfg.Signer,
-		users: newUserStore(), members: newMemberStore(), watch: map[string][]string{}, companies: map[string]universe.Company{}, started: cfg.Now(),
+		users: newUserStore(), members: newMemberStore(), watch: map[string][]string{}, revoked: newRevokedSet(), companies: map[string]universe.Company{}, started: cfg.Now(),
 		tickets: map[string]*TicketRec{}, commits: newDurations(1000), errs: &errRing{},
 		recent: map[string][]trading.Trade{}, p1Trades: map[string]int{}, peaks: map[string]money.Paise{},
 		snapshots: map[string]FreezeSnapshot{}, paused: map[string]bool{}, pres: map[string]presence{},
@@ -476,6 +477,12 @@ func (a *App) restore() error {
 				return err
 			}
 			a.watch[w.Team] = w.Symbols
+		case KindRevoke:
+			var r revocation
+			if err := decode(raw, &r); err != nil {
+				return err
+			}
+			a.revoked.add(r.ID, time.UnixMilli(r.Expires), a.now())
 		case store.KindMember:
 			var m Member
 			if err := decode(raw, &m); err != nil {
@@ -624,11 +631,7 @@ func (a *App) Close(ctx context.Context) error {
 // ---- websocket ----
 
 func (a *App) wsAuth(token string) (wsapi.Identity, bool) {
-	id, ver, err := a.Signer.Verify(token)
-	if err != nil {
-		return wsapi.Identity{}, false
-	}
-	l, ok := a.Resolve(id, ver)
+	l, _, ok := a.Session(token)
 	u := l.Team
 	if !ok || u.Status == StatusDisqualified {
 		return wsapi.Identity{}, false

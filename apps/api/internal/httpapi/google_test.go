@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/cookiejar"
@@ -460,5 +461,52 @@ func TestClosedRegistrationStillLetsTeammatesJoin(t *testing.T) {
 	// the team is now full: nobody else gets in
 	if r := join(e, code, "fourth"); r.Status != 409 || r.Body["error"] != "team_full" {
 		t.Fatalf("a fourth person: %d %s", r.Status, r.Raw)
+	}
+}
+
+// Mid-event, with registration closed, everyone who already has a login signs in and out as often as they like: the
+// leader and a teammate, by password and through Google, and the leader can still trade after signing in again.
+func TestClosedRegistrationNeverLocksOutExistingPeople(t *testing.T) {
+	f := newFakeGoogle(t)
+	e := googleEnv(t, f, nil)
+	adm := e.admin()
+	lead, _ := e.signup("Regulars")
+	code := teamCode(t, e, lead)
+	join(e, code, "pat")
+	f.email, f.name = "gina@college.edu", "Gina"
+	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "join", "teamCode": code}); r.Status != 200 {
+		t.Fatalf("a Google teammate joining: %d %s", r.Status, r.Raw)
+	}
+	e.openMarket(adm)
+	if r := e.call("POST", "/api/admin/settings/signup", adm, map[string]any{"open": false}); r.Status != 200 {
+		t.Fatalf("close registration: %d", r.Status)
+	}
+	syms := e.call("GET", "/api/symbols", lead, nil).Raw
+	var list []struct{ Symbol string }
+	_ = json.Unmarshal(syms, &list)
+	for round := 0; round < 3; round++ {
+		// password: the leader and a teammate
+		for _, who := range []struct{ email, want string }{{"regulars@test.local", "leader"}, {"pat@member.local", "teammate"}} {
+			r := e.call("POST", "/api/auth/login", "", map[string]any{"email": who.email, "password": "password-123"})
+			if r.Status != 200 {
+				t.Fatalf("round %d: the %s signing in by password with registration closed: %d %s", round, who.want, r.Status, r.Raw)
+			}
+			tok := r.Body["token"].(string)
+			if me := e.call("GET", "/api/auth/me", tok, nil); me.Status != 200 {
+				t.Fatalf("round %d: the %s after signing in: %d", round, who.want, me.Status)
+			}
+			if who.want == "leader" {
+				if tr := e.call("POST", "/api/trades", tok, map[string]any{"clientTradeId": fmt.Sprintf("again-%d", round), "symbol": list[0].Symbol, "side": "buy", "qty": 1}); tr.Status != 200 && tr.Status != 429 {
+					t.Fatalf("round %d: the leader trading after signing in again: %d %s", round, tr.Status, tr.Raw)
+				}
+			}
+		}
+		// Google: the teammate who joined with Google comes back
+		f.nonce = ""
+		loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
+		if me := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil); me.Status != 200 {
+			t.Fatalf("round %d: the Google teammate signing in again with registration closed: %d", round, me.Status)
+		}
 	}
 }

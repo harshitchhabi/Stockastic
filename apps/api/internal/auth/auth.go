@@ -12,6 +12,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+
+	"stockastic/api/internal/ids"
 )
 
 var (
@@ -93,6 +95,7 @@ func (s *Signer) Issue(accountID string, version int) (string, error) {
 	now := s.now()
 	c := claims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        ids.New(), // lets one sign-in be cancelled on its own (signing out)
 			Subject:   accountID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
@@ -110,6 +113,20 @@ func (s *Signer) Parse(token string) (string, error) {
 
 // Verify returns the account id and session version in a valid, unexpired token.
 func (s *Signer) Verify(token string) (string, int, error) {
+	t, err := s.Inspect(token)
+	return t.Subject, t.Version, err
+}
+
+// Token is what a valid token says: whose it is, its session version, its own id and when it expires.
+type Token struct {
+	Subject string
+	Version int
+	ID      string // empty for tokens issued before tokens had ids
+	Expires time.Time
+}
+
+// Inspect checks a token and returns what it says.
+func (s *Signer) Inspect(token string) (Token, error) {
 	var c claims
 	_, err := jwt.ParseWithClaims(token, &c, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
@@ -117,8 +134,8 @@ func (s *Signer) Verify(token string) (string, int, error) {
 		}
 		return s.secret, nil
 	}, jwt.WithTimeFunc(s.now), jwt.WithExpirationRequired(), jwt.WithValidMethods([]string{"HS256"}))
-	if err != nil || c.Subject == "" {
-		return "", 0, ErrInvalidToken
+	if err != nil || c.Subject == "" || c.ExpiresAt == nil {
+		return Token{}, ErrInvalidToken
 	}
-	return c.Subject, c.Version, nil
+	return Token{Subject: c.Subject, Version: c.Version, ID: c.ID, Expires: c.ExpiresAt.Time}, nil
 }

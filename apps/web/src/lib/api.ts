@@ -2,23 +2,32 @@
 // Vite proxies /api, so there is no CORS and no hard-coded host. VITE_API_URL overrides for odd setups.
 export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 
-const TOKEN_KEY = "stockastic:token";
+export const TOKEN_KEY = "stockastic:token";
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// If the browser will not store anything (a locked-down or private setting), the sign-in is kept in memory instead,
+// so the person stays signed in for as long as the page is open rather than being signed out on their next click.
+let memoryToken: string | null = null;
+let storageWorks = true;
+
 export function getToken(): string | null {
+  if (!storageWorks) return memoryToken;
   try {
     return localStorage.getItem(TOKEN_KEY);
   } catch {
-    return null; // storage blocked (private mode / policy): behave as logged out, don't crash
+    storageWorks = false;
+    return memoryToken;
   }
 }
 
 export function setToken(token: string | null): void {
+  memoryToken = token;
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
+    storageWorks = true;
   } catch {
-    /* ignore */
+    storageWorks = false;
   }
 }
 

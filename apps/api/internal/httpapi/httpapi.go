@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"stockastic/api/internal/app"
+	"stockastic/api/internal/auth"
 	"stockastic/api/internal/dto"
 	"stockastic/api/internal/eventclock"
 	"stockastic/api/internal/funds"
@@ -31,6 +32,7 @@ const (
 	maxBody     = 64 << 10
 	ctxUser     = "user"
 	ctxLogin    = "login"
+	ctxToken    = "token"
 	requestWait = 8 * time.Second
 )
 
@@ -96,6 +98,14 @@ func New(opt Options) (http.Handler, error) {
 
 	me := api.Group("", s.requireUser, s.accountGate)
 	me.GET("/auth/me", s.me)
+	// Signing out cancels this sign-in on the server too (the person's other devices and teammates stay signed in).
+	me.POST("/auth/logout", func(c *gin.Context) {
+		if err := s.a.SignOutToken(c.MustGet(ctxToken).(auth.Token)); err != nil {
+			s.fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
 	me.GET("/config", s.config)
 	me.GET("/symbols", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Companies()) })
 	me.GET("/symbols/:symbol/history", s.history)
@@ -303,18 +313,14 @@ func (s *Server) requireUser(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	id, ver, err := s.a.Signer.Verify(tok)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
-		return
-	}
-	l, ok := s.a.Resolve(id, ver)
+	l, t, ok := s.a.Session(tok)
 	if !ok {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
 	c.Set(ctxUser, l.Team) // everything the team does is done as the team account
 	c.Set(ctxLogin, l)     // and this says which person in the team is signed in
+	c.Set(ctxToken, t)
 	c.Next()
 }
 

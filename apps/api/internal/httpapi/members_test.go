@@ -386,3 +386,63 @@ func teammateID(t *testing.T, e *env, leaderTok string) string {
 	ms := e.call("GET", "/api/team", leaderTok, nil).Body["members"].([]any)
 	return ms[0].(map[string]any)["id"].(string)
 }
+
+// Signing out cancels that one sign-in on the server: a copy of its token stops working at once, for pages and for
+// the live connection, and stays cancelled after a restart. The same person's other device and their teammates stay
+// signed in, and signing in again works.
+func TestSigningOutCancelsThatSignInOnly(t *testing.T) {
+	r := rb(t, 100)
+	e := newEnv(t, store.NewMem(), r)
+	laptop, _ := e.signup("Session")
+	code := teamCode(t, e, laptop)
+	mate := join(e, code, "sam").Body["token"].(string)
+	phone := e.call("POST", "/api/auth/login", "", map[string]any{"email": "session@test.local", "password": "password-123"}).Body["token"].(string)
+
+	if r := e.call("POST", "/api/auth/logout", laptop, nil); r.Status != 200 {
+		t.Fatalf("sign out: %d %s", r.Status, r.Raw)
+	}
+	if r := e.call("GET", "/api/auth/me", laptop, nil); r.Status != 401 {
+		t.Fatalf("the signed-out token still works: %d", r.Status)
+	}
+	if !wsRefused(t, e, laptop) {
+		t.Fatal("the signed-out token opened a live connection")
+	}
+	for name, tok := range map[string]string{"the same person's phone": phone, "a teammate": mate} {
+		if r := e.call("GET", "/api/auth/me", tok, nil); r.Status != 200 {
+			t.Fatalf("%s was signed out too: %d", name, r.Status)
+		}
+	}
+	e2 := e.restart(r)
+	if r := e2.call("GET", "/api/auth/me", laptop, nil); r.Status != 401 {
+		t.Fatalf("after a restart the signed-out token works again: %d", r.Status)
+	}
+	if r := e2.call("GET", "/api/auth/me", phone, nil); r.Status != 200 {
+		t.Fatalf("after a restart the phone was signed out: %d", r.Status)
+	}
+	again := e2.call("POST", "/api/auth/login", "", map[string]any{"email": "session@test.local", "password": "password-123"})
+	if again.Status != 200 || e2.call("GET", "/api/auth/me", again.Body["token"].(string), nil).Status != 200 {
+		t.Fatalf("signing in again: %d %s", again.Status, again.Raw)
+	}
+}
+
+// wsRefused reports whether the server refuses a live connection with this token.
+func wsRefused(t *testing.T, e *env, token string) bool {
+	t.Helper()
+	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(e.srv.URL, "http")+"/ws", nil)
+	if err != nil {
+		return true
+	}
+	defer c.Close()
+	_ = c.WriteJSON(map[string]any{"t": "auth", "d": map[string]any{"token": token}})
+	for i := 0; i < 5; i++ {
+		_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+		var f struct{ T string }
+		if err := c.ReadJSON(&f); err != nil {
+			return true // closed on us
+		}
+		if f.T == "ready" {
+			return false
+		}
+	}
+	return true
+}
