@@ -1,13 +1,14 @@
 import { useSession } from "@/lib/session";
 import { LoginForm } from "@/components/LoginForm";
+import { Onboard } from "@/components/Onboard";
 import { DashboardShell } from "@/components/DashboardShell";
 import { AdminApp } from "@/components/admin/AdminApp";
 
 /** Two routes, no router library: `/admin` is the organiser console, everything else the terminal. */
 export default function App() {
-  const { account, loading } = useSession();
+  const { account, loading, onboarding } = useSession();
   if (loading) return null;
-  if (!account) return <LoginForm />;
+  if (!account) return onboarding ? <Onboard /> : <LoginForm />;
 
   if (window.location.pathname.startsWith("/admin")) {
     if (!account.isAdmin) {

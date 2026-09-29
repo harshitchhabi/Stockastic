@@ -21,7 +21,7 @@ import (
 
 var publicRoutes = map[string]bool{
 	"GET /healthz": true, "GET /readyz": true, "GET /ws": true, "GET /api/status": true,
-	"POST /api/auth/signup": true, "POST /api/auth/login": true, "POST /api/auth/join": true,
+	"POST /api/auth/signup": true, "POST /api/auth/login": true, "POST /api/auth/join": true, "POST /api/auth/onboard": true,
 }
 
 // Every route that is not public needs a login, and every organiser route needs an organiser. This walks the

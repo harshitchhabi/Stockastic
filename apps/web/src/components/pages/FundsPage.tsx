@@ -133,6 +133,7 @@ export function FundsPage() {
               <td>
                 <span className="chip">{f.risk || "—"}</span>
                 <div className="dim">{f.strategy}</div>
+                <div className="label">Fee {f.feePercent}%</div>
               </td>
               <td className="mono">{money(f.nav)}</td>
               <td className={f.returnPct >= 0 ? "up" : "down"}>{pct(f.returnPct)}</td>

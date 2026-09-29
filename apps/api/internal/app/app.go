@@ -641,15 +641,31 @@ func (a *App) onWSReady(c *wsapi.Client) { a.Hub.Send(c, "controlState", a.Contr
 
 // ControlState is the live organiser state pushed to every client.
 type ControlState struct {
-	TradingFrozen   bool              `json:"tradingFrozen"`
-	MarketOpen      bool              `json:"marketOpen"`
+	TradingFrozen bool `json:"tradingFrozen"`
+	MarketOpen    bool `json:"marketOpen"`
+	// Where the event is, for players' screens: the stage (phase1, transition, phase2, closing, or "" before the
+	// start), the step's name, and which allocation window is open (-1 for none).
+	Stage           string            `json:"stage"`
+	Step            string            `json:"step"`
+	OpenWindow      int               `json:"openWindow"`
 	WindowOverrides map[string]string `json:"windowOverrides"`
 	PausedSymbols   []string          `json:"pausedSymbols"`
 }
 
 func (a *App) ControlState() ControlState {
 	ov := a.Clock.Overrides()
-	cs := ControlState{TradingFrozen: ov.Frozen, MarketOpen: a.Clock.MarketOpen(), WindowOverrides: map[string]string{}, PausedSymbols: a.PausedSymbols()}
+	cs := ControlState{TradingFrozen: ov.Frozen, MarketOpen: a.Clock.MarketOpen(), WindowOverrides: map[string]string{}, PausedSymbols: a.PausedSymbols(), OpenWindow: -1}
+	if p := a.Clock.Position(); p.Started {
+		cs.Stage, cs.Step = string(a.stage()), p.Block.PublicLabel
+		if p.Ended {
+			cs.Step = "Event closed"
+		}
+	}
+	for i := 0; i < a.Clock.WindowCount(); i++ {
+		if a.Clock.WindowOpen(i) {
+			cs.OpenWindow = i
+		}
+	}
 	for i, w := range ov.Windows {
 		if w != nil {
 			cs.WindowOverrides[fmt.Sprintf("Allocation window %d", i)] = map[bool]string{true: "open", false: "closed"}[*w]

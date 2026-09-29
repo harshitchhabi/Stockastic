@@ -13,6 +13,7 @@ export interface TimelineBlock {
   stage: "phase1" | "transition" | "phase2" | "closing";
   marketOpen: boolean;
   allocationWindow: number | null;
+  freezeSnapshot?: string;
 }
 
 export interface Overview {
@@ -225,34 +226,14 @@ export interface AdminFund {
   checkpoints: { name: string; nav: number; aum: number; avgAum: number; mgmtFee: number; perfFee: number }[];
 }
 
-export interface PrizeRow {
-  id: string;
-  name: string;
-  score: number;
-  rank: number;
-  note?: string;
-}
-
-export interface Prizes {
-  final: boolean;
-  prize1: PrizeRow[];
-  prize2: PrizeRow[];
-  prize3: PrizeRow[];
-  prize4: PrizeRow[];
-}
-
 export interface LogEntrant {
   accountId: string;
   team: string;
   logs: { checkpoint: number; text: string; at: number }[];
   checkpoints: number;
-  eligible: boolean;
-  scores: Record<string, number>;
-  total: number | null;
 }
 
 export interface StrategyLogs {
-  rubric: { criterion: string; weight: number; maxScore: number }[];
   entrants: LogEntrant[];
 }
 

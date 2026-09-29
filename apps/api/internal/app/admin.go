@@ -459,6 +459,7 @@ type Block struct {
 	Stage            string  `json:"stage"`
 	MarketOpen       bool    `json:"marketOpen"`
 	AllocationWindow *int    `json:"allocationWindow"`
+	FreezeSnapshot   string  `json:"freezeSnapshot,omitempty"`
 }
 
 type Overview struct {
@@ -512,7 +513,7 @@ func (a *App) Overview() Overview {
 	o.Timeline = make([]Block, len(sched))
 	for i, b := range sched {
 		o.Timeline[i] = Block{ID: b.Block.ID, Label: b.Block.Label, StartMin: round1(b.Start.Minutes()), DurationMin: round1(b.Duration.Minutes()),
-			Stage: string(b.Block.Stage), MarketOpen: b.Block.MarketOpen, AllocationWindow: b.Block.AllocationWindow}
+			Stage: string(b.Block.Stage), MarketOpen: b.Block.MarketOpen, AllocationWindow: b.Block.AllocationWindow, FreezeSnapshot: b.Block.FreezeSnapshot}
 	}
 	ov := a.Clock.Overrides()
 	o.Control.TradingFrozen, o.Control.MarketOverride, o.Control.MarketOpen = ov.Frozen, ovString(ov.MarketOpen), a.Clock.MarketOpen()

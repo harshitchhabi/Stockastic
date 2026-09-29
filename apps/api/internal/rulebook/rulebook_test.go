@@ -2,6 +2,7 @@ package rulebook
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -46,21 +47,31 @@ func sub(m map[string]any, keys ...string) map[string]any {
 
 func TestRealRulebookMatchesSection17And3(t *testing.T) {
 	rb := loadReal(t)
-	if got := len(rb.Event.Timeline); got != 17 {
-		t.Errorf("timeline blocks = %d, want 17", got)
-	}
-	if rb.Event.TotalMinutes != 300 || rb.TotalDuration() != 5*time.Hour {
-		t.Errorf("total = %d min / %v, want 300 / 5h", rb.Event.TotalMinutes, rb.TotalDuration())
-	}
-	byStage := map[Stage]int{}
+	// The organisers run the event step by step: Phase 1 trading, Phase 1 closed (results frozen), window 0,
+	// then trading and windows 1 to 3 in turn, then the final close. No step ends by itself during an event day.
+	var ids []string
+	windows, freezes := map[int]bool{}, map[string]bool{}
 	for _, b := range rb.Event.Timeline {
-		byStage[b.Stage] += b.DurationMin
-	}
-	want := map[Stage]int{StagePhase1: 78, StageTransition: 22, StagePhase2: 155, StageClosing: 45}
-	for s, w := range want {
-		if byStage[s] != w {
-			t.Errorf("stage %s = %d min, want %d", s, byStage[s], w)
+		ids = append(ids, b.ID)
+		if b.AllocationWindow != nil {
+			windows[*b.AllocationWindow] = true
 		}
+		if b.FreezeSnapshot != "" {
+			freezes[b.FreezeSnapshot] = true
+		}
+		if b.Duration() < 24*time.Hour {
+			t.Errorf("step %s lasts %v: a step must never end by itself during the event", b.ID, b.Duration())
+		}
+	}
+	want := "[p1_trading p1_freeze transition p2_t1 w1 p2_t2 w2 p2_t3 w3 p2_t4 final_close]"
+	if fmt.Sprint(ids) != want {
+		t.Errorf("steps = %v, want %s", ids, want)
+	}
+	if len(windows) != 4 || !freezes["phase1"] || !freezes["final"] {
+		t.Errorf("windows %v, freezes %v: want windows 0 to 3 and the phase1 and final freezes", windows, freezes)
+	}
+	if !rb.Event.Timeline[0].MarketOpen || rb.Event.Timeline[0].Stage != StagePhase1 {
+		t.Errorf("the first step must be Phase 1 trading")
 	}
 	if rb.Market.SymbolCount != 150 {
 		t.Errorf("universe = %d, want 150", rb.Market.SymbolCount)
@@ -91,7 +102,7 @@ func TestRealRulebookMatchesSection17And3(t *testing.T) {
 func TestBlockOffsetsAreCumulative(t *testing.T) {
 	rb := loadReal(t)
 	off := rb.BlockOffsets()
-	if off[0] != 0 || off[1] != 15*time.Minute || off[2] != 20*time.Minute || off[3] != time.Hour {
+	if off[0] != 0 || off[1] != 24*time.Hour || off[2] != 48*time.Hour || off[3] != 72*time.Hour {
 		t.Errorf("offsets = %v", off[:4])
 	}
 	last := len(off) - 1
@@ -123,11 +134,13 @@ func TestPublicTimelineNeverLeaksTheRegimeBlockOrInternalLabels(t *testing.T) {
 func TestUnfinalisedValuesAreTaggedAndStayInData(t *testing.T) {
 	rb := loadReal(t)
 	for path, want := range map[string]Status{
-		"fees.managementFeePercent":           StatusRecommended,
-		"qualification.tieBreak":              StatusTBF,
-		"prizes.prize3.rubric":                StatusTBF,
+		// decided by the organisers
+		"fees.managementFeePercent": StatusConfirmed,
+		"qualification.tieBreak":    StatusConfirmed,
+		"prizes.prize3.rubric":      StatusConfirmed,
+		"fund.seedCapital":          StatusConfirmed,
+		// still theirs to publish
 		"technical.minimumDeviceRequirements": StatusTBF,
-		"fund.seedCapital":                    StatusAssumption,
 	} {
 		p, ok := rb.Status(path)
 		if !ok || p.Status != want {
@@ -156,8 +169,8 @@ func TestLoaderRejectsBrokenRulebooks(t *testing.T) {
 		"unknown nested key":    {func(m map[string]any) { sub(m, "fees")["oops"] = 1 }, "unknown field"},
 		"allocation windows out of order": {func(m map[string]any) {
 			tl := sub(m, "event")["timeline"].([]any)
-			tl[8].(map[string]any)["allocationWindow"] = 2
-			tl[10].(map[string]any)["allocationWindow"] = 1
+			tl[4].(map[string]any)["allocationWindow"] = 2
+			tl[6].(map[string]any)["allocationWindow"] = 1
 		}, "allocation windows must be numbered"},
 		"prize 1 weights not summing to 1":    {func(m map[string]any) { sub(m, "prizes", "prize1")["retention"] = 0.5 }, "prize1 weights"},
 		"prize 4 weights not summing to 1":    {func(m map[string]any) { sub(m, "prizes", "prize4")["diversification"] = 0.9 }, "prize4 weights"},
@@ -172,11 +185,11 @@ func TestLoaderRejectsBrokenRulebooks(t *testing.T) {
 		"fee percent out of range": {func(m map[string]any) { sub(m, "fees")["performanceFeePercent"] = 120 }, "outside 0-100"},
 		"two regime blocks": {func(m map[string]any) {
 			tl := sub(m, "event")["timeline"].([]any)
-			tl[11].(map[string]any)["regimeEvent"] = true
+			tl[7].(map[string]any)["regimeEvent"] = true
 		}, "regimeEvent"},
 		"missing final freeze": {func(m map[string]any) {
 			tl := sub(m, "event")["timeline"].([]any)
-			delete(tl[14].(map[string]any), "freezeSnapshot")
+			delete(tl[10].(map[string]any), "freezeSnapshot")
 		}, "freezeSnapshot"},
 	}
 	for name, c := range cases {
@@ -215,7 +228,7 @@ func TestEmbeddedDefaultIsTheFileOnDisk(t *testing.T) {
 		t.Fatalf("LoadOrDefault(\"\") must equal Default: %v", err)
 	}
 	c, err := LoadOrDefault(realPath)
-	if err != nil || c.Event.TotalMinutes != 300 {
+	if err != nil || len(c.Event.Timeline) != len(a.Event.Timeline) {
 		t.Fatalf("LoadOrDefault(path) must load the override file: %v", err)
 	}
 	if _, err := LoadOrDefault("nope.json"); err == nil {
@@ -275,13 +288,13 @@ func TestTheScheduleMayBeShorterOrLongerThanFiveHours(t *testing.T) {
 			t.Fatal(err)
 		}
 		tl := sub(m, "event")["timeline"].([]any)
-		tl[0].(map[string]any)["durationMin"] = minutes // the first block was 15 minutes
+		tl[0].(map[string]any)["durationMin"] = minutes // the first step was 1440 minutes
 		out, _ := json.Marshal(m)
 		rb, err := Parse(out)
 		if err != nil {
 			t.Fatalf("%s schedule was refused: %v", name, err)
 		}
-		want := 300 - 15 + minutes
+		want := 11*1440 - 1440 + minutes
 		if got := int(rb.TotalDuration() / time.Minute); got != want {
 			t.Errorf("%s: TotalDuration = %d min, want %d (the sum of the blocks)", name, got, want)
 		}

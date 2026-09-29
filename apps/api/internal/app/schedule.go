@@ -195,3 +195,42 @@ func (a *App) ResetEvent(actor User) error {
 		return nil
 	})
 }
+
+// ---- step by step ----
+
+// ClockNext moves the event to its next step: from not started to the first step, and then one step at a time. The
+// organisers run the event this way; no step ends by itself. Window 0 cannot open before the funds are formed,
+// because investors would have nowhere to put their money.
+func (a *App) ClockNext(actor User, reason string) error {
+	p := a.Clock.Position()
+	if !p.Started {
+		return a.ClockStartAt(actor, "")
+	}
+	if p.Ended {
+		return bad("event_closed", "The event has already closed.")
+	}
+	blocks := a.Clock.Blocks()
+	next := p.Index + 1
+	if next >= len(blocks) {
+		return bad("no_next_step", "This is the last step.")
+	}
+	b := blocks[next]
+	if b.AllocationWindow != nil && !a.Funds.Formed() {
+		return bad("funds_not_formed", "Form the funds first (Funds page), then open the allocation window.")
+	}
+	return a.Do(actor, "Moved to the next step: "+b.Label, "clock", reason, func() error {
+		if err := a.Clock.JumpTo(b.ID); err != nil {
+			return err
+		}
+		a.persistClock()
+		a.Clock.Tick() // the step's start (a results freeze, say) happens now, not on the next tick
+		a.broadcastControl()
+		return nil
+	})
+}
+
+// StandingsVisible says whether players may see the standings now: during Phase 1 only (from the start until the
+// funds' first allocation window opens), unless the rulebook publishes them throughout.
+func (a *App) StandingsVisible() bool {
+	return a.RB.Leaderboard.VisibleToParticipants || a.stage() == rulebook.StagePhase1
+}

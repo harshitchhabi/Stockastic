@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -90,6 +91,17 @@ func TestPhaseTwoFromQualificationToRestart(t *testing.T) {
 	investor := teams[0] // Team01: ranked last, so an investor
 	other := teams[1]
 
+	// Both teams' whole portfolios (cash and shares) went into their fund. Fund 1 is Team40 (400 ACME) and Team21
+	// (210 ACME): it holds 610 ACME and both teams' cash, and its unit price starts at exactly 100.
+	acme := e.price(investor.token, "ACME")
+	f1 := fundNamed(e.fundsView(investor.token), "F1")
+	if want := 2*1_000_000.0 + 610*acme; math.Abs(num(f1["aum"])-want) > 0.01 || num(f1["nav"]) != 100 {
+		t.Fatalf("fund 1 at formation: aum %v nav %v, want aum %v (both teams' portfolios) and nav 100", f1["aum"], f1["nav"], want)
+	}
+	if h := e.call("GET", "/api/funds/mine", teams[39].token, nil).Body["holdings"].([]any); len(h) != 1 || num(h[0].(map[string]any)["qty"]) != 610 {
+		t.Fatalf("fund 1 should hold both teams' 610 ACME, holds %v", h)
+	}
+
 	// Window 0: put money in.
 	e.jump(adm, "transition")
 	if v := e.fundsView(investor.token); v["windowOpen"] != true || v["window"].(float64) != 0 {
@@ -142,7 +154,7 @@ func TestPhaseTwoFromQualificationToRestart(t *testing.T) {
 		t.Fatalf("a fund's trade: %d %s", r.Status, r.Raw)
 	}
 	my := e.call("GET", "/api/funds/mine", mgr2.token, nil).Body // the other manager sees the same fund
-	if h := my["holdings"].([]any); len(h) != 1 || num(h[0].(map[string]any)["qty"]) != 950 {
+	if h := my["holdings"].([]any); len(h) != 1 || num(h[0].(map[string]any)["qty"]) != 610+950 {
 		t.Fatalf("the fund's holdings = %v", my["holdings"])
 	}
 	if r := e.call("PUT", "/api/funds/mine/profile", mgr.token, map[string]any{"name": "Zenith Growth", "philosophy": "Buy quality", "risk": "Balanced", "strategy": "Growth"}); r.Status != 200 {
@@ -177,7 +189,7 @@ func TestPhaseTwoFromQualificationToRestart(t *testing.T) {
 		t.Fatalf("retention = %v after a redemption", af[0]["retention"])
 	}
 
-	// Prizes and logs.
+	// Strategy logs (for the judges; prizes are decided by the organisers).
 	e.jump(adm, "p2_t2")
 	if r := e.call("POST", "/api/strategy-log", investor.token, map[string]any{"text": "Bought defensives before the bear run."}); r.Status != 200 {
 		t.Fatalf("strategy log: %d %s", r.Status, r.Raw)
@@ -185,10 +197,7 @@ func TestPhaseTwoFromQualificationToRestart(t *testing.T) {
 	if r := e.call("POST", "/api/strategy-log", mgr.token, map[string]any{"text": "x"}); r.Status != 400 {
 		t.Fatalf("a fund manager writing a strategy log: %d", r.Status)
 	}
-	if pr := e.call("GET", "/api/admin/prizes", adm, nil); pr.Status != 200 || len(pr.Body["prize1"].([]any)) != 10 || len(pr.Body["prize2"].([]any)) != 20 {
-		t.Fatalf("prizes: %d %s", pr.Status, pr.Raw)
-	}
-	if lg := e.call("GET", "/api/admin/strategy-logs", adm, nil); lg.Status != 200 || len(lg.Body["rubric"].([]any)) != 4 {
+	if lg := e.call("GET", "/api/admin/strategy-logs", adm, nil); lg.Status != 200 || len(lg.Body["entrants"].([]any)) != 1 {
 		t.Fatalf("strategy logs: %d %s", lg.Status, lg.Raw)
 	}
 
@@ -204,5 +213,167 @@ func TestPhaseTwoFromQualificationToRestart(t *testing.T) {
 	}
 	if v := e2.fundsView(other.token); v["formed"] != true {
 		t.Fatal("the funds were lost across the restart")
+	}
+}
+
+// Taking the funds apart gives every team back exactly the cash and shares it brought, and survives a restart; once
+// a fund has traded it is refused, because the portfolios could no longer be given back as they were.
+func TestDissolvingGivesEachTeamItsPortfolioBack(t *testing.T) {
+	wal := store.NewMem()
+	r := rb(t, 100)
+	r.Market.MaxSingleStockPercent = 0
+	e := newEnv(t, wal, r)
+	adm := e.admin()
+	var teams []team
+	for i := 0; i < 4; i++ {
+		tok, id := e.signup(fmt.Sprintf("Dis%d", i))
+		teams = append(teams, team{fmt.Sprintf("Dis%d", i), tok, id})
+	}
+	e.openMarket(adm)
+	for i, tm := range teams {
+		e.grant(adm, tm.id, "ACME", 10*(i+1))
+	}
+	if r := e.call("POST", "/api/trades", teams[0].token, trade("buy", "GLOBEX", 7)); r.Status != 200 {
+		t.Fatalf("trade: %d %s", r.Status, r.Raw)
+	}
+	holdings := func(e *env, id string) (float64, string) {
+		d := e.call("GET", "/api/admin/accounts/"+id, adm, nil).Body
+		return num(d["wallet"].(map[string]any)["cash"]), fmt.Sprint(d["holdings"])
+	}
+	c0, h0 := holdings(e, teams[0].id)
+	e.jump(adm, "p1_freeze")
+	if r := e.call("POST", "/api/admin/qualification/run", adm, map[string]any{"pairs": [][]string{{teams[0].id, teams[1].id}, {teams[2].id, teams[3].id}}}); r.Status != 200 {
+		t.Fatalf("form: %d %s", r.Status, r.Raw)
+	}
+	if r := e.call("POST", "/api/admin/funds/dissolve", adm, map[string]any{}); r.Status != 200 {
+		t.Fatalf("dissolve: %d %s", r.Status, r.Raw)
+	}
+	e2 := e.restart(r)
+	adm = e2.admin()
+	if c, h := holdings(e2, teams[0].id); c != c0 || h != h0 {
+		t.Fatalf("after taking the funds apart and a restart, team 0 has cash %v holdings %s; it had %v %s", c, h, c0, h0)
+	}
+	// Formed again, and this time a fund trades: taking them apart is then refused.
+	if r := e2.call("POST", "/api/admin/qualification/run", adm, map[string]any{"pairs": [][]string{{teams[0].id, teams[1].id}, {teams[2].id, teams[3].id}}}); r.Status != 200 {
+		t.Fatalf("form again: %d %s", r.Status, r.Raw)
+	}
+	e2.jump(adm, "p2_t1")
+	lead := e2.call("POST", "/api/auth/login", "", map[string]any{"email": "dis0@test.local", "password": "password-123"}).Body["token"].(string)
+	if r := e2.call("POST", "/api/trades", lead, trade("buy", "ACME", 1)); r.Status != 200 {
+		t.Fatalf("the fund's trade: %d %s", r.Status, r.Raw)
+	}
+	if r := e2.call("POST", "/api/admin/funds/dissolve", adm, map[string]any{}); r.Status != 400 || r.Body["error"] != "funds_traded" {
+		t.Fatalf("taking apart funds that have traded: %d %s", r.Status, r.Raw)
+	}
+}
+
+// Each fund chooses its own management fee from 1% to 2%; investors see it; it cannot change once investors are in.
+func TestFundsChooseTheirFee(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	adm := e.admin()
+	var teams []team
+	for i := 0; i < 5; i++ {
+		tok, id := e.signup(fmt.Sprintf("Fee%d", i))
+		teams = append(teams, team{fmt.Sprintf("Fee%d", i), tok, id})
+	}
+	e.openMarket(adm)
+	e.jump(adm, "p1_freeze")
+	if r := e.call("POST", "/api/admin/qualification/run", adm, map[string]any{"pairs": [][]string{{teams[0].id, teams[1].id}, {teams[2].id, teams[3].id}}}); r.Status != 200 {
+		t.Fatalf("form: %d %s", r.Status, r.Raw)
+	}
+	mgr, inv := teams[0].token, teams[4].token
+	profile := func(fee float64) resp {
+		return e.call("PUT", "/api/funds/mine/profile", mgr, map[string]any{"name": "Kestrel Capital", "risk": "Balanced", "strategy": "Value", "managementFeePercent": fee})
+	}
+	if f := fundNamed(e.fundsView(inv), "F1"); num(f["feePercent"]) != 1.5 {
+		t.Fatalf("before choosing, the fee is %v, want the rulebook's 1.5", f["feePercent"])
+	}
+	if r := profile(2.5); r.Status != 400 || r.Body["error"] != "invalid_fee" {
+		t.Fatalf("a 2.5%% fee: %d %s", r.Status, r.Raw)
+	}
+	if r := profile(1.8); r.Status != 200 {
+		t.Fatalf("a 1.8%% fee: %d %s", r.Status, r.Raw)
+	}
+	if f := fundNamed(e.fundsView(inv), "F1"); num(f["feePercent"]) != 1.8 {
+		t.Fatalf("investors see a fee of %v, want 1.8", f["feePercent"])
+	}
+	e.jump(adm, "transition")
+	time.Sleep(5 * time.Second) // the profile can change at most every few seconds
+	if r := e.call("POST", "/api/funds/F1/allocate", inv, map[string]any{"amount": 25_000}); r.Status != 200 {
+		t.Fatalf("invest: %d %s", r.Status, r.Raw)
+	}
+	if r := profile(1.2); r.Status != 400 || r.Body["error"] != "fee_locked" {
+		t.Fatalf("changing the fee after investors came in: %d %s", r.Status, r.Raw)
+	}
+	if r := profile(1.8); r.Status != 200 {
+		t.Fatalf("keeping the same fee while editing the rest: %d %s", r.Status, r.Raw)
+	}
+}
+
+// The organisers run the event step by step: nothing moves by itself, Window 0 waits for the funds, and players see
+// the standings in Phase 1 only.
+func TestTheEventMovesOnlyWhenTheOrganiserSaysSo(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	adm := e.admin()
+	var teams []team
+	for i := 0; i < 4; i++ {
+		tok, id := e.signup(fmt.Sprintf("Step%d", i))
+		teams = append(teams, team{fmt.Sprintf("Step%d", i), tok, id})
+	}
+	player := teams[3].token
+	next := func() resp { return e.call("POST", "/api/admin/clock/next", adm, map[string]any{}) }
+	step := func() map[string]any {
+		return e.call("GET", "/api/admin/overview", adm, nil).Body["clock"].(map[string]any)
+	}
+	standings := func() int { return e.call("GET", "/api/leaderboard", player, nil).Status }
+
+	if standings() != 200 {
+		t.Fatal("players should see the standings before and during Phase 1")
+	}
+	if r := next(); r.Status != 200 {
+		t.Fatalf("start: %d %s", r.Status, r.Raw)
+	}
+	time.Sleep(1200 * time.Millisecond)
+	if !e.a.Clock.MarketOpen() || step()["blockIndex"].(float64) != 0 {
+		t.Fatal("the first step must be Phase 1 with the market open")
+	}
+	e.a.Clock.Tick()
+	time.Sleep(1500 * time.Millisecond)
+	if !e.a.Clock.MarketOpen() {
+		t.Fatal("a step must not end by itself")
+	}
+	if r := next(); r.Status != 200 { // Phase 1 closed: results frozen
+		t.Fatalf("to Phase 1 closed: %d %s", r.Status, r.Raw)
+	}
+	if e.a.Clock.MarketOpen() {
+		t.Fatal("the market must close when Phase 1 ends")
+	}
+	if q := e.call("GET", "/api/admin/qualification", adm, nil).Body; q["ready"] != true {
+		t.Fatalf("the Phase 1 results must be frozen at this step: %v", q)
+	}
+	if standings() != 200 {
+		t.Fatal("players should still see the Phase 1 standings after it closes")
+	}
+	if r := next(); r.Status != 400 || r.Body["error"] != "funds_not_formed" {
+		t.Fatalf("opening window 0 before the funds exist: %d %s", r.Status, r.Raw)
+	}
+	if r := e.call("POST", "/api/admin/qualification/run", adm, map[string]any{"pairs": [][]string{{teams[0].id, teams[1].id}}}); r.Status != 200 {
+		t.Fatalf("form: %d %s", r.Status, r.Raw)
+	}
+	if r := next(); r.Status != 200 {
+		t.Fatalf("to window 0: %d %s", r.Status, r.Raw)
+	}
+	if !e.a.Clock.WindowOpen(0) || e.a.Clock.MarketOpen() {
+		t.Fatal("window 0 must be open and the market closed")
+	}
+	if standings() != 403 {
+		t.Fatal("players must not see the standings in Phase 2")
+	}
+	cs := e.a.ControlState()
+	if cs.Stage != "transition" || cs.OpenWindow != 0 {
+		t.Fatalf("what players are told: %+v", cs)
+	}
+	if r := next(); r.Status != 200 || !e.a.Clock.MarketOpen() {
+		t.Fatalf("to Phase 2 trading: %d %s", r.Status, r.Raw)
 	}
 }

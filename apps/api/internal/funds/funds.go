@@ -40,6 +40,32 @@ type Profile struct {
 	Philosophy string `json:"philosophy"`
 	Risk       string `json:"risk"`
 	Strategy   string `json:"strategy"`
+	// ManagementFeePercent is the fee the fund chose (1 to 2%); 0 means it has not chosen and the rulebook's is used.
+	ManagementFeePercent float64 `json:"managementFeePercent,omitempty"`
+}
+
+// Move is cash and shares moved between two accounts as part of a fund event: each qualifying team's whole portfolio
+// going into its fund when the funds are formed, or back to the team if the funds are taken apart.
+type Move struct {
+	From   string        `json:"from"`
+	To     string        `json:"to"`
+	Cash   int64         `json:"cash"`
+	Shares []MovedShares `json:"shares,omitempty"`
+}
+
+// MovedShares is one company's shares in a Move, with their exact total cost basis.
+type MovedShares struct {
+	Symbol string `json:"symbol"`
+	Qty    int64  `json:"qty"`
+	Cost   int64  `json:"cost"`
+}
+
+// SeedUnits are the units a qualifying team receives for the portfolio it brought into its fund, at the launch NAV.
+type SeedUnits struct {
+	FundID string  `json:"fundId"`
+	Team   string  `json:"team"`
+	Amount int64   `json:"amount"`
+	Units  float64 `json:"units"`
 }
 
 // Formed is one fund at creation: two Phase 1 teams merged (Section 6).
@@ -113,21 +139,28 @@ type Event struct {
 	// the concentration index; 0 if they hold nothing). Prize 4 uses its average over the event, not the last moment.
 	Div map[string]float64 `json:"div,omitempty"`
 
-	Checkpoint *Checkpoint        `json:"checkpoint,omitempty"`
-	Log        *StrategyLog       `json:"log,omitempty"`
-	Scores     map[string]float64 `json:"scores,omitempty"` // criterion -> score (score)
+	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
+
+	// On "formed": the two teams' portfolios moved into each fund and the units they received for them.
+	// On "dissolve": the same portfolios moved back.
+	Moves  []Move             `json:"moves,omitempty"`
+	Seeds  []SeedUnits        `json:"seeds,omitempty"`
+	Log    *StrategyLog       `json:"log,omitempty"`
+	Scores map[string]float64 `json:"scores,omitempty"` // criterion -> score (score)
 }
 
 type Fund struct {
 	Formed
 	Profile
 	Units, MintedUnits, RedeemedUnits float64
-	HWM                               float64
-	Disqualified                      bool
-	peakNAV, maxDD                    float64
-	aumSum                            float64
-	aumN                              int
-	firstNAV                          float64
+	// SeedUnits are the units the fund's own two teams hold for the portfolios they brought in.
+	SeedUnits      float64
+	HWM            float64
+	Disqualified   bool
+	peakNAV, maxDD float64
+	aumSum         float64
+	aumN           int
+	firstNAV       float64
 }
 
 // Holding is one investor's position in one fund.
@@ -135,6 +168,8 @@ type Holding struct {
 	Units       float64
 	Contributed money.Paise
 	Redeemed    money.Paise
+	// Seed is a fund manager team's own stake in its fund (from the portfolio it brought in), not an investment.
+	Seed bool
 }
 
 type risk struct {
@@ -159,6 +194,7 @@ type Book struct {
 	checks    []Checkpoint
 	logs      []StrategyLog
 	scores    map[string]map[string]float64
+	seedMoves []Move // the moves that put each team's portfolio into its fund (reversed if the funds are taken apart)
 }
 
 func NewBook(launchNAV float64) *Book {
@@ -191,6 +227,27 @@ func (b *Book) Apply(ev Event) error {
 			b.byID[f.ID] = fd
 		}
 		b.ranking, b.seed, b.formed = ev.Ranking, ev.Seed, true
+		b.seedMoves = append([]Move(nil), ev.Moves...)
+		for _, s := range ev.Seeds {
+			f, ok := b.byID[s.FundID]
+			if !ok {
+				return ErrUnknownFund
+			}
+			h := b.holdings[s.Team]
+			if h == nil {
+				h = map[string]*Holding{}
+				b.holdings[s.Team] = h
+			}
+			pos := h[s.FundID]
+			if pos == nil {
+				pos = &Holding{Seed: true}
+				h[s.FundID] = pos
+			}
+			pos.Units += s.Units
+			pos.Contributed += money.Paise(s.Amount)
+			f.Units += s.Units
+			f.SeedUnits += s.Units
+		}
 	case OpProfile:
 		f, ok := b.byID[ev.FundID]
 		if !ok || ev.Profile == nil {
@@ -365,13 +422,19 @@ func (b *Book) Holdings(investor string) map[string]Holding {
 	return out
 }
 
-// Investors lists every account that has ever put money into any fund.
+// Investors lists every account that has ever put money into any fund (a fund manager team's own stake in its
+// fund does not count).
 func (b *Book) Investors() []string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	out := make([]string, 0, len(b.holdings))
-	for id := range b.holdings {
-		out = append(out, id)
+	for id, byFund := range b.holdings {
+		for _, h := range byFund {
+			if !h.Seed {
+				out = append(out, id)
+				break
+			}
+		}
 	}
 	sort.Strings(out)
 	return out
@@ -474,7 +537,7 @@ func (b *Book) Profitability(fund string, nav float64) float64 {
 	var total, won int
 	for _, byFund := range b.holdings {
 		h := byFund[fund]
-		if h == nil || h.Contributed <= 0 {
+		if h == nil || h.Contributed <= 0 || h.Seed {
 			continue
 		}
 		total++
@@ -507,7 +570,11 @@ func (b *Book) PlanCheckpoint(name string, at int64, navs map[string]float64, au
 		}
 		fc := FundCheckpoint{FundID: f.ID, NAV: nav, AUM: aums[f.ID], AvgAUM: int64(math.Round(avg)), Units: f.Units,
 			HWMBefore: f.HWM, HWMAfter: f.HWM}
-		fc.MgmtFee = int64(math.Round(avg * mgmtPct / 100))
+		pct := mgmtPct
+		if f.Profile.ManagementFeePercent > 0 {
+			pct = f.Profile.ManagementFeePercent
+		}
+		fc.MgmtFee = int64(math.Round(avg * pct / 100))
 		if nav > f.HWM {
 			fc.PerfFee = int64(money.FromRupees((nav - f.HWM) * perfPct / 100 * f.Units))
 			fc.HWMAfter = nav
@@ -522,6 +589,7 @@ func (b *Book) resetLocked() {
 	b.holdings, b.inflow = map[string]map[string]*Holding{}, map[int]map[string]money.Paise{}
 	b.ranking, b.seed, b.formed = nil, 0, false
 	b.risks, b.checks, b.logs = map[string]*risk{}, nil, nil
+	b.seedMoves = nil
 	b.scores = map[string]map[string]float64{}
 }
 
@@ -530,4 +598,23 @@ func (b *Book) Reset() {
 	b.mu.Lock()
 	b.resetLocked()
 	b.mu.Unlock()
+}
+
+// SeedMoves are the moves that put each qualifying team's portfolio into its fund when the funds were formed.
+func (b *Book) SeedMoves() []Move {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return append([]Move(nil), b.seedMoves...)
+}
+
+// HasInvestors reports whether any investor (not the fund's own teams) has put money into a fund.
+func (b *Book) HasInvestors(fund string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, byFund := range b.holdings {
+		if h := byFund[fund]; h != nil && !h.Seed && h.Contributed > 0 {
+			return true
+		}
+	}
+	return false
 }

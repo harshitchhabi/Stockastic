@@ -173,8 +173,10 @@ func TestWindowZeroRushAtFullSize(t *testing.T) {
 	for _, f := range funds {
 		aum += num(f["aum"])
 	}
-	if math.Abs(aum-total) > 1 {
-		t.Fatalf("funds hold %.2f in all, investors put in %.2f", aum, total)
+	// The funds hold what investors put in plus what the 20 qualifying teams brought (their starting capital here).
+	brought := float64(2*fundsN) * num(r.Accounts.StartingCapital)
+	if math.Abs(aum-total-brought) > 1 {
+		t.Fatalf("funds hold %.2f in all; investors put in %.2f and the fund managers brought %.2f", aum, total, brought)
 	}
 	for i, tm := range investors {
 		if need := 0.05 * (num(r.Accounts.StartingCapital) + adj[tm.token]); accepted[i] < need { // the mandatory 5%

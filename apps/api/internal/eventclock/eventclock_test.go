@@ -1,9 +1,11 @@
 package eventclock
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -12,12 +14,24 @@ import (
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
+// load is the real rulebook with a timed schedule: the organisers now run the event step by step (each step waits
+// for them), but the clock still supports timed blocks, pausing and shortening, so its tests use the original
+// 17-block, 5-hour timeline kept in testdata.
 func load(t *testing.T) *rulebook.Rulebook {
 	t.Helper()
 	rb, err := rulebook.Default()
 	if err != nil {
 		t.Fatal(err)
 	}
+	raw, err := os.ReadFile("testdata/legacy_timeline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tl []rulebook.Block
+	if err := json.Unmarshal(raw, &tl); err != nil {
+		t.Fatal(err)
+	}
+	rb.Event.Timeline = tl
 	return rb
 }
 
@@ -393,10 +407,7 @@ func TestWindowCountComesFromTheRulebookNotFromTheCode(t *testing.T) {
 }
 
 func TestOrganiserSchedule(t *testing.T) {
-	rb, err := rulebook.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
+	rb := load(t)
 	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	c := New(rb, func() time.Time { return now }, nil)
 	w0 := 0

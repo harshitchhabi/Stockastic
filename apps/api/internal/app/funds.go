@@ -116,6 +116,10 @@ func (a *App) applyFundEvent(ev funds.Event, replay bool) error {
 	var gone []funds.Fund
 	if ev.Op == funds.OpDissolve {
 		gone = a.Funds.Funds()
+		// The teams' portfolios go back to them before the fund accounts are removed.
+		if err := a.applyMoves(ev.Moves); err != nil {
+			return err
+		}
 	}
 	if err := a.Funds.Apply(ev); err != nil {
 		return err
@@ -130,8 +134,67 @@ func (a *App) applyFundEvent(ev funds.Event, replay bool) error {
 				return err
 			}
 		}
+		// Each qualifying team's whole portfolio (cash and shares) goes into its fund.
+		if err := a.applyMoves(ev.Moves); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// applyMoves moves cash and shares exactly as a stored fund event says. It runs the same way live and when the
+// log is replayed after a restart, so the two can never differ.
+func (a *App) applyMoves(moves []funds.Move) error {
+	for _, m := range moves {
+		if m.Cash > 0 {
+			if err := a.Ledger.ReplayMove(m.From, m.To, money.Paise(m.Cash)); err != nil {
+				return err
+			}
+		}
+		for _, s := range m.Shares {
+			if err := a.Ledger.MoveShares(m.From, m.To, s.Symbol, s.Qty, money.Paise(s.Cost)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// seedFunds works out, for each fund being formed, the move of both teams' whole portfolios into the fund and the
+// units each team receives for what it brought, at the launch NAV (so the fund's NAV starts exactly there and
+// investors who join later pay a fair price).
+func (a *App) seedFunds(formed []funds.Formed) ([]funds.Move, []funds.SeedUnits) {
+	var moves []funds.Move
+	var seeds []funds.SeedUnits
+	nav := a.Funds.LaunchNAV()
+	for _, f := range formed {
+		for _, team := range f.Members {
+			snap, err := a.Ledger.Snapshot(team)
+			if err != nil {
+				continue
+			}
+			m := funds.Move{From: team, To: f.Account, Cash: int64(snap.Cash)}
+			value := snap.Cash
+			for _, p := range snap.Positions {
+				if p.Qty <= 0 {
+					continue
+				}
+				m.Shares = append(m.Shares, funds.MovedShares{Symbol: p.Symbol, Qty: p.Qty, Cost: int64(p.Cost)})
+				if price, ok := a.Market.Price(p.Symbol); ok {
+					value += price * money.Paise(p.Qty)
+				}
+			}
+			if m.Cash <= 0 && len(m.Shares) == 0 {
+				continue
+			}
+			if m.Cash < 0 {
+				m.Cash = 0
+			}
+			moves = append(moves, m)
+			seeds = append(seeds, funds.SeedUnits{FundID: f.ID, Team: team, Amount: int64(value), Units: value.Rupees() / nav})
+		}
+	}
+	return moves, seeds
 }
 
 // ---- qualification and formation (Sections 5 and 6) ----
@@ -279,6 +342,7 @@ func (a *App) FormFunds(actor User, pairs [][]string) error {
 			id := fmt.Sprintf("F%d", i+1)
 			ev.Funds = append(ev.Funds, funds.Formed{ID: id, Number: i + 1, Account: "fund:" + id, Members: [2]string{p[0], p[1]}, Trader: p[0], Ranks: [2]int{ranks[p[0]], ranks[p[1]]}})
 		}
+		ev.Moves, ev.Seeds = a.seedFunds(ev.Funds)
 		if err := a.fundAppend(ev); err != nil {
 			return err
 		}
@@ -346,8 +410,14 @@ func (a *App) DissolveFunds(actor User) error {
 		members := []string{}
 		for _, f := range a.Funds.Funds() {
 			members = append(members, f.Members[0], f.Members[1])
+			if len(a.MyTrades(f.Account)) > 0 {
+				return bad("funds_traded", "The funds have already traded, so the teams' portfolios cannot be given back as they were. Reset the event instead.")
+			}
 		}
 		ev := funds.Event{Op: funds.OpDissolve, At: a.now().UnixMilli()}
+		for _, m := range a.Funds.SeedMoves() {
+			ev.Moves = append(ev.Moves, funds.Move{From: m.To, To: m.From, Cash: m.Cash, Shares: m.Shares})
+		}
 		if err := a.fundAppend(ev); err != nil {
 			return err
 		}
@@ -371,6 +441,8 @@ type ProfileRequest struct {
 	Philosophy string `json:"philosophy"`
 	Risk       string `json:"risk"`
 	Strategy   string `json:"strategy"`
+	// ManagementFeePercent is the fund's own fee, 1 to 2% (Section 12). 0 keeps what it has (the rulebook's to start).
+	ManagementFeePercent float64 `json:"managementFeePercent"`
 }
 
 // realNameRE catches the names of well-known real companies and institutions (Section 8 forbids them as fund names).
@@ -394,6 +466,17 @@ func (a *App) SetFundProfile(u User, r ProfileRequest) error {
 	}
 	if lower := strings.ToLower(p.Name); realNameRE.MatchString(lower) {
 		return bad("real_name", "A fund must have a made-up name, never the name of a real company or institution.")
+	}
+	p.ManagementFeePercent = f.Profile.ManagementFeePercent
+	if fee := r.ManagementFeePercent; fee != 0 {
+		if math.IsNaN(fee) || fee < 1 || fee > 2 {
+			return bad("invalid_fee", "The management fee must be from 1% to 2%.")
+		}
+		fee = math.Round(fee*100) / 100
+		if fee != a.FundFee(f) && a.Funds.HasInvestors(f.ID) {
+			return bad("fee_locked", "Investors have already put money in on the current fee, so it can no longer change.")
+		}
+		p.ManagementFeePercent = fee
 	}
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
@@ -738,6 +821,7 @@ func (a *App) fundLoop(ctx context.Context) {
 // ---- what people see ----
 
 type FundInfo struct {
+	FeePercent   float64  `json:"feePercent"` // the fund's management fee (1 to 2%)
 	ID           string   `json:"id"`
 	Number       int      `json:"number"`
 	Name         string   `json:"name"`
@@ -783,7 +867,7 @@ func (a *App) memberNames(f funds.Fund) []string {
 
 func (a *App) fundInfo(f funds.Fund, navs map[string]float64, viewer string) FundInfo {
 	nav := navs[f.ID]
-	d := FundInfo{ID: f.ID, Number: f.Number, Name: f.Profile.Name, Philosophy: f.Philosophy, Risk: f.Risk, Strategy: f.Strategy,
+	d := FundInfo{FeePercent: a.FundFee(f), ID: f.ID, Number: f.Number, Name: f.Profile.Name, Philosophy: f.Philosophy, Risk: f.Risk, Strategy: f.Strategy,
 		Managers: a.memberNames(f), NAV: nav, ReturnPct: (nav/a.Funds.LaunchNAV() - 1) * 100, AUM: dto.Rupees(a.fundValue(f)),
 		Disqualified: f.Disqualified}
 	for _, inv := range a.Funds.Investors() {
@@ -988,176 +1072,19 @@ func (a *App) DisqualifyFund(actor User, id string) error {
 	})
 }
 
-type PrizeRow struct {
-	ID    string  `json:"id"`
-	Name  string  `json:"name"`
-	Score float64 `json:"score"`
-	Rank  int     `json:"rank"`
-	Note  string  `json:"note,omitempty"`
-}
-
-type Prizes struct {
-	Final  bool       `json:"final"` // computed from the final freeze rather than live prices
-	Prize1 []PrizeRow `json:"prize1"`
-	Prize2 []PrizeRow `json:"prize2"`
-	Prize3 []PrizeRow `json:"prize3"`
-	Prize4 []PrizeRow `json:"prize4"`
-}
-
-// Prizes applies the Section 16 formulas. After the final freeze it uses the frozen figures; before it, the
-// live ones, so the organiser can watch the standings develop.
-func (a *App) Prizes() Prizes {
-	res := Prizes{Prize1: []PrizeRow{}, Prize2: []PrizeRow{}, Prize3: []PrizeRow{}, Prize4: []PrizeRow{}}
-	if !a.Funds.Formed() {
-		return res
-	}
-	navs := a.navs()
-	values := map[string]money.Paise{}
-	if snap, ok := a.Snapshot("final"); ok {
-		res.Final = true
-		for k, v := range snap.Values {
-			values[k] = money.Paise(v)
-		}
-		if snap.FundNAV != nil {
-			navs = snap.FundNAV
-		}
-	}
-	name := func(id string) string {
-		if u, ok := a.users.get(id); ok {
-			return u.DisplayName
-		}
-		return id
-	}
-
-	// Prize 1: the fund with the best weighted ranking score, never the biggest fund.
-	var p1 []scoring.Prize1Input
-	fnames := map[string]string{}
-	for _, f := range a.Funds.Funds() {
-		fnames[f.ID] = f.Profile.Name
-		if f.Disqualified {
-			continue
-		}
-		nav := navs[f.ID]
-		p1 = append(p1, scoring.Prize1Input{FundID: f.ID, NavReturnPct: (nav/a.Funds.LaunchNAV() - 1) * 100, MaxDrawdown: a.Funds.MaxDrawdown(f.ID),
-			InvestorProfitability: a.Funds.Profitability(f.ID, nav), Retention: a.Funds.Retention(f.ID)})
-	}
-	for _, s := range scoring.Prize1Scores(p1, a.RB.Prizes.Prize1) {
-		res.Prize1 = append(res.Prize1, PrizeRow{ID: s.ID, Name: fnames[s.ID], Score: s.Score, Rank: s.Rank})
-	}
-
-	// Prizes 2 and 4 look at individual investors only.
-	var p2 []scoring.Prize2Input
-	var p4 []scoring.Prize4Input
-	for _, u := range a.users.all() {
-		if u.IsAdmin || u.Role != RoleInvestor {
-			continue
-		}
-		v, ok := values[u.ID]
-		if !ok {
-			v = a.totalValue(u.ID, navs)
-		}
-		eligible := u.Status != StatusDisqualified
-		p2 = append(p2, scoring.Prize2Input{AccountID: u.ID, FinalValue: v, Eligible: eligible})
-		first, _, dd, has := a.Funds.Risk(u.ID)
-		ret := 0.0
-		if has && first > 0 {
-			ret = (float64(v) - float64(first)) / float64(first) * 100
-		}
-		var hv []float64
-		if snap, err := a.Ledger.Snapshot(u.ID); err == nil {
-			for _, p := range snap.Positions {
-				if px, ok := a.Market.Price(p.Symbol); ok {
-					hv = append(hv, float64(px)*float64(p.Qty))
-				}
-			}
-		}
-		for id, h := range a.Funds.Holdings(u.ID) {
-			if h.Units > 0 {
-				hv = append(hv, h.Units*navs[id]*100)
-			}
-		}
-		avgDiv, _ := a.Funds.AvgDiversification(u.ID)
-		p4 = append(p4, scoring.Prize4Input{AccountID: u.ID, ReturnPct: ret, MaxDrawdown: dd, HoldingValues: hv, AvgEffectiveHoldings: avgDiv, Eligible: eligible && has})
-	}
-	for _, s := range scoring.Prize2Ranking(p2) {
-		note := ""
-		if u, ok := a.users.get(s.ID); ok && u.Role == RoleInvestor {
-			if v := unitsValue(a.Funds.Holdings(s.ID), navs); v > 0 || a.Funds.Formed() {
-				total := a.totalValue(s.ID, navs)
-				if total > 0 && float64(v)*100+1e-6 < float64(total)*a.RB.Fund.MandatoryAllocationPercent {
-					note = "below the required share in funds"
-				}
-			}
-		}
-		res.Prize2 = append(res.Prize2, PrizeRow{ID: s.ID, Name: name(s.ID), Score: dto.Rupees(money.Paise(s.Score)), Rank: s.Rank, Note: note})
-	}
-	for _, s := range scoring.Prize4Scores(p4, a.RB.Prizes.Prize4) {
-		res.Prize4 = append(res.Prize4, PrizeRow{ID: s.ID, Name: name(s.ID), Score: s.Score, Rank: s.Rank})
-	}
-	if len(res.Prize2) > 20 {
-		res.Prize2 = res.Prize2[:20]
-	}
-	if len(res.Prize4) > 20 {
-		res.Prize4 = res.Prize4[:20]
-	}
-
-	// Prize 3: judges' scores for investors who submitted logs at two or more checkpoints.
-	type entry struct {
-		id    string
-		score float64
-	}
-	var es []entry
-	for _, e := range a.LogEntrants() {
-		if e.Eligible && e.Total != nil {
-			es = append(es, entry{e.AccountID, *e.Total})
-		}
-	}
-	sort.Slice(es, func(i, j int) bool { return es[i].score > es[j].score })
-	for i, e := range es {
-		res.Prize3 = append(res.Prize3, PrizeRow{ID: e.id, Name: name(e.id), Score: e.score, Rank: i + 1})
-	}
-	return res
-}
-
 type LogEntrant struct {
 	AccountID   string              `json:"accountId"`
 	Team        string              `json:"team"`
 	Logs        []funds.StrategyLog `json:"logs"`
 	Checkpoints int                 `json:"checkpoints"`
-	Eligible    bool                `json:"eligible"` // wrote at two or more checkpoints
-	Scores      map[string]float64  `json:"scores"`
-	Total       *float64            `json:"total"`
 }
 
-// Rubric is the judging criteria for Prize 3, with their scale and weight (equal until the organisers set them).
-type RubricItem struct {
-	Criterion string  `json:"criterion"`
-	Weight    float64 `json:"weight"`
-	MaxScore  float64 `json:"maxScore"`
-}
-
-func (a *App) Rubric() []RubricItem {
-	rs := a.RB.Prizes.Prize3.Rubric
-	out := make([]RubricItem, len(rs))
-	for i, r := range rs {
-		it := RubricItem{Criterion: r.Criterion, Weight: 1 / float64(len(rs)), MaxScore: 10}
-		if r.Weight != nil {
-			it.Weight = *r.Weight
-		}
-		if r.MaxScore != nil {
-			it.MaxScore = *r.MaxScore
-		}
-		out[i] = it
-	}
-	return out
-}
-
+// LogEntrants is every investor team's strategy log, for the judges (Prize 3 is decided by them in person).
 func (a *App) LogEntrants() []LogEntrant {
 	byAcct := map[string][]funds.StrategyLog{}
 	for _, l := range a.Funds.Logs("") {
 		byAcct[l.Account] = append(byAcct[l.Account], l)
 	}
-	rubric := a.Rubric()
 	out := []LogEntrant{}
 	for id, logs := range byAcct {
 		u, _ := a.users.get(id)
@@ -1165,48 +1092,10 @@ func (a *App) LogEntrants() []LogEntrant {
 		for _, l := range logs {
 			seen[l.Checkpoint] = true
 		}
-		e := LogEntrant{AccountID: id, Team: u.DisplayName, Logs: logs, Checkpoints: len(seen), Eligible: len(seen) >= 2 && u.Status != StatusDisqualified, Scores: a.Funds.Scores(id)}
-		if len(e.Scores) > 0 {
-			var t float64
-			for _, r := range rubric {
-				if r.MaxScore > 0 {
-					t += 100 * r.Weight * math.Min(e.Scores[r.Criterion], r.MaxScore) / r.MaxScore
-				}
-			}
-			e.Total = &t
-		}
-		out = append(out, e)
+		out = append(out, LogEntrant{AccountID: id, Team: u.DisplayName, Logs: logs, Checkpoints: len(seen)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Team < out[j].Team })
 	return out
-}
-
-// ScoreLog stores a judge's scores (per criterion, up to its maximum) for one investor.
-func (a *App) ScoreLog(actor User, account string, scores map[string]float64) error {
-	u, ok := a.users.get(account)
-	if !ok || u.IsAdmin {
-		return ErrUnknownUser
-	}
-	clean := map[string]float64{}
-	for _, r := range a.Rubric() {
-		v, has := scores[r.Criterion]
-		if !has {
-			continue
-		}
-		if math.IsNaN(v) || v < 0 || v > r.MaxScore {
-			return bad("invalid_score", fmt.Sprintf("Scores for %q run from 0 to %.0f.", r.Criterion, r.MaxScore))
-		}
-		clean[r.Criterion] = v
-	}
-	return a.Do(actor, "Scored a strategy log", u.DisplayName, "", func() error {
-		a.fundMu.Lock()
-		defer a.fundMu.Unlock()
-		ev := funds.Event{Op: funds.OpScore, At: a.now().UnixMilli(), Investor: account, Scores: clean}
-		if err := a.fundAppend(ev); err != nil {
-			return err
-		}
-		return a.Funds.Apply(ev)
-	})
 }
 
 // effectiveHoldings is how many holdings an account's invested money is effectively spread over right now: shares
@@ -1234,4 +1123,12 @@ func (a *App) effectiveHoldings(id string, navs map[string]float64) float64 {
 		return 0
 	}
 	return 1 / scoring.Herfindahl(vals)
+}
+
+// FundFee is the management fee a fund charges: the one it chose, or the rulebook's.
+func (a *App) FundFee(f funds.Fund) float64 {
+	if f.Profile.ManagementFeePercent > 0 {
+		return f.Profile.ManagementFeePercent
+	}
+	return a.RB.Fees.ManagementFeePercent
 }

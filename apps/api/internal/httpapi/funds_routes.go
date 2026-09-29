@@ -95,21 +95,7 @@ func (s *Server) fundRoutes(me, adm *gin.RouterGroup) {
 	adm.POST("/schedule/template", s.act(func(u app.User, _ body, _ *gin.Context) error { return s.a.LoadTemplateSchedule(u) }))
 	adm.POST("/event/reset", s.act(func(u app.User, _ body, _ *gin.Context) error { return s.a.ResetEvent(u) }))
 	adm.POST("/snapshots/:name", s.act(func(u app.User, _ body, c *gin.Context) error { return s.a.TakeSnapshot(u, c.Param("name")) }))
-	adm.GET("/prizes", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Prizes()) })
 	adm.GET("/strategy-logs", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"rubric": s.a.Rubric(), "entrants": s.a.LogEntrants()})
-	})
-	adm.POST("/strategy-logs/:account/score", func(c *gin.Context) {
-		var r struct {
-			Scores map[string]float64 `json:"scores"`
-		}
-		if !s.decode(c, &r) {
-			return
-		}
-		if err := s.a.ScoreLog(user(c), c.Param("account"), r.Scores); err != nil {
-			s.fail(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"ok": true})
+		c.JSON(http.StatusOK, gin.H{"entrants": s.a.LogEntrants()})
 	})
 }

@@ -25,7 +25,7 @@ What the organiser console (`apps/web/src/components/admin/`) calls. Implemented
 | `GET /api/admin/sim` | 4 s | the price simulation: every scheduled event and bull or bear run with its time, type (REAL, FAKE, DENIAL), whether it has fired, and how many prices it moves |
 | `GET /api/admin/qualification` | 5 s | the Phase 1 ranking with what decided each place, the cut, and whether the funds are formed |
 | `GET /api/admin/funds` | 5 s | every fund: NAV, return, AUM, investors, largest fall, capital kept, share of investors in profit, checkpoint fees |
-| `GET /api/admin/prizes` | 8 s | Prizes 1 to 4 ranked (live until the final freeze, then from the frozen figures) |
+| `GET /api/admin/standings` | 10 s | live standings: `teams` (everyone by total value), `investors`, and `funds` (by return since launch). Prizes are decided by the organisers |
 | `GET /api/admin/strategy-logs` | 10 s | the rubric and every investor's strategy log entries and judges' scores |
 | `GET /api/admin/schedule` | | the schedule as it is now, and the rulebook timeline that can be loaded as a starting point |
 | `GET /api/admin/rulebook` | 60 s | version, source, the provenance list (tbf / recommended / assumption) and every value |
@@ -38,6 +38,7 @@ so a rulebook with five windows shows five switches with no console change.
 
 | Route | Extra body | Maps to |
 | --- | --- | --- |
+| `POST /api/admin/clock/next` | | moves the event to its next step (the console's Next step button); refuses to open an allocation window before the funds are formed |
 | `POST /api/admin/clock/start` | `blockId?` | `Clock.StartAt`: starts the event at the chosen block (the first one if omitted). Blocks before it count as done |
 | `POST /api/admin/clock/pause` | | `Clock.Pause` |
 | `POST /api/admin/clock/resume` | `compressBlockId?` | `Clock.Resume` |
@@ -63,8 +64,7 @@ so a rulebook with five windows shows five switches with no console change.
 | `GET /api/admin/export/trades.csv`, `GET /api/admin/export/accounts.csv` | | downloads: every trade of the event, and every team with cash, value and status |
 | `POST /api/admin/sim/{id}/fire` | | releases a scheduled market event or run now; it will not fire again |
 | `POST /api/admin/qualification/run` | `pairs?: [[traderId, otherId], ...]` | forms the funds. With no pairs it ranks Phase 1 from the freeze snapshot and pairs the top teams first with last. With pairs, the organiser chooses who is merged with whom (up to the rulebook's fund count); the first team of each pair places the fund's trades |
-| `POST /api/admin/funds/{id}/disqualify` | | removes a fund from Prize 1 |
-| `POST /api/admin/strategy-logs/{account}/score` | `scores: { criterion: number }` | a judge's Prize 3 scores |
+| `POST /api/admin/funds/{id}/disqualify` | | disqualifies a fund: it keeps trading but takes no new investor money |
 | `POST /api/admin/accounts/{id}/promote` | | move a team into the fund manager role |
 | `POST /api/admin/accounts/{id}/warn` | | formal warning (rulebook Section 21) |
 | `POST /api/admin/accounts/{id}/disqualify` | | disqualify: stops all trading. Trades already made stand |

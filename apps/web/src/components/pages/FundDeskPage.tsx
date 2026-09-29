@@ -14,7 +14,7 @@ export function FundDeskPage() {
   const { account } = useSession();
   const { bySymbol } = useUniverse();
   const [data, setData] = useState<MyFund | null>(null);
-  const [form, setForm] = useState({ name: "", philosophy: "", risk: "Balanced", strategy: "" });
+  const [form, setForm] = useState({ name: "", philosophy: "", risk: "Balanced", strategy: "", managementFeePercent: 1.5 });
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [, setLoadedProfile] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -26,7 +26,8 @@ export function FundDeskPage() {
         setData(d);
         setFailed(false);
         setLoadedProfile((done) => {
-          if (!done) setForm({ name: d.fund.name, philosophy: d.fund.philosophy, risk: d.fund.risk || "Balanced", strategy: d.fund.strategy });
+          if (!done)
+            setForm({ name: d.fund.name, philosophy: d.fund.philosophy, risk: d.fund.risk || "Balanced", strategy: d.fund.strategy, managementFeePercent: d.fund.feePercent });
           return true;
         });
       })
@@ -179,6 +180,18 @@ export function FundDeskPage() {
         <label className="field">
           <span className="label">Investment strategy (for example Growth, Value, Macro, Sector-focused, Momentum)</span>
           <input value={form.strategy} maxLength={60} onChange={(e) => setForm({ ...form, strategy: e.target.value })} />
+        </label>
+        <label className="field">
+          <span className="label">Management fee, % (1 to 2; it cannot change once investors have put money in)</span>
+          <input
+            type="number"
+            min={1}
+            max={2}
+            step={0.1}
+            value={form.managementFeePercent}
+            onChange={(e) => setForm({ ...form, managementFeePercent: Number(e.target.value) })}
+            style={{ maxWidth: 120 }}
+          />
         </label>
         <div>
           <button type="submit" className="solid" disabled={account?.canTrade === false} title={account?.canTrade === false ? "Only the person trading for your team can change the profile" : undefined}>

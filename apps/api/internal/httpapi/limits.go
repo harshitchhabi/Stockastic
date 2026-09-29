@@ -94,7 +94,7 @@ func newLimits() *limits {
 func (s *Server) ipGate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch p := c.Request.URL.Path; {
-		case strings.HasPrefix(c.GetHeader("Authorization"), "Bearer "), p == "/ws", p == "/api/auth/login", p == "/api/auth/signup", p == "/api/auth/join":
+		case strings.HasPrefix(c.GetHeader("Authorization"), "Bearer "), p == "/ws", p == "/api/auth/login", p == "/api/auth/signup", p == "/api/auth/join", p == "/api/auth/onboard":
 			c.Next()
 			return
 		}

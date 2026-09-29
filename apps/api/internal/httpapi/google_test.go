@@ -123,6 +123,17 @@ func googleEnv(t *testing.T, f *fakeGoogle, domains []string, cfg ...func(*app.C
 	return newEnvWith(t, store.NewMem(), rb(t, 100), testScenario(), cfg...)
 }
 
+// finishOnboard completes the screen a new person sees after Google: create a team or join one.
+func finishOnboard(t *testing.T, e *env, loc string, body map[string]any) resp {
+	t.Helper()
+	pass := strings.TrimPrefix(loc, "/#/onboard=")
+	if pass == loc {
+		t.Fatalf("expected the create-or-join screen, got %q", loc)
+	}
+	body["token"] = pass
+	return e.call("POST", "/api/auth/onboard", "", body)
+}
+
 func tokenIn(t *testing.T, loc string) string {
 	t.Helper()
 	if !strings.HasPrefix(loc, "/#/signin=") {
@@ -139,7 +150,11 @@ func TestGoogleSignInCreatesAndFindsTheAccount(t *testing.T) {
 		t.Fatalf("status = %v", st)
 	}
 	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
-	tok := tokenIn(t, loc)
+	r := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Asha Rao"})
+	if r.Status != 200 {
+		t.Fatalf("creating a team after Google: %d %s", r.Status, r.Raw)
+	}
+	tok := r.Body["token"].(string)
 	me := e.call("GET", "/api/auth/me", tok, nil).Body
 	if me["displayName"] != "Asha Rao" || me["email"] != "asha@college.edu" || me["role"] != "investor" || num(me["cashBalance"]) != 1_000_000 {
 		t.Fatalf("the new account = %v", me)
@@ -217,7 +232,7 @@ func TestGoogleSignInRefusesForgeries(t *testing.T) {
 	cb := e.srv.URL + "/api/auth/google/callback?code=good-code&state=" + url.QueryEscape(u.Query().Get("state"))
 	first, _ := c.Get(cb)
 	first.Body.Close()
-	if !strings.HasPrefix(first.Header.Get("Location"), "/#/signin=") {
+	if !strings.HasPrefix(first.Header.Get("Location"), "/#/onboard=") {
 		t.Fatalf("the first return: %q", first.Header.Get("Location"))
 	}
 	second, _ := c.Get(cb)
@@ -244,18 +259,21 @@ func TestGoogleSignInFollowsTheRegistrationRules(t *testing.T) {
 	}
 	f.email, f.nonce = "lee@college.edu", ""
 	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
-	if loc != "/#/signin-error=code" {
-		t.Fatalf("a new person without the event code: %q", loc)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Lee Team"}); r.Body["error"] != "wrong_event_code" {
+		t.Fatalf("a new person without the event code: %d %s", r.Status, r.Raw)
 	}
 	f.nonce = ""
 	loc, _ = signIn(t, e, f, "/api/auth/google/start?code=WRONG", nil)
-	if loc != "/#/signin-error=code" {
-		t.Fatalf("a new person with the wrong event code: %q", loc)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Lee Team"}); r.Body["error"] != "wrong_event_code" {
+		t.Fatalf("a new person with the wrong event code: %d %s", r.Status, r.Raw)
 	}
 	f.nonce = ""
-	loc, _ = signIn(t, e, f, "/api/auth/google/start?code=ROOM-42", nil)
-	tok := tokenIn(t, loc)
-	id := e.call("GET", "/api/auth/me", tok, nil).Body["id"].(string)
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	r := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Lee Team", "eventCode": "ROOM-42"})
+	if r.Status != 200 {
+		t.Fatalf("with the event code typed on the create-or-join screen: %d %s", r.Status, r.Raw)
+	}
+	id := e.call("GET", "/api/auth/me", r.Body["token"].(string), nil).Body["id"].(string)
 
 	// The approved list applies to people who are new.
 	e.call("POST", "/api/admin/settings/allowlist", adm, map[string]any{"emails": []string{"someone.else@college.edu"}})
@@ -315,12 +333,12 @@ func TestGoogleTeamsAtOneCollege(t *testing.T) {
 
 	f.email, f.name = "leader.one2024@vitstudent.ac.in", "Leader One"
 	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
-	lead := tokenIn(t, loc)
+	lead := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Bulls"}).Body["token"].(string)
 	code := e.call("GET", "/api/team", lead, nil).Body["joinCode"].(string)
 
 	f.email, f.name, f.nonce = "mate.two2024@vitstudent.ac.in", "Mate Two", ""
-	loc, _ = signIn(t, e, f, "/api/auth/google/start?team="+code, nil)
-	mate := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil).Body
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	mate := e.call("GET", "/api/auth/me", finishOnboard(t, e, loc, map[string]any{"action": "join", "teamCode": code}).Body["token"].(string), nil).Body
 	leadMe := e.call("GET", "/api/auth/me", lead, nil).Body
 	if mate["id"] != leadMe["id"] || mate["isLeader"] != false || mate["canTrade"] != false || mate["loginName"] != "Mate Two" {
 		t.Fatalf("the teammate did not join the leader's team: %v", mate)
@@ -337,8 +355,20 @@ func TestGoogleTeamsAtOneCollege(t *testing.T) {
 		t.Fatalf("an address outside the college got in: %q", loc)
 	}
 	f.email, f.nonce = "third.x2024@vitstudent.ac.in", ""
-	if loc, _ := signIn(t, e, f, "/api/auth/google/start?team=WRONGCOD", nil); !strings.Contains(loc, "signin-error=team_code") {
-		t.Fatalf("a wrong team code: %q", loc)
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "join", "teamCode": "WRONGCOD"}); r.Body["error"] != "wrong_team_code" {
+		t.Fatalf("a wrong team code: %d %s", r.Status, r.Raw)
+	}
+	// The pass from Google cannot be forged or changed, and it runs out.
+	if r := e.call("POST", "/api/auth/onboard", "", map[string]any{"token": "eyJlIjoieEB2aXRzdHVkZW50LmFjLmluIiwieCI6OTk5OTk5OTk5OX0.forged", "action": "create", "teamName": "Fake"}); r.Status != 401 {
+		t.Fatalf("a forged pass: %d %s", r.Status, r.Raw)
+	}
+	pass := strings.TrimPrefix(loc, "/#/onboard=")
+	head, sig, _ := strings.Cut(pass, ".")
+	raw, _ := base64.RawURLEncoding.DecodeString(head)
+	changed := base64.RawURLEncoding.EncodeToString([]byte(strings.Replace(string(raw), "third.x2024", "other.y2024", 1)))
+	if r := e.call("POST", "/api/auth/onboard", "", map[string]any{"token": changed + "." + sig, "action": "create", "teamName": "Fake"}); r.Status != 401 {
+		t.Fatalf("a pass with a changed email: %d %s", r.Status, r.Raw)
 	}
 }
 
@@ -363,8 +393,8 @@ func TestGoogleOnlyRegistration(t *testing.T) {
 		t.Fatalf("a password sign-up got through: %d %s", r.Status, r.Raw)
 	}
 	f.email, f.name = "real.lead2024@vitstudent.ac.in", "Real Lead"
-	loc, _ := signIn(t, e, f, "/api/auth/google/start?teamName=Bull+Squad", nil)
-	lead := tokenIn(t, loc)
+	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
+	lead := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Bull Squad"}).Body["token"].(string)
 	if me := e.call("GET", "/api/auth/me", lead, nil).Body; me["displayName"] != "Bull Squad" {
 		t.Fatalf("the team registered with Google is named %v, want the team name typed in", me["displayName"])
 	}
@@ -373,8 +403,8 @@ func TestGoogleOnlyRegistration(t *testing.T) {
 		t.Fatalf("a password join got through: %d %s", r.Status, r.Raw)
 	}
 	f.email, f.name, f.nonce = "real.mate2024@vitstudent.ac.in", "Real Mate", ""
-	loc, _ = signIn(t, e, f, "/api/auth/google/start?team="+code, nil)
-	if me := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil).Body; me["isLeader"] != false {
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	if me := e.call("GET", "/api/auth/me", finishOnboard(t, e, loc, map[string]any{"action": "join", "teamCode": code}).Body["token"].(string), nil).Body; me["isLeader"] != false {
 		t.Fatalf("a Google join failed: %v", me)
 	}
 	e.admin() // the organiser still signs in with a password

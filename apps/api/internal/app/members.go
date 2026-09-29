@@ -580,3 +580,15 @@ func (a *App) AccountFor(l Login) dto.Account {
 	}
 	return d
 }
+
+// KnownLogin reports whether an email already signs in here (a team's own login or a teammate's).
+func (a *App) KnownLogin(email string) bool {
+	if _, ok := a.users.byEmailAddr(email); ok {
+		return true
+	}
+	_, ok := a.members.byEmailAddr(email)
+	return ok
+}
+
+// EmailAllowed reports whether an email may register (the approved-email list, if the organisers set one).
+func (a *App) EmailAllowed(email string) bool { return a.emailAllowed(email) }

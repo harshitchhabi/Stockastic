@@ -5,6 +5,12 @@ import { getSocket } from "./socket";
 export interface ControlStateSnapshot {
   tradingFrozen: boolean;
   windowOverrides: Record<string, "open" | "closed" | undefined>;
+  marketOpen?: boolean;
+  /** "" before the event starts, then phase1, transition, phase2 or closing. */
+  stage?: string;
+  step?: string;
+  /** The allocation window open now, or -1. */
+  openWindow?: number;
 }
 
 /**

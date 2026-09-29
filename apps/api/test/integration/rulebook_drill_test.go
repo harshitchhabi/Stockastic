@@ -150,18 +150,21 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		}
 	})
 
-	t.Run("rescheduling blocks (same 300 minutes) moves when the market opens", func(t *testing.T) {
+	t.Run("a step given a length ends by itself at that length", func(t *testing.T) {
 		rb := mustEdit(t, func(m map[string]any) {
-			block(m, "p1_trading")["durationMin"] = 50 // Phase 1 trading 40 -> 50
-			block(m, "results")["durationMin"] = 10    // ...paid for by a shorter results block
+			block(m, "p1_trading")["durationMin"] = 50 // normally the organisers end it by hand
 		})
 		ft := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
 		now := ft
 		c := eventclock.New(rb, func() time.Time { return now }, nil)
 		_ = c.Start()
-		now = ft.Add(65 * time.Minute) // 40-min trading would be frozen by now; 50-min is still open
+		now = ft.Add(45 * time.Minute)
 		if !c.MarketOpen() {
-			t.Error("with a 50-minute Phase 1 the market must still be open at T+65")
+			t.Error("with a 50-minute Phase 1 the market must still be open at T+45")
+		}
+		now = ft.Add(55 * time.Minute)
+		if c.MarketOpen() {
+			t.Error("with a 50-minute Phase 1 the market must be closed at T+55")
 		}
 		now = ft.Add(71 * time.Minute)
 		if c.MarketOpen() {
@@ -205,7 +208,7 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		now := ft
 		c := eventclock.New(five, func() time.Time { return now }, nil)
 		_ = c.Start()
-		now = ft.Add(240 * time.Minute) // inside p2_t4 (T+230..T+255), which is now window 4
+		_ = c.JumpTo("p2_t4") // the step that is now window 4
 		if !c.WindowOpen(4) {
 			t.Error("window 4 must open when its block starts — it used to be silently unreachable")
 		}
@@ -219,22 +222,16 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		}
 	})
 
-	t.Run("starting capital, prize weights, fund rules", func(t *testing.T) {
+	t.Run("starting capital and fund rules", func(t *testing.T) {
 		rb := mustEdit(t, func(m map[string]any) {
 			sub(m, "accounts")["startingCapital"] = 500000
-			sub(m, "prizes", "prize1")["performance"] = 0.5
-			sub(m, "prizes", "prize1")["retention"] = 0.0
 			sub(m, "fund")["maxSingleFundWalletPercent"] = 50
 		})
 		if rb.StartingCapital() != money.FromRupees(500_000) {
 			t.Error("starting capital")
 		}
-		got := scoring.Prize1Scores([]scoring.Prize1Input{
-			{FundID: "a", NavReturnPct: 10, MaxDrawdown: 0.1, InvestorProfitability: 0.5, Retention: 0},
-			{FundID: "b", NavReturnPct: 0, MaxDrawdown: 0.1, InvestorProfitability: 0.5, Retention: 1},
-		}, rb.Prizes.Prize1)
-		if got[0].ID != "a" {
-			t.Errorf("with retention weighted 0 the higher-return fund must win: %v", got)
+		if rb.Fund.MaxSingleFundWalletPercent != 50 {
+			t.Error("single-fund limit")
 		}
 	})
 
@@ -278,7 +275,7 @@ func TestStructuralChangesAreRejectedAtStartupNotSilentlyIgnored(t *testing.T) {
 			}, "allocation windows must be numbered",
 		},
 		"a new stage name": {
-			func(m map[string]any) { block(m, "briefing")["stage"] = "warmup" }, "unknown stage",
+			func(m map[string]any) { block(m, "p1_trading")["stage"] = "warmup" }, "unknown stage",
 		},
 		"a new tie-break rule": {
 			func(m map[string]any) {

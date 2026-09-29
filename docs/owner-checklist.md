@@ -38,10 +38,9 @@ machine. Physical things (the venue, its Wi-Fi, devices) are left out on purpose
    SIGNUP_GOOGLE_ONLY=true                    (nobody can register with an email and password, so only real VIT accounts get in)
    ```
 5. Restart the server. "Continue with Google" appears on the sign-in page. Test it with your own account and with one outside the allowed domain.
-6. Teams: the leader chooses **Register team**, types the team name and presses **Register team with Google**. Teammates choose
-   **Join your team**, type the team code from the leader's Team page and press **Join with Google**. Later, everyone just uses
-   **Continue with Google** on the Log in tab. (Someone new who presses Continue with Google on the Log in tab registers a team named after
-   themselves; tell people at the briefing to use the Register or Join tab the first time.)
+6. Everyone presses **Continue with Google**. Someone new then sees a welcome screen: the leader types a team name and presses
+   **Create team**; teammates type the team code from the leader's Team page and press **Join team**. After that, Continue with Google
+   takes each person straight in.
 7. Ask the college IT team early whether third-party apps are allowed for student accounts. If a test sign-in shows "Access blocked" or
    "admin_policy_enforced", they need to allow your OAuth client ID in the Google Workspace admin console (Security, API controls, App access
    control).
@@ -53,8 +52,9 @@ was tested against a stand-in for Google, **not against the real one**, so the t
 
 These are set to placeholders and are all one value in `rulebook.json` (or a button in the console):
 
-- **Prize 3 rubric**: the scale and the weight of each criterion (equal weights and 0 to 10 for now). Publish them before Phase 2.
-- **Management fee** (1.5% now, the rulebook allows 1 to 2%) and whether it is per period or per event.
+- **Prizes** are decided by you in person. The console's **Standings** page ranks all teams, the investors and the funds (with a CSV
+  download of each), and **Funds** shows every strategy log for the judges.
+- **Management fee**: each fund chooses 1 to 2% on its Fund desk (1.5% until it chooses); it is fixed once investors are in.
 - **Tie-break order** for the 20th qualifying place (peak value, then fewer trades, then coin toss). Publish it before Phase 1.
 - Whether **fund managers may see who invested** in their fund (they see counts and totals only now).
 - **What follows a warning** for a team below the 5% share in funds (a second warning could mean disqualification).
@@ -65,14 +65,14 @@ These are set to placeholders and are all one value in `rulebook.json` (or a but
 1. Load test with `cmd/loadsim -users 1000` and attack test with `cmd/abusesim` against a throwaway copy, from another machine.
 2. Kill the server process mid-run (`kill -9`), let systemd restart it, and check nothing was lost.
 3. Fill the disk to below `DISK_MIN_FREE_MB` on a test copy and see that trades are refused and the Systems page says so.
-4. Run a shortened event end to end with real accounts: register, Phase 1, freeze, form the funds, allocation window, Phase 2, final freeze, prizes. The organiser page has a button for every step.
+4. Run a shortened event end to end with real accounts: register, Phase 1, close Phase 1, form the funds, window 0, Phase 2, the other windows, and the final close. The Control room's **Next step** button does each step.
 5. Use **Reset the whole event** to clear the rehearsal, and check every team is back to its starting cash.
 
 ## 5. On the day
 
 - Log in as organiser on a laptop **and** on your phone (a different network) before the event starts.
-- Open **Schedule** and check it against the price data (the page warns if they do not fit). Save it.
 - Give teams shares in **Shares** if you want anyone to be able to sell.
-- Start the event at the block you choose. Watch **Systems** (people connected, disk space, failed saves).
+- Run the event from the **Control room**: each **Next step** click moves it on (nothing moves by itself). After "Phase 1: closed", form the
+  funds on the **Funds** page before opening window 0. Watch **Systems** (people connected, disk space, failed saves).
 - If a team is stuck out of its account: **Clear sign-in locks**, or reset its password from its page.
 - After registration is full: close it.

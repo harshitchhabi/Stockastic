@@ -58,12 +58,9 @@ export function LoginForm() {
       .catch(() => {});
   }, []);
 
-  // Registering or joining with a password is off when only Google may add people; signing in with one never is
-  // (the organisers' accounts use passwords).
-  const passwordForm = mode === "login" || !googleOnly;
-
-  function goGoogle(extra: Record<string, string>) {
-    const q = new URLSearchParams(extra);
+  // Google is the way in for players. Someone new chooses on the next screen to create a team or join one.
+  function goGoogle() {
+    const q = new URLSearchParams();
     if (eventCode.trim()) q.set("code", eventCode.trim());
     const qs = q.toString();
     window.location.href = "/api/auth/google/start" + (qs ? "?" + qs : "");
@@ -84,6 +81,15 @@ export function LoginForm() {
     }
   }
 
+  const googleButton = google && (
+    <>
+      <button type="button" className={googleOnly ? "solid" : undefined} style={{ padding: 11 }} onClick={() => goGoogle()}>
+        Continue with Google
+      </button>
+      <div className="dim">New here? After Google, you create your team or join your team's.</div>
+    </>
+  );
+
   return (
     <div className="login-wrap">
       <div className="login-hero">
@@ -92,77 +98,60 @@ export function LoginForm() {
         </div>
       </div>
 
-      <form onSubmit={submit} className="login-form">
-        <div className="seg">
-          <button type="button" aria-pressed={mode === "login"} onClick={() => setMode("login")}>
-            Log in
-          </button>
-          {signupOpen && (
-            <button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
-              Register team
+      {googleOnly ? (
+        // Only Google can add people: one button for players, and a small email form for the organisers.
+        <form onSubmit={submit} className="login-form">
+          {googleButton}
+          {error && <div className="down">{error}</div>}
+          <details style={{ marginTop: 18 }}>
+            <summary className="dim">Organisers</summary>
+            <div className="stack" style={{ marginTop: 8 }}>
+              <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <button type="submit" disabled={submitting} style={{ padding: 9 }}>
+                {submitting ? "…" : "Sign in"}
+              </button>
+            </div>
+          </details>
+        </form>
+      ) : (
+        <form onSubmit={submit} className="login-form">
+          <div className="seg">
+            <button type="button" aria-pressed={mode === "login"} onClick={() => setMode("login")}>
+              Log in
             </button>
-          )}
-          {signupOpen && (
-            <button type="button" aria-pressed={mode === "join"} onClick={() => setMode("join")}>
-              Join your team
-            </button>
-          )}
-        </div>
-        {mode === "signup" && <div className="dim">One person registers the team and becomes its leader. The others then choose Join your team.</div>}
-        {mode === "signup" && (
-          <input placeholder="Team name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-        )}
-        {mode === "join" && <div className="dim">Ask your team leader for the team code (on their Team page).</div>}
-        {mode === "join" && (
-          <input placeholder="Team code" value={teamCode} onChange={(e) => setTeamCode(e.target.value)} required autoComplete="off" autoCapitalize="characters" />
-        )}
-        {mode === "signup" && passwordForm && <input placeholder="Your name (team leader)" value={yourName} onChange={(e) => setYourName(e.target.value)} required minLength={2} />}
-        {mode === "join" && passwordForm && <input placeholder="Your name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
-        {mode !== "login" && listed && <div className="dim">Use the email you registered for this event with the organisers.</div>}
-        {mode !== "login" && needsCode && (
-          <input placeholder="Event code (from the organisers)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} required autoComplete="off" />
-        )}
-        {passwordForm && <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />}
-        {passwordForm && (
-          <input
-            placeholder="Password"
-            type="password"
-            minLength={mode !== "login" ? 8 : undefined}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        )}
-        {error && <div className="down">{error}</div>}
-        {google && mode === "login" && (
-          <>
-            {needsCode && (
-              <input placeholder="Event code (only needed the first time)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} autoComplete="off" />
+            {signupOpen && (
+              <button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
+                Register team
+              </button>
             )}
-            <button type="button" style={{ padding: 11 }} onClick={() => goGoogle({})}>
-              Continue with Google
-            </button>
-            <div className="dim">New here? Choose Register team or Join your team first.</div>
-          </>
-        )}
-        {google && mode === "signup" && (
-          <button type="button" style={{ padding: 11 }} disabled={displayName.trim().length < 2 || (needsCode && !eventCode.trim())} onClick={() => goGoogle({ teamName: displayName.trim() })}>
-            Register team with Google
-          </button>
-        )}
-        {google && mode === "join" && (
-          <button type="button" style={{ padding: 11 }} disabled={!teamCode.trim() || (needsCode && !eventCode.trim())} onClick={() => goGoogle({ team: teamCode.trim() })}>
-            Join with Google
-          </button>
-        )}
-        {google && mode !== "login" && !googleOnly && <div className="dim">Or fill in the fields above to use a password instead.</div>}
-        {googleOnly && mode !== "login" && <div className="dim">Use your college Google account.</div>}
-        {passwordForm && (
+            {signupOpen && (
+              <button type="button" aria-pressed={mode === "join"} onClick={() => setMode("join")}>
+                Join your team
+              </button>
+            )}
+          </div>
+          {mode === "login" && googleButton}
+          {mode === "signup" && <div className="dim">One person registers the team and becomes its leader. The others then choose Join your team.</div>}
+          {mode === "signup" && <input placeholder="Team name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
+          {mode === "signup" && <input placeholder="Your name (team leader)" value={yourName} onChange={(e) => setYourName(e.target.value)} required minLength={2} />}
+          {mode === "join" && <div className="dim">Ask your team leader for the team code (on their Team page).</div>}
+          {mode === "join" && (
+            <input placeholder="Team code" value={teamCode} onChange={(e) => setTeamCode(e.target.value)} required autoComplete="off" autoCapitalize="characters" />
+          )}
+          {mode === "join" && <input placeholder="Your name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
+          {mode !== "login" && listed && <div className="dim">Use the email you registered for this event with the organisers.</div>}
+          {mode !== "login" && needsCode && (
+            <input placeholder="Event code (from the organisers)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} required autoComplete="off" />
+          )}
+          <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input placeholder="Password" type="password" minLength={mode !== "login" ? 8 : undefined} value={password} onChange={(e) => setPassword(e.target.value)} required />
+          {error && <div className="down">{error}</div>}
           <button type="submit" className="solid" disabled={submitting} style={{ padding: 11 }}>
             {submitting ? "…" : mode === "signup" ? "Register team" : mode === "join" ? "Join team" : "Enter the floor"}
           </button>
-        )}
-      </form>
+        </form>
+      )}
     </div>
   );
 }

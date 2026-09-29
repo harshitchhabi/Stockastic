@@ -273,11 +273,18 @@ func TestAdminRoutesAreForbiddenToTeams(t *testing.T) {
 	}
 }
 
-func TestStandingsAreHiddenFromTeams(t *testing.T) {
+// Teams see the standings during Phase 1 only; organisers always do.
+func TestStandingsAreHiddenFromTeamsInPhase2(t *testing.T) {
 	e := newEnv(t, store.NewMem(), rb(t, 100))
 	tok, _ := e.signup("Alice")
+	if r := e.call("GET", "/api/leaderboard", tok, nil); r.Status != 200 {
+		t.Fatalf("Phase 1 standings hidden from a team: %d", r.Status)
+	}
+	adm := e.admin()
+	e.openMarket(adm)
+	e.jump(adm, "p2_t1")
 	if r := e.call("GET", "/api/leaderboard", tok, nil); r.Status != 403 {
-		t.Fatalf("standings visible to a team: %d", r.Status)
+		t.Fatalf("Phase 2 standings visible to a team: %d", r.Status)
 	}
 	if r := e.call("GET", "/api/leaderboard", e.admin(), nil); r.Status != 200 {
 		t.Fatalf("standings for the organiser: %d", r.Status)
@@ -602,7 +609,7 @@ func TestOrganiserScreensReturnData(t *testing.T) {
 		}
 	}
 	ov := e.call("GET", "/api/admin/overview", adm, nil)
-	if ov.Body["clock"].(map[string]any)["status"] != "not_started" || len(ov.Body["timeline"].([]any)) != 17 {
+	if ov.Body["clock"].(map[string]any)["status"] != "not_started" || len(ov.Body["timeline"].([]any)) != 11 {
 		t.Fatalf("overview = %s", ov.Raw)
 	}
 	if n := len(ov.Body["control"].(map[string]any)["windowsOpen"].([]any)); n != 4 {

@@ -168,67 +168,8 @@ func TestAllocationCapsSec9And10(t *testing.T) {
 	})
 }
 
-func TestPrizeScoringSec16(t *testing.T) {
-	r := rb(t)
-	t.Run("Prize 1: quality beats size", func(t *testing.T) {
-		got := Prize1Scores([]Prize1Input{
-			{"big-weak", -2, 0.3, 0.2, 0.4},
-			{"small-strong", 18, 0.05, 0.9, 0.8},
-			{"middling", 6, 0.15, 0.5, 0.6},
-		}, r.Prizes.Prize1)
-		if got[0].ID != "small-strong" || got[1].ID != "middling" || got[2].ID != "big-weak" {
-			t.Errorf("order = %v", got)
-		}
-		near(t, "best", got[0].Score, 100)
-		near(t, "worst", got[2].Score, 0)
-	})
-	t.Run("Prize 2 skips ineligible teams", func(t *testing.T) {
-		got := Prize2Ranking([]Prize2Input{{"a", rs(900), true}, {"cheater", rs(2000), false}, {"b", rs(1200), true}})
-		if len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
-			t.Errorf("got %v", got)
-		}
-	})
-	t.Run("Prize 4: a steady diversified portfolio beats the raw-returns leader", func(t *testing.T) {
-		got := Prize4Scores([]Prize4Input{
-			{"gambler", 40, 0.5, []float64{1000}, 0, true},
-			{"guardian", 12, 0.04, []float64{100, 100, 100, 100, 100}, 0, true},
-			{"dq", 12, 0.01, []float64{100, 100}, 0, false},
-		}, r.Prizes.Prize4)
-		if len(got) != 2 || got[0].ID != "guardian" {
-			t.Errorf("got %v", got)
-		}
-	})
-	t.Run("weights come from the rulebook and sum to 1", func(t *testing.T) {
-		p1 := r.Prizes.Prize1
-		near(t, "prize1", p1.Performance+p1.RiskManagement+p1.InvestorProfitability+p1.Retention, 1)
-	})
-	t.Run("helpers", func(t *testing.T) {
-		near(t, "hhi 50/50", Herfindahl([]float64{50, 50}), 0.5)
-		near(t, "hhi single", Herfindahl([]float64{100}), 1)
-		for _, v := range MinMaxNormalize([]float64{5, 5, 5}) {
-			near(t, "all equal", v, 0.5)
-		}
-		n := MinMaxNormalize([]float64{0, 5, 10})
-		near(t, "0", n[0], 0)
-		near(t, "0.5", n[1], 0.5)
-		near(t, "1", n[2], 1)
-	})
-	t.Run("ties are ordered deterministically", func(t *testing.T) {
-		got := Prize2Ranking([]Prize2Input{{"b", rs(1), true}, {"a", rs(1), true}})
-		if got[0].ID != "a" {
-			t.Errorf("equal scores must fall back to id order, got %v", got)
-		}
-	})
-}
-
-func TestLastMinuteDiversifyingCannotWinPrize4(t *testing.T) {
-	w := rb(t).Prizes.Prize4
-	steady := Prize4Input{AccountID: "steady", ReturnPct: 5, MaxDrawdown: 0.05, AvgEffectiveHoldings: 6, Eligible: true}
-	// Holds one company all event and spreads over ten in the final minute: the end-of-event view looks perfect,
-	// the average over the event does not.
-	sneaky := Prize4Input{AccountID: "sneaky", ReturnPct: 5, MaxDrawdown: 0.05, AvgEffectiveHoldings: 1.1, HoldingValues: []float64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, Eligible: true}
-	got := Prize4Scores([]Prize4Input{steady, sneaky}, w)
-	if got[0].ID != "steady" {
-		t.Fatalf("ranking = %+v, want the steady diversifier first", got)
-	}
+func TestHerfindahl(t *testing.T) {
+	near(t, "hhi 50/50", Herfindahl([]float64{50, 50}), 0.5)
+	near(t, "hhi single", Herfindahl([]float64{100}), 1)
+	near(t, "hhi nothing held", Herfindahl(nil), 1)
 }

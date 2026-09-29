@@ -3,7 +3,30 @@ import { api, authEvents, getToken, setToken } from "./api";
 import { closeSocket, reconnectSocket } from "./socket";
 import type { Account } from "./types";
 
+/** Someone Google has just confirmed who has no account yet: they choose to create a team or join one. */
+export interface Onboarding {
+  token: string;
+  email: string;
+  name: string;
+}
+
+const ONBOARD_KEY = "stockastic.onboard";
+
+function readPass(token: string): Onboarding | null {
+  try {
+    const head = token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+    const p = JSON.parse(decodeURIComponent(escape(atob(head)))) as { e: string; n: string; x: number };
+    if (!p.e || p.x * 1000 < Date.now()) return null;
+    return { token, email: p.e, name: p.n };
+  } catch {
+    return null;
+  }
+}
+
 interface SessionContextValue {
+  onboarding: Onboarding | null;
+  onboard: (action: "create" | "join", value: string, eventCode?: string) => Promise<void>;
+  cancelOnboarding: () => void;
   account: Account | null;
   loading: boolean;
   signup: (displayName: string, email: string, password: string, eventCode?: string, yourName?: string) => Promise<void>;
@@ -18,6 +41,14 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const [onboarding, setOnboarding] = useState<Onboarding | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(ONBOARD_KEY);
+      return saved ? readPass(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const loadMe = useCallback(async () => {
     try {
@@ -33,6 +64,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Coming back from "Continue with Google": the server put our login in the part of the address after #.
     // Keep it, and take it out of the address bar straight away.
     const h = window.location.hash;
+    if (h.startsWith("#/onboard=")) {
+      const pass = readPass(decodeURIComponent(h.slice("#/onboard=".length)));
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setOnboarding(pass);
+      try {
+        if (pass) sessionStorage.setItem(ONBOARD_KEY, pass.token);
+      } catch {
+        /* ignore */
+      }
+    }
     if (h.startsWith("#/signin=")) {
       setToken(decodeURIComponent(h.slice("#/signin=".length)));
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -84,6 +125,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     reconnectSocket();
   }, []);
 
+  const cancelOnboarding = useCallback(() => {
+    setOnboarding(null);
+    try {
+      sessionStorage.removeItem(ONBOARD_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onboard = useCallback(
+    async (action: "create" | "join", value: string, eventCode?: string) => {
+      if (!onboarding) return;
+      const res = await api.post<{ token: string; account: Account }>("/api/auth/onboard", {
+        token: onboarding.token,
+        action,
+        teamName: action === "create" ? value : undefined,
+        teamCode: action === "join" ? value : undefined,
+        eventCode,
+      });
+      setToken(res.token);
+      setAccount(res.account);
+      cancelOnboarding();
+      reconnectSocket();
+    },
+    [onboarding, cancelOnboarding]
+  );
+
   const logout = useCallback(() => {
     closeSocket();
     setToken(null);
@@ -101,7 +169,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <SessionContext.Provider value={{ account, loading, signup, login, join, logout, refresh }}>
+    <SessionContext.Provider value={{ onboarding, onboard, cancelOnboarding, account, loading, signup, login, join, logout, refresh }}>
       {children}
     </SessionContext.Provider>
   );

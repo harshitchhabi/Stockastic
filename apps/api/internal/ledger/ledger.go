@@ -388,3 +388,43 @@ func (l *Ledger) Remove(id string) {
 	delete(l.accts, id)
 	l.mu.Unlock()
 }
+
+// MoveShares moves qty shares of one company, and exactly cost of their cost basis, from one account to another
+// (a team's holdings going into its fund, or back). It is used for moves that are already stored, so it does not
+// refuse: the caller checked the shares are there.
+func (l *Ledger) MoveShares(from, to, symbol string, qty int64, cost money.Paise) error {
+	if qty <= 0 || from == to {
+		return ErrInvalid
+	}
+	src, err := l.get(from)
+	if err != nil {
+		return err
+	}
+	dst, err := l.get(to)
+	if err != nil {
+		return err
+	}
+	first, second := src, dst
+	if from > to {
+		first, second = dst, src
+	}
+	first.mu.Lock()
+	defer first.mu.Unlock()
+	second.mu.Lock()
+	defer second.mu.Unlock()
+	if p := src.pos[symbol]; p != nil {
+		p.Qty -= qty
+		p.Cost -= cost
+		if p.Qty <= 0 {
+			p.Qty, p.Cost = 0, 0
+		}
+	}
+	d := dst.pos[symbol]
+	if d == nil {
+		d = &Position{Symbol: symbol}
+		dst.pos[symbol] = d
+	}
+	d.Qty += qty
+	d.Cost += cost
+	return nil
+}

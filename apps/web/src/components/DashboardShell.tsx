@@ -29,7 +29,11 @@ export function DashboardShell() {
 
 function Shell() {
   const { account, logout, refresh } = useSession();
-  const { tradingFrozen } = useControlState();
+  const { tradingFrozen, stage = "", marketOpen, openWindow = -1 } = useControlState();
+  // Players see the standings during Phase 1 only (the server enforces the same).
+  const phase1 = stage === "" || stage === "phase1";
+  const phaseText = stage === "" ? "Not started" : stage === "phase1" ? "Phase 1" : stage === "closing" ? "Event closed" : "Phase 2";
+  const phaseDetail = stage === "closing" ? "" : marketOpen ? "market open" : openWindow >= 0 ? `allocation window ${openWindow} open` : "market closed";
   const connection = useConnection();
   const route = useRoute();
   const { starred } = useUniverse();
@@ -84,7 +88,7 @@ function Shell() {
     { page: "holdings", label: "Holdings" },
     ...(account.role === "investor" ? [{ page: "funds" as Page, label: "Funds" }] : []),
     ...(account.role === "fund_manager" ? [{ page: "desk" as Page, label: "Fund desk" }] : []),
-    ...(standingsVisible ? [{ page: "standings" as Page, label: "Standings" }] : []),
+    ...(standingsVisible || phase1 ? [{ page: "standings" as Page, label: "Standings" }] : []),
     ...(account.teamSize > 1 && !account.isAdmin ? [{ page: "team" as Page, label: "Team" }] : []),
     { page: "rules", label: "Rules" },
   ];
@@ -107,6 +111,10 @@ function Shell() {
             </a>
           ))}
         </nav>
+        <span className="chip">
+          {phaseText}
+          {phaseDetail && ` · ${phaseDetail}`}
+        </span>
         {tradingFrozen && <span className="chip alert">Trading frozen</span>}
         <span style={{ marginLeft: "auto" }} className="dim">
           {account.displayName}

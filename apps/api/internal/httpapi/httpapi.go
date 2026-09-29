@@ -92,6 +92,7 @@ func New(opt Options) (http.Handler, error) {
 	api.POST("/auth/signup", s.signup)
 	api.POST("/auth/login", s.login)
 	api.POST("/auth/join", s.join)
+	api.POST("/auth/onboard", s.onboard)
 
 	me := api.Group("", s.requireUser, s.accountGate)
 	me.GET("/auth/me", s.me)
@@ -118,7 +119,7 @@ func New(opt Options) (http.Handler, error) {
 	adm.GET("/sim", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.SimStatus()) })
 	s.fundRoutes(me, adm)
 	s.privilegeRoutes(adm)
-	adm.GET("/standings", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.Leaderboard()) })
+	adm.GET("/standings", func(c *gin.Context) { c.JSON(http.StatusOK, s.a.AdminStandings()) })
 
 	adm.POST("/clock/start", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockStartAt(u, b.BlockID) }))
 	adm.POST("/clock/pause", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockPause(u, b.Reason) }))
@@ -126,6 +127,7 @@ func New(opt Options) (http.Handler, error) {
 		return s.a.ClockResume(u, b.Reason, b.CompressBlockID)
 	}))
 	adm.POST("/clock/nudge", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockNudge(u, b.Reason, b.Minutes) }))
+	adm.POST("/clock/next", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockNext(u, b.Reason) }))
 	adm.POST("/clock/jump", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.ClockJump(u, b.Reason, b.BlockID) }))
 	adm.POST("/control/freeze", s.act(func(u app.User, b body, _ *gin.Context) error { return s.a.SetFrozen(u, b.Reason, b.Frozen) }))
 	adm.POST("/control/market", s.act(func(u app.User, b body, _ *gin.Context) error {
@@ -582,7 +584,7 @@ func (s *Server) portfolio(c *gin.Context) {
 }
 
 func (s *Server) leaderboard(c *gin.Context) {
-	if !user(c).IsAdmin && !s.a.RB.Leaderboard.VisibleToParticipants {
+	if !user(c).IsAdmin && !s.a.StandingsVisible() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden", "message": "Standings are not published to teams."})
 		return
 	}

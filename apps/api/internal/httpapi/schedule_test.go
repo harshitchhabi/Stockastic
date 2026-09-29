@@ -178,8 +178,8 @@ func TestOrganiserRunsTheEventHisWay(t *testing.T) {
 	if r := e2.call("POST", "/api/admin/schedule/template", adm2, map[string]any{}); r.Status != 200 {
 		t.Fatalf("load the rulebook timeline: %d", r.Status)
 	}
-	if tl := e2.call("GET", "/api/admin/overview", adm2, nil).Body["timeline"].([]any); len(tl) != 17 {
-		t.Fatalf("timeline after loading the template: %d blocks", len(tl))
+	if tl := e2.call("GET", "/api/admin/overview", adm2, nil).Body["timeline"].([]any); len(tl) != 11 {
+		t.Fatalf("timeline after loading the template: %d steps, want the rulebook's 11", len(tl))
 	}
 }
 

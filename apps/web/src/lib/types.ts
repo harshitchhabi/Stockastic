@@ -99,6 +99,8 @@ export interface NewsItem {
 }
 
 export interface FundInfo {
+  /** The fund's management fee, 1 to 2%. */
+  feePercent: number;
   id: string;
   number: number;
   name: string;

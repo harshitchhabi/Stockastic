@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -46,29 +47,26 @@ func (g *googleFlow) sign(payload string) string {
 
 // makeState is nonce.expiry.eventCode signed. The event code the person typed rides along so a new account can be
 // checked against it after the round trip.
-func (g *googleFlow) makeState(nonce, eventCode, teamCode, teamName string) string {
-	p := nonce + "." + strconv.FormatInt(time.Now().Add(stateTTL).Unix(), 10) + "." + base64.RawURLEncoding.EncodeToString([]byte(eventCode)) +
-		"." + base64.RawURLEncoding.EncodeToString([]byte(teamCode)) + "." + base64.RawURLEncoding.EncodeToString([]byte(teamName))
+func (g *googleFlow) makeState(nonce, eventCode string) string {
+	p := nonce + "." + strconv.FormatInt(time.Now().Add(stateTTL).Unix(), 10) + "." + base64.RawURLEncoding.EncodeToString([]byte(eventCode))
 	return p + "." + g.sign(p)
 }
 
-func (g *googleFlow) readState(state string) (nonce, eventCode, teamCode, teamName string, ok bool) {
+func (g *googleFlow) readState(state string) (nonce, eventCode string, ok bool) {
 	i := strings.LastIndex(state, ".")
 	if i < 0 || !hmac.Equal([]byte(g.sign(state[:i])), []byte(state[i+1:])) {
-		return "", "", "", "", false
+		return "", "", false
 	}
 	parts := strings.Split(state[:i], ".")
-	if len(parts) != 5 {
-		return "", "", "", "", false
+	if len(parts) != 3 {
+		return "", "", false
 	}
 	exp, err := strconv.ParseInt(parts[1], 10, 64)
 	code, err2 := base64.RawURLEncoding.DecodeString(parts[2])
-	team, err3 := base64.RawURLEncoding.DecodeString(parts[3])
-	name, err4 := base64.RawURLEncoding.DecodeString(parts[4])
-	if err != nil || err2 != nil || err3 != nil || err4 != nil || time.Now().Unix() > exp {
-		return "", "", "", "", false
+	if err != nil || err2 != nil || time.Now().Unix() > exp {
+		return "", "", false
 	}
-	return parts[0], string(code), string(team), string(name), true
+	return parts[0], string(code), true
 }
 
 // use marks a nonce as spent; it returns false if it already was, so a return cannot be replayed.
@@ -105,17 +103,9 @@ func (s *Server) googleStart(c *gin.Context) {
 	if len(code) > 40 {
 		code = code[:40]
 	}
-	team := c.Query("team") // a teammate joining a team with its code
-	if len(team) > 20 {
-		team = team[:20]
-	}
-	teamName := c.Query("teamName") // a leader registering a new team
-	if r := []rune(teamName); len(r) > 40 {
-		teamName = string(r[:40])
-	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: stateCookie, Value: nonce, Path: "/api/auth/google", MaxAge: int(stateTTL.Seconds()),
 		HttpOnly: true, Secure: s.google.secure, SameSite: http.SameSiteLaxMode})
-	c.Redirect(http.StatusFound, s.opt.Google.AuthURL(s.google.makeState(nonce, code, team, teamName), nonce))
+	c.Redirect(http.StatusFound, s.opt.Google.AuthURL(s.google.makeState(nonce, code), nonce))
 }
 
 // googleFail sends the person back to the sign-in page with a short reason (never any detail from Google).
@@ -129,7 +119,7 @@ func (s *Server) googleCallback(c *gin.Context) {
 		googleFail(c, "cancelled")
 		return
 	}
-	nonce, eventCode, teamCode, teamName, ok := s.google.readState(c.Query("state"))
+	nonce, eventCode, ok := s.google.readState(c.Query("state"))
 	cookie, err := c.Cookie(stateCookie)
 	if !ok || err != nil || !hmac.Equal([]byte(cookie), []byte(nonce)) || !s.google.use(nonce) {
 		googleFail(c, "expired")
@@ -156,7 +146,19 @@ func (s *Server) googleCallback(c *gin.Context) {
 		googleFail(c, "google")
 		return
 	}
-	u, err := s.a.ExternalSignIn(claims.Email, claims.Name, eventCode, teamCode, teamName)
+	// Someone new, signed in with Google: they choose next whether to create a team or join one.
+	if !s.a.KnownLogin(claims.Email) {
+		switch {
+		case !s.a.SignupOpen():
+			googleFail(c, "closed")
+		case !s.a.EmailAllowed(claims.Email):
+			googleFail(c, "not_on_list")
+		default:
+			c.Redirect(http.StatusFound, "/#/onboard="+s.google.makeOnboard(claims.Email, claims.Name, eventCode))
+		}
+		return
+	}
+	u, err := s.a.ExternalSignIn(claims.Email, claims.Name, eventCode, "", "")
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrAccountLocked):
@@ -188,4 +190,98 @@ func (s *Server) googleCallback(c *gin.Context) {
 	// The token goes in the part of the address after # : it is never sent to any server or logged, and the page
 	// removes it from the address bar as soon as it has stored it.
 	c.Redirect(http.StatusFound, "/#/signin="+tok)
+}
+
+// ---- after Google: create a team or join one ----
+
+const onboardTTL = 30 * time.Minute
+
+type onboardPass struct {
+	Email     string `json:"e"`
+	Name      string `json:"n"`
+	EventCode string `json:"c,omitempty"`
+	Expires   int64  `json:"x"`
+}
+
+// makeOnboard is a signed pass saying Google has confirmed this person, valid for half an hour, so they can choose
+// to create a team or join one without signing in again. It is signed differently from the sign-in state.
+func (g *googleFlow) makeOnboard(email, name, eventCode string) string {
+	raw, _ := json.Marshal(onboardPass{Email: email, Name: name, EventCode: eventCode, Expires: time.Now().Add(onboardTTL).Unix()})
+	p := base64.RawURLEncoding.EncodeToString(raw)
+	return p + "." + g.sign("onboard:"+p)
+}
+
+func (g *googleFlow) readOnboard(tok string) (onboardPass, bool) {
+	p, sig, ok := strings.Cut(tok, ".")
+	if !ok || !hmac.Equal([]byte(g.sign("onboard:"+p)), []byte(sig)) {
+		return onboardPass{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(p)
+	var pass onboardPass
+	if err != nil || json.Unmarshal(raw, &pass) != nil || time.Now().Unix() > pass.Expires || pass.Email == "" {
+		return onboardPass{}, false
+	}
+	return pass, true
+}
+
+type onboardRequest struct {
+	Token     string `json:"token"`
+	Action    string `json:"action"` // "create" or "join"
+	TeamName  string `json:"teamName"`
+	TeamCode  string `json:"teamCode"`
+	EventCode string `json:"eventCode"`
+}
+
+// onboard finishes a Google sign-in for someone new: they create a team (and lead it) or join one with its code.
+func (s *Server) onboard(c *gin.Context) {
+	if s.google == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "google_off", "message": "Google sign-in is not set up."})
+		return
+	}
+	var in onboardRequest
+	if !s.decode(c, &in) {
+		return
+	}
+	pass, ok := s.google.readOnboard(in.Token)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "expired", "message": "That took too long. Sign in with Google again."})
+		return
+	}
+	code := strings.TrimSpace(in.EventCode)
+	if code == "" {
+		code = pass.EventCode
+	}
+	if err := s.a.CheckSignupCode(code); err != nil {
+		s.fail(c, err)
+		return
+	}
+	if ok, wait := s.lim.signup.allow(c.ClientIP(), time.Now()); !ok {
+		tooMany(c, wait, "too_many_signups", "Too many sign-ups from this connection. Wait a moment.")
+		return
+	}
+	var l app.Login
+	var err error
+	switch in.Action {
+	case "create":
+		if n := len([]rune(strings.TrimSpace(in.TeamName))); n < 2 || n > 40 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_display_name", "message": "Give your team a name of 2 to 40 characters."})
+			return
+		}
+		l, err = s.a.ExternalSignIn(pass.Email, pass.Name, code, "", in.TeamName)
+	case "join":
+		if strings.TrimSpace(in.TeamCode) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "wrong_team_code", "message": "Enter the team code from your team leader."})
+			return
+		}
+		l, err = s.a.ExternalSignIn(pass.Email, pass.Name, code, in.TeamCode, "")
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_action", "message": "Choose to create a team or join one."})
+		return
+	}
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	s.track(c, l.Team.ID, "signup", strings.TrimSpace("google "+memberDetail(l)))
+	s.issue(c, l)
 }
