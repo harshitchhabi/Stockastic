@@ -209,14 +209,12 @@ func (a *App) newTeamCode(teamID string) (User, error) {
 	return User{}, errors.New("app: could not make a unique team code")
 }
 
-// JoinTeam registers a teammate with the team code their leader shared. The normal registration rules apply
-// (open registration, the event code, the approved-email list, one mailbox one person).
+// JoinTeam registers a teammate with the team code their leader shared. The event code, the approved-email list and
+// one mailbox one person apply. Closed registration does not: it stops new teams, but a teammate who arrives late can
+// still join a team that already exists and has room.
 func (a *App) JoinTeam(code, name, email, password, eventCode string) (Login, error) {
 	if a.TeamSize() < 2 {
 		return Login{}, bad("joining_off", "Each team has a single login in this event.")
-	}
-	if !a.signupOpen.Load() {
-		return Login{}, ErrSignupClosed
 	}
 	if ec := a.SignupCode(); ec != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(eventCode)), []byte(ec)) != 1 {
 		return Login{}, ErrBadEventCode

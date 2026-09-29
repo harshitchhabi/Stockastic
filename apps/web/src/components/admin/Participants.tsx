@@ -57,7 +57,7 @@ export function Participants() {
               label={settings.data.signupOpen ? "Close registration" : "Open registration"}
               className={settings.data.signupOpen ? "" : "solid"}
               title={settings.data.signupOpen ? "Close registration" : "Open registration"}
-              description={settings.data.signupOpen ? "New people can no longer create an account. Existing teams are not affected." : "New people can create an account again."}
+              description={settings.data.signupOpen ? "Nobody can create a new team. Teammates can still join a team that already exists (with its code), and existing teams are not affected." : "New people can create an account again."}
               run={async () => {
                 await api.post("/api/admin/settings/signup", { open: !settings.data!.signupOpen });
                 notify(settings.data!.signupOpen ? "Registration closed" : "Registration opened");

@@ -125,11 +125,10 @@ export function LoginForm() {
                 Register team
               </button>
             )}
-            {signupOpen && (
-              <button type="button" aria-pressed={mode === "join"} onClick={() => setMode("join")}>
-                Join your team
-              </button>
-            )}
+            {/* teammates can join an existing team even once registration is closed */}
+            <button type="button" aria-pressed={mode === "join"} onClick={() => setMode("join")}>
+              Join your team
+            </button>
           </div>
           {mode === "login" && googleButton}
           {mode === "signup" && <div className="dim">One person registers the team and becomes its leader. The others then choose Join your team.</div>}

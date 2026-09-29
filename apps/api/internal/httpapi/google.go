@@ -146,10 +146,11 @@ func (s *Server) googleCallback(c *gin.Context) {
 		googleFail(c, "google")
 		return
 	}
-	// Someone new, signed in with Google: they choose next whether to create a team or join one.
+	// Someone new, signed in with Google: they choose next whether to create a team or join one. With registration
+	// closed they can still join a team that exists (creating one is refused on the next screen).
 	if !s.a.KnownLogin(claims.Email) {
 		switch {
-		case !s.a.SignupOpen():
+		case !s.a.SignupOpen() && s.a.TeamSize() < 2:
 			googleFail(c, "closed")
 		case !s.a.EmailAllowed(claims.Email):
 			googleFail(c, "not_on_list")

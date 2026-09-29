@@ -9,13 +9,17 @@ export function Onboard() {
   const [teamCode, setTeamCode] = useState("");
   const [eventCode, setEventCode] = useState("");
   const [needsCode, setNeedsCode] = useState(false);
+  const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState<"create" | "join" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .get<{ signupNeedsCode?: boolean }>("/api/status")
-      .then((s) => setNeedsCode(s.signupNeedsCode === true))
+      .get<{ signupNeedsCode?: boolean; signupOpen?: boolean }>("/api/status")
+      .then((s) => {
+        setNeedsCode(s.signupNeedsCode === true);
+        setOpen(s.signupOpen !== false);
+      })
       .catch(() => {});
   }, []);
 
@@ -47,12 +51,18 @@ export function Onboard() {
           <input placeholder="Event code (from the organisers)" value={eventCode} onChange={(e) => setEventCode(e.target.value)} autoComplete="off" />
         )}
 
-        <h3 style={{ margin: "14px 0 0" }}>Create a team</h3>
-        <div className="dim">You become the team leader. Your teammates join with the code on your Team page.</div>
-        <input placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} maxLength={40} />
-        <button className="solid" style={{ padding: 11 }} disabled={busy !== null || teamName.trim().length < 2 || (needsCode && !eventCode.trim())} onClick={() => go("create")}>
-          {busy === "create" ? "…" : "Create team"}
-        </button>
+        {open ? (
+          <>
+            <h3 style={{ margin: "14px 0 0" }}>Create a team</h3>
+            <div className="dim">You become the team leader. Your teammates join with the code on your Team page.</div>
+            <input placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} maxLength={40} />
+            <button className="solid" style={{ padding: 11 }} disabled={busy !== null || teamName.trim().length < 2 || (needsCode && !eventCode.trim())} onClick={() => go("create")}>
+              {busy === "create" ? "…" : "Create team"}
+            </button>
+          </>
+        ) : (
+          <div className="dim" style={{ marginTop: 14 }}>Registration of new teams is closed. You can still join your team if it has room.</div>
+        )}
 
         <h3 style={{ margin: "14px 0 0" }}>Join a team</h3>
         <div className="dim">Ask your team leader for the team code.</div>

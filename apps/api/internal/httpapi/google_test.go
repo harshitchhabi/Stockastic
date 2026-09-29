@@ -428,3 +428,37 @@ func TestGoogleOnlyRegistration(t *testing.T) {
 	}
 	e.admin() // the organiser still signs in with a password
 }
+
+// Closing registration stops new teams, but a teammate who arrives late can still join a team that exists and has
+// room, by password or through Google.
+func TestClosedRegistrationStillLetsTeammatesJoin(t *testing.T) {
+	f := newFakeGoogle(t)
+	e := googleEnv(t, f, nil)
+	adm := e.admin()
+	lead, _ := e.signup("Latecomers")
+	code := teamCode(t, e, lead)
+	if r := e.call("POST", "/api/admin/settings/signup", adm, map[string]any{"open": false}); r.Status != 200 {
+		t.Fatalf("close registration: %d %s", r.Status, r.Raw)
+	}
+	if r := e.call("POST", "/api/auth/signup", "", map[string]any{"displayName": "New Team", "email": "new@test.local", "password": "password-123"}); r.Status != 403 || r.Body["error"] != "signup_closed" {
+		t.Fatalf("a new team while closed: %d %s", r.Status, r.Raw)
+	}
+	if r := join(e, code, "late"); r.Status != 200 {
+		t.Fatalf("a late teammate joining by password while closed: %d %s", r.Status, r.Raw)
+	}
+	// through Google: the create-or-join screen, where creating is refused and joining works
+	f.email, f.name = "second.late@college.edu", "Second Late"
+	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Sneaky"}); r.Status != 403 || r.Body["error"] != "signup_closed" {
+		t.Fatalf("creating a team through Google while closed: %d %s", r.Status, r.Raw)
+	}
+	f.nonce = ""
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "join", "teamCode": code}); r.Status != 200 {
+		t.Fatalf("a late teammate joining through Google while closed: %d %s", r.Status, r.Raw)
+	}
+	// the team is now full: nobody else gets in
+	if r := join(e, code, "fourth"); r.Status != 409 || r.Body["error"] != "team_full" {
+		t.Fatalf("a fourth person: %d %s", r.Status, r.Raw)
+	}
+}
