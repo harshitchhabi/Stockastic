@@ -288,6 +288,10 @@ func TestFundsChooseTheirFee(t *testing.T) {
 	if f := fundNamed(e.fundsView(inv), "F1"); num(f["feePercent"]) != 1.5 {
 		t.Fatalf("before choosing, the fee is %v, want the rulebook's 1.5", f["feePercent"])
 	}
+	// the fund's other team sees the fund but only the trading team sets its profile and fee
+	if r := e.call("PUT", "/api/funds/mine/profile", teams[1].token, map[string]any{"name": "Other Capital", "risk": "Balanced", "strategy": "Value", "managementFeePercent": 1.1}); r.Status != 400 || r.Body["error"] != "not_fund_trader" {
+		t.Fatalf("the fund's other team changing the profile: %d %s", r.Status, r.Raw)
+	}
 	if r := profile(2.5); r.Status != 400 || r.Body["error"] != "invalid_fee" {
 		t.Fatalf("a 2.5%% fee: %d %s", r.Status, r.Raw)
 	}

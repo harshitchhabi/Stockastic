@@ -436,3 +436,24 @@ func TestScenarioFilesAreReadStrictly(t *testing.T) {
 		t.Fatal("a missing file was accepted")
 	}
 }
+
+// A news item written for Phase 2 waits for Phase 2 if the organisers keep Phase 1 going past its time; an item
+// written for Phase 1 (or for no phase) goes out on time.
+func TestPhaseTwoNewsWaitsForPhaseTwo(t *testing.T) {
+	sc := still(10)
+	sc.Events = []sim.Event{
+		{ID: "early", AtMinute: 1, Phase: "phase1", Headline: "Phase 1 item"},
+		{ID: "later", AtMinute: 2, Phase: "phase2", Headline: "Phase 2 item"},
+	}
+	r := newRig(t, sc, companies(), 0)
+	r.clk.stage = rulebook.StagePhase1
+	r.run(10 * 60)
+	if r.wire.count() != 1 || r.wire.items[0].headline != "Phase 1 item" {
+		t.Fatalf("in a long Phase 1: %+v, want only the Phase 1 item", r.wire.items)
+	}
+	r.clk.stage = rulebook.StageTransition
+	r.run(2)
+	if r.wire.count() != 2 || r.wire.items[1].headline != "Phase 2 item" {
+		t.Fatalf("once Phase 2 began: %+v", r.wire.items)
+	}
+}

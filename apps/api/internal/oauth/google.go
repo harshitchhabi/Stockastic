@@ -91,6 +91,11 @@ func (c *Client) AuthURL(state, nonce string) string {
 		"client_id": {c.cfg.ClientID}, "redirect_uri": {c.cfg.RedirectURL}, "response_type": {"code"},
 		"scope": {"openid email profile"}, "state": {state}, "nonce": {nonce}, "prompt": {"select_account"},
 	}
+	// With one allowed domain, Google offers only accounts at that domain. This is only a convenience for people signed
+	// in to several accounts: the domain is still checked on the answer, since anyone can edit this address.
+	if len(c.cfg.AllowedDomains) == 1 {
+		v.Set("hd", c.cfg.AllowedDomains[0])
+	}
 	return c.cfg.AuthURL + "?" + v.Encode()
 }
 

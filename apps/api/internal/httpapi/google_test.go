@@ -392,6 +392,11 @@ func TestGoogleOnlyRegistration(t *testing.T) {
 	if r := e.call("POST", "/api/auth/signup", "", map[string]any{"displayName": "Fake", "email": "fake@vitstudent.ac.in", "password": "password-123"}); r.Status != 403 || r.Body["error"] != "google_only" {
 		t.Fatalf("a password sign-up got through: %d %s", r.Status, r.Raw)
 	}
+	// Google is asked to offer only college accounts (the domain is still checked on the answer)
+	nc := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if res, err := nc.Get(e.srv.URL + "/api/auth/google/start"); err != nil || !strings.Contains(res.Header.Get("Location"), "hd=vitstudent.ac.in") {
+		t.Fatalf("the Google address does not ask for college accounts: %v %v", err, res.Header.Get("Location"))
+	}
 	f.email, f.name = "real.lead2024@vitstudent.ac.in", "Real Lead"
 	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
 	lead := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "Bull Squad"}).Body["token"].(string)

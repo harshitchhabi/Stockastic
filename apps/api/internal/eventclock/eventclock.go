@@ -297,7 +297,7 @@ func (c *Clock) Total() time.Duration {
 }
 
 // MaxBlock caps how long one block may be set to.
-const MaxBlock = 24 * time.Hour
+const MaxBlock = 366 * 24 * time.Hour // steps normally last until the organiser moves on (a year means never)
 
 var ErrBlockInPast = errors.New("block_already_finished")
 
@@ -537,7 +537,7 @@ func validateBlocks(blocks []rulebook.Block) error {
 			return fmt.Errorf("block %q needs a name of up to 120 characters", b.ID)
 		}
 		if b.Duration() < minBlock || b.Duration() > MaxBlock {
-			return fmt.Errorf("block %q must last between 1 minute and 24 hours", b.ID)
+			return fmt.Errorf("block %q must last between 1 minute and a year", b.ID)
 		}
 		switch b.Stage {
 		case rulebook.StagePhase1, rulebook.StageTransition, rulebook.StagePhase2, rulebook.StageClosing:

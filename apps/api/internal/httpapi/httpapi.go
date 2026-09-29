@@ -288,7 +288,7 @@ func (s *Server) requestLog() gin.HandlerFunc {
 		switch {
 		case st >= 500:
 			s.log.Error("request", attrs...)
-		case d > time.Second:
+		case d > time.Second && c.Request.URL.Path != "/ws": // a live connection lasts as long as the person stays
 			s.log.Warn("slow request", attrs...)
 		default:
 			s.log.Debug("request", attrs...)

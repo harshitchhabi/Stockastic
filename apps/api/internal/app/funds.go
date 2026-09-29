@@ -455,6 +455,9 @@ func (a *App) SetFundProfile(u User, r ProfileRequest) error {
 	if !ok || u.Role != RoleFundManager {
 		return ErrNotAllowed
 	}
+	if f.Trader != u.ID {
+		return bad("not_fund_trader", "Only the team that trades for the fund can change its profile and fee.")
+	}
 	p := funds.Profile{Name: strings.TrimSpace(r.Name), Philosophy: strings.TrimSpace(r.Philosophy), Risk: strings.TrimSpace(r.Risk), Strategy: strings.TrimSpace(r.Strategy)}
 	switch {
 	case p.Name == "" || len([]rune(p.Name)) > 40:

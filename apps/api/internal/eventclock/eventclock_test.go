@@ -470,3 +470,27 @@ func TestOrganiserSchedule(t *testing.T) {
 		t.Fatalf("start after reset: %v %+v", err, c.Position())
 	}
 }
+
+// With the real rulebook the event moves only when an organiser moves it: even left overnight, or for days, a step
+// stays where it is (a closed Phase 1 never opens allocation window 0 by itself).
+func TestTheRealEventNeverMovesByItself(t *testing.T) {
+	rb, err := rulebook.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ft := &fakeTime{t: time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
+	c := New(rb, ft.now, quiet)
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"p1_trading", "p1_freeze"} {
+		if err := c.JumpTo(id); err != nil {
+			t.Fatal(err)
+		}
+		ft.advance(72 * time.Hour)
+		c.Tick()
+		if p := c.Position(); p.Block.ID != id || p.Ended {
+			t.Fatalf("three days into %q the event moved to %q (ended %v)", id, p.Block.ID, p.Ended)
+		}
+	}
+}

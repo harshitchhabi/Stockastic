@@ -253,7 +253,7 @@ func (e *Engine) fireDueLocked(elapsed time.Duration, now time.Time, out *[]rele
 	dirty := false
 	for _, ev := range e.sc.Events {
 		ev = e.effective(ev)
-		if mins >= ev.AtMinute && !e.fired[ev.ID] && !e.skipped(ev.ID) {
+		if mins >= ev.AtMinute && !e.fired[ev.ID] && !e.skipped(ev.ID) && e.inPhase(ev) {
 			e.fireEventLocked(ev, now, out)
 			dirty = true
 		}
@@ -265,6 +265,14 @@ func (e *Engine) fireDueLocked(elapsed time.Duration, now time.Time, out *[]rele
 		}
 	}
 	return dirty
+}
+
+// inPhase says whether a news item may go out by itself now. An item written for Phase 2 waits until Phase 2 has
+// begun, even if its time comes while the organisers are still running Phase 1 (an organiser can still release it
+// by hand): otherwise it would reach everyone at once,
+// without the fund managers' head start, and before there are any funds.
+func (e *Engine) inPhase(ev Event) bool {
+	return ev.Phase != "phase2" || e.d.Clock.Stage() != rulebook.StagePhase1
 }
 
 func (e *Engine) markFiredLocked(id string) {

@@ -102,7 +102,8 @@ func TestRealRulebookMatchesSection17And3(t *testing.T) {
 func TestBlockOffsetsAreCumulative(t *testing.T) {
 	rb := loadReal(t)
 	off := rb.BlockOffsets()
-	if off[0] != 0 || off[1] != 24*time.Hour || off[2] != 48*time.Hour || off[3] != 72*time.Hour {
+	const step = 365 * 24 * time.Hour // each step lasts until the organiser moves on
+	if off[0] != 0 || off[1] != step || off[2] != 2*step || off[3] != 3*step {
 		t.Errorf("offsets = %v", off[:4])
 	}
 	last := len(off) - 1
@@ -288,13 +289,13 @@ func TestTheScheduleMayBeShorterOrLongerThanFiveHours(t *testing.T) {
 			t.Fatal(err)
 		}
 		tl := sub(m, "event")["timeline"].([]any)
-		tl[0].(map[string]any)["durationMin"] = minutes // the first step was 1440 minutes
+		tl[0].(map[string]any)["durationMin"] = minutes // the first step was a year
 		out, _ := json.Marshal(m)
 		rb, err := Parse(out)
 		if err != nil {
 			t.Fatalf("%s schedule was refused: %v", name, err)
 		}
-		want := 11*1440 - 1440 + minutes
+		want := 11*525600 - 525600 + minutes
 		if got := int(rb.TotalDuration() / time.Minute); got != want {
 			t.Errorf("%s: TotalDuration = %d min, want %d (the sum of the blocks)", name, got, want)
 		}

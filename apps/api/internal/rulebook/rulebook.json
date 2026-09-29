@@ -6,17 +6,17 @@
   "event": {
     "participants": { "min": 950, "max": 1050 },
     "timeline": [
-      {"id": "p1_trading", "label": "Phase 1: trading", "publicLabel": "Phase 1: trading", "durationMin": 1440, "stage": "phase1", "marketOpen": true, "allocationWindow": null},
-      {"id": "p1_freeze", "label": "Phase 1: closed, results frozen", "publicLabel": "Phase 1: closed, results frozen", "durationMin": 1440, "stage": "phase1", "marketOpen": false, "allocationWindow": null, "freezeSnapshot": "phase1"},
-      {"id": "transition", "label": "Phase 2: allocation window 0", "publicLabel": "Phase 2: allocation window 0", "durationMin": 1440, "stage": "transition", "marketOpen": false, "allocationWindow": 0},
-      {"id": "p2_t1", "label": "Phase 2: trading", "publicLabel": "Phase 2: trading", "durationMin": 1440, "stage": "phase2", "marketOpen": true, "allocationWindow": null},
-      {"id": "w1", "label": "Phase 2: allocation window 1", "publicLabel": "Phase 2: allocation window 1", "durationMin": 1440, "stage": "phase2", "marketOpen": false, "allocationWindow": 1},
-      {"id": "p2_t2", "label": "Phase 2: trading", "publicLabel": "Phase 2: trading", "durationMin": 1440, "stage": "phase2", "marketOpen": true, "allocationWindow": null, "regimeEvent": true},
-      {"id": "w2", "label": "Phase 2: allocation window 2", "publicLabel": "Phase 2: allocation window 2", "durationMin": 1440, "stage": "phase2", "marketOpen": false, "allocationWindow": 2},
-      {"id": "p2_t3", "label": "Phase 2: trading", "publicLabel": "Phase 2: trading", "durationMin": 1440, "stage": "phase2", "marketOpen": true, "allocationWindow": null},
-      {"id": "w3", "label": "Phase 2: allocation window 3 (final)", "publicLabel": "Phase 2: allocation window 3 (final)", "durationMin": 1440, "stage": "phase2", "marketOpen": false, "allocationWindow": 3},
-      {"id": "p2_t4", "label": "Phase 2: trading, fund money locked", "publicLabel": "Phase 2: trading, fund money locked", "durationMin": 1440, "stage": "phase2", "marketOpen": true, "allocationWindow": null},
-      {"id": "final_close", "label": "Event closed, results frozen", "publicLabel": "Event closed, results frozen", "durationMin": 1440, "stage": "closing", "marketOpen": false, "allocationWindow": null, "freezeSnapshot": "final"}
+      {"id": "p1_trading", "label": "Phase 1: trading", "publicLabel": "Phase 1: trading", "durationMin": 525600, "stage": "phase1", "marketOpen": true, "allocationWindow": null},
+      {"id": "p1_freeze", "label": "Phase 1: closed, results frozen", "publicLabel": "Phase 1: closed, results frozen", "durationMin": 525600, "stage": "phase1", "marketOpen": false, "allocationWindow": null, "freezeSnapshot": "phase1"},
+      {"id": "transition", "label": "Phase 2: allocation window 0", "publicLabel": "Phase 2: allocation window 0", "durationMin": 525600, "stage": "transition", "marketOpen": false, "allocationWindow": 0},
+      {"id": "p2_t1", "label": "Phase 2: trading", "publicLabel": "Phase 2: trading", "durationMin": 525600, "stage": "phase2", "marketOpen": true, "allocationWindow": null},
+      {"id": "w1", "label": "Phase 2: allocation window 1", "publicLabel": "Phase 2: allocation window 1", "durationMin": 525600, "stage": "phase2", "marketOpen": false, "allocationWindow": 1},
+      {"id": "p2_t2", "label": "Phase 2: trading", "publicLabel": "Phase 2: trading", "durationMin": 525600, "stage": "phase2", "marketOpen": true, "allocationWindow": null, "regimeEvent": true},
+      {"id": "w2", "label": "Phase 2: allocation window 2", "publicLabel": "Phase 2: allocation window 2", "durationMin": 525600, "stage": "phase2", "marketOpen": false, "allocationWindow": 2},
+      {"id": "p2_t3", "label": "Phase 2: trading", "publicLabel": "Phase 2: trading", "durationMin": 525600, "stage": "phase2", "marketOpen": true, "allocationWindow": null},
+      {"id": "w3", "label": "Phase 2: allocation window 3 (final)", "publicLabel": "Phase 2: allocation window 3 (final)", "durationMin": 525600, "stage": "phase2", "marketOpen": false, "allocationWindow": 3},
+      {"id": "p2_t4", "label": "Phase 2: trading, fund money locked", "publicLabel": "Phase 2: trading, fund money locked", "durationMin": 525600, "stage": "phase2", "marketOpen": true, "allocationWindow": null},
+      {"id": "final_close", "label": "Event closed, results frozen", "publicLabel": "Event closed, results frozen", "durationMin": 525600, "stage": "closing", "marketOpen": false, "allocationWindow": null, "freezeSnapshot": "final"}
     ]
   },
 
