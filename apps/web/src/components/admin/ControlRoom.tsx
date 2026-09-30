@@ -10,11 +10,11 @@ function explainStep(b: TimelineBlock, all: TimelineBlock[]): string {
   const last = Math.max(...windows);
   const after = all.slice(all.indexOf(b) + 1);
   if (b.freezeSnapshot === "phase1")
-    return "Trading stops for everyone and every team's Phase 1 value is frozen and ranked. Now form the funds on the Funds page: the top 20 teams become 10 funds (1st with 20th, 2nd with 19th, and so on), each fund taking both teams' whole portfolios.";
+    return "Trading stops for everyone and every team's Phase 1 value is frozen and ranked. Now form the funds on the Funds page: the top 20 teams become 10 funds (1st with 20th, 2nd with 19th, and so on), each fund taking both teams' whole portfolios. From here on only the organisers see the standings: announce the results yourselves.";
   if (b.freezeSnapshot === "final")
     return "Trading stops and the final results are frozen. Each team's final value is its cash, plus its shares at the final prices, plus its fund units at each fund's final unit price. The organisers' Standings page ranks everyone.";
   if (b.allocationWindow === 0)
-    return "Phase 2 begins with the market closed. Investors must put at least 5% of their portfolio into the funds; each fund publishes its name, strategy and fee (1% to 2%). Players no longer see the standings.";
+    return "Phase 2 begins with the market closed. Investors must put at least 5% of their portfolio into the funds; each fund publishes its name, strategy and fee (1% to 2%).";
   if (b.allocationWindow === last)
     return "The last allocation window, with the market closed. Investors can move money into or out of funds one final time; everyone gets a notice that it is the last. When it closes, fund money is locked until the end and fees for the period are worked out.";
   if (b.allocationWindow !== null)
@@ -51,6 +51,7 @@ export function ControlRoom() {
   const { clock, timeline, control } = data;
   const started = clock.status !== "not_started";
   const ended = clock.status === "ended";
+  const paused = clock.status === "paused";
   const current = started && !ended ? timeline[clock.blockIndex] : undefined;
   const next = !started ? timeline[0] : ended ? undefined : timeline[clock.blockIndex + 1];
   const phaseOf = (b?: TimelineBlock) => (!b ? "" : b.stage === "phase1" ? "Phase 1" : b.stage === "closing" ? "Closed" : "Phase 2");
@@ -61,6 +62,7 @@ export function ControlRoom() {
       <div className="page-head">
         <h1>Control room</h1>
         <Badge tone={current ? "up" : undefined}>{!started ? "Not started" : ended ? "Event closed" : phaseOf(current)}</Badge>
+        {paused && <Badge tone="flag">Paused</Badge>}
         {control.tradingFrozen && <Badge tone="down">Trading frozen</Badge>}
       </div>
 
@@ -69,15 +71,39 @@ export function ControlRoom() {
           <div className="label">Now</div>
           <div className="blk">{current ? current.label : ended ? "The event has closed" : "Waiting to start"}</div>
           <div className="dim">
-            {current?.marketOpen ? "The market is open." : current?.allocationWindow != null ? `Allocation window ${current.allocationWindow} is open; the market is closed.` : "The market is closed."}
+            {paused
+              ? "Paused for a break: prices are frozen and nothing can be bought, sold or moved into or out of funds."
+              : current?.marketOpen
+                ? "The market is open."
+                : current?.allocationWindow != null
+                  ? `Allocation window ${current.allocationWindow} is open; the market is closed.`
+                  : "The market is closed."}
           </div>
         </div>
       </section>
 
       <div className="btn-row">
+        {started && !ended && !paused && (
+          <ActionButton
+            label="Pause for a break"
+            title="Pause the whole event?"
+            description="Prices stop moving, buying, selling and fund moves stop, and the clock stands still, until you resume. Everyone sees that the event is paused."
+            run={() => run("/api/admin/clock/pause", {}, "The event is paused")}
+          />
+        )}
+        {paused && (
+          <ActionButton
+            className="solid"
+            label="Resume the event"
+            title="Resume the event?"
+            description="Everything carries on from exactly where it was paused: the same step, the same prices."
+            run={() => run("/api/admin/clock/resume", {}, "The event has resumed")}
+          />
+        )}
         {next && (
           <ActionButton
             className="solid"
+            missing={paused && "The event is paused. Resume it first, then move to the next step."}
             label={started ? `Next step: ${next.label}` : `Start: ${next.label}`}
             title={started ? `Move to "${next.label}"?` : `Start the event with "${next.label}"?`}
             description={

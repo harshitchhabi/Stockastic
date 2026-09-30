@@ -368,8 +368,8 @@ func TestTheEventMovesOnlyWhenTheOrganiserSaysSo(t *testing.T) {
 	if q := e.call("GET", "/api/admin/qualification", adm, nil).Body; q["ready"] != true {
 		t.Fatalf("the Phase 1 results must be frozen at this step: %v", q)
 	}
-	if standings() != 200 {
-		t.Fatal("players should still see the Phase 1 standings after it closes")
+	if standings() != 403 {
+		t.Fatal("once Phase 1 closes only the organisers see the standings: they announce the results")
 	}
 	if r := next(); r.Status != 400 || r.Body["error"] != "funds_not_formed" {
 		t.Fatalf("opening window 0 before the funds exist: %d %s", r.Status, r.Raw)

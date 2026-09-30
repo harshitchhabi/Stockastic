@@ -544,12 +544,35 @@ func main() {
 	check("players read the new rules", strings.Contains(string(rb), "Mock rules"), "")
 	admin("POST", "rules", map[string]any{"text": ""})
 
+	fmt.Println("\n== A break during Phase 1 ==")
+	_, pb := call(leaders[0].c, "GET", "/api/symbols", leaders[0].token, nil)
+	st, b = admin("POST", "clock/pause", map[string]any{})
+	check("the organiser pauses the event for a break", st == 200, "%d %s", st, errCode(b))
+	time.Sleep(12 * time.Second) // prices would change every 10 seconds
+	_, pa := call(leaders[0].c, "GET", "/api/symbols", leaders[0].token, nil)
+	check("no price moves during the break", string(pa) == string(pb), "")
+	var pausedRefused atomic.Int64
+	parallel(len(leaders), 64, func(i int) {
+		st, b := call(leaders[i].c, "POST", "/api/trades", leaders[i].token, map[string]any{"clientTradeId": fmt.Sprintf("brk-%d", i), "symbol": syms[i%len(syms)].Symbol, "side": "buy", "qty": 1})
+		if st == 423 && errCode(b) == "event_paused" {
+			pausedRefused.Add(1)
+		}
+	})
+	check("nobody can trade during the break", pausedRefused.Load() == int64(len(leaders)), "%d of %d refused", pausedRefused.Load(), len(leaders))
+	st, b = admin("POST", "clock/next", map[string]any{})
+	check("the event cannot move on during the break", st != 200 && errCode(b) == "event_paused", "%d %s", st, errCode(b))
+	st, b = admin("POST", "clock/resume", map[string]any{})
+	check("the organiser resumes", st == 200, "%d %s", st, errCode(b))
+	time.Sleep(12 * time.Second)
+	_, pr := call(leaders[0].c, "GET", "/api/symbols", leaders[0].token, nil)
+	check("prices move again after the break", string(pr) != string(pa), "")
+
 	fmt.Println("\n== Phase 1: closed ==")
 	next("Phase 1 closed")
 	st, b = call(leaders[0].c, "POST", "/api/trades", leaders[0].token, map[string]any{"clientTradeId": "closed-1", "symbol": syms[0].Symbol, "side": "buy", "qty": 1})
 	check("trading is closed for everyone", st != 200, "%d %s", st, errCode(b))
 	st, _ = call(leaders[0].c, "GET", "/api/leaderboard", leaders[0].token, nil)
-	check("players still see the standings (Phase 1)", st == 200, "%d", st)
+	check("once Phase 1 closes, only the organisers see the standings", st == 403, "%d", st)
 	st, b = admin("POST", "clock/next", map[string]any{})
 	check("the organiser cannot open window 0 before the funds exist", st != 200 && errCode(b) == "funds_not_formed", "%d %s", st, errCode(b))
 	if *stopAt1 {

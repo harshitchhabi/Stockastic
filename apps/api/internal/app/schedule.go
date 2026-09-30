@@ -257,6 +257,9 @@ func (a *App) ClockNext(actor User, reason, to string) error {
 			return bad("step_changed", "The event has already moved on (perhaps another organiser pressed Next step). Check the steps and try again.")
 		}
 	}
+	if p.Paused {
+		return bad("event_paused", "The event is paused. Resume it first, then move to the next step.")
+	}
 	if !p.Started {
 		return a.ClockStartAt(actor, "")
 	}
@@ -285,8 +288,22 @@ func (a *App) ClockNext(actor User, reason, to string) error {
 	})
 }
 
+// Paused reports whether the organisers have paused the whole event.
+func (a *App) Paused() bool {
+	p := a.Clock.Position()
+	return p.Started && p.Paused
+}
+
 // StandingsVisible says whether players may see the standings now: during Phase 1 only (from the start until the
 // funds' first allocation window opens), unless the rulebook publishes them throughout.
 func (a *App) StandingsVisible() bool {
-	return a.RB.Leaderboard.VisibleToParticipants || a.stage() == rulebook.StagePhase1
+	if a.RB.Leaderboard.VisibleToParticipants {
+		return true
+	}
+	// During Phase 1 trading only: once Phase 1 closes, the results are the organisers' to announce.
+	p := a.Clock.Position()
+	if !p.Started {
+		return true
+	}
+	return !p.Ended && p.Block.Stage == rulebook.StagePhase1 && p.Block.FreezeSnapshot == ""
 }

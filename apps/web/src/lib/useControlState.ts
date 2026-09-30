@@ -11,6 +11,10 @@ export interface ControlStateSnapshot {
   step?: string;
   /** The allocation window open now, or -1. */
   openWindow?: number;
+  /** The organisers have paused the whole event (a break): nothing moves until they resume. */
+  paused?: boolean;
+  /** Players may see the standings now (Phase 1 trading only). */
+  standingsOpen?: boolean;
 }
 
 /**

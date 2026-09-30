@@ -73,8 +73,8 @@ func TestOrganiserRunsTheEventHisWay(t *testing.T) {
 
 	// Pause stops trading; resume brings it back.
 	e.call("POST", "/api/admin/clock/pause", adm, map[string]any{})
-	if r := e.call("POST", "/api/trades", alpha.token, trade("buy", "ACME", 1)); r.Status != 403 {
-		t.Fatalf("a trade while paused: %d", r.Status)
+	if r := e.call("POST", "/api/trades", alpha.token, trade("buy", "ACME", 1)); r.Status != 423 || r.Body["error"] != "event_paused" {
+		t.Fatalf("a trade while paused: %d %s", r.Status, r.Raw)
 	}
 	e.call("POST", "/api/admin/clock/resume", adm, map[string]any{})
 	if r := e.call("POST", "/api/trades", alpha.token, trade("buy", "ACME", 1)); r.Status != 200 {

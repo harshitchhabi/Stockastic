@@ -29,11 +29,9 @@ export function DashboardShell() {
 
 function Shell() {
   const { account, logout, refresh } = useSession();
-  const { tradingFrozen, stage = "", marketOpen, openWindow = -1 } = useControlState();
-  // Players see the standings during Phase 1 only (the server enforces the same).
-  const phase1 = stage === "" || stage === "phase1";
+  const { tradingFrozen, stage = "", marketOpen, openWindow = -1, paused = false, standingsOpen = false } = useControlState();
   const phaseText = stage === "" ? "Not started" : stage === "phase1" ? "Phase 1" : stage === "closing" ? "Event closed" : "Phase 2";
-  const phaseDetail = stage === "closing" ? "" : marketOpen ? "market open" : openWindow >= 0 ? `allocation window ${openWindow} open` : "market closed";
+  const phaseDetail = paused ? "paused" : stage === "closing" ? "" : marketOpen ? "market open" : openWindow >= 0 ? `allocation window ${openWindow} open` : "market closed";
   const connection = useConnectionProblem();
   const live = useConnection();
   const route = useRoute();
@@ -94,7 +92,7 @@ function Shell() {
     { page: "holdings", label: "Holdings" },
     ...(account.role === "investor" ? [{ page: "funds" as Page, label: "Funds" }] : []),
     ...(account.role === "fund_manager" ? [{ page: "desk" as Page, label: "Fund desk" }] : []),
-    ...(standingsVisible || phase1 ? [{ page: "standings" as Page, label: "Standings" }] : []),
+    ...(standingsVisible || standingsOpen ? [{ page: "standings" as Page, label: "Standings" }] : []),
     ...(account.teamSize > 1 && !account.isAdmin ? [{ page: "team" as Page, label: "Team" }] : []),
     { page: "rules", label: "Rules" },
   ];
@@ -135,6 +133,11 @@ function Shell() {
         <button onClick={logout}>Sign out</button>
       </header>
 
+      {paused && (
+        <div role="status" className="banner">
+          The event is paused for a break. Prices are frozen, and nothing can be bought, sold or moved into or out of funds until the organisers resume.
+        </div>
+      )}
       {connection && (
         <div role="status" className="banner">
           {connection === "unauthenticated"

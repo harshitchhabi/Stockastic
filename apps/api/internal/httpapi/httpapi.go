@@ -387,6 +387,7 @@ func (s *Server) fail(c *gin.Context, err error) {
 		{app.ErrDisqualified, 403, "This team has been disqualified."},
 		{app.ErrAccountLocked, 403, "This account is locked. Ask an organiser."},
 		{app.ErrMarketClosed, 403, "The market is closed right now."},
+		{app.ErrPaused, 423, "The event is paused for a break. Nothing can be bought, sold or moved until the organisers resume it."},
 		{app.ErrSymbolPaused, 403, "Trading in this company is paused by the organisers."},
 		{app.ErrFrozen, 423, "Trading is frozen by the organisers."},
 		{trading.ErrUnknownSymbol, 404, "No such company."},

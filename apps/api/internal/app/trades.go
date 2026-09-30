@@ -17,6 +17,8 @@ import (
 
 var (
 	ErrMarketClosed = errors.New("market_closed")
+	// ErrPaused: the organisers have paused the event (a break): nothing trades and no prices move until they resume.
+	ErrPaused       = errors.New("event_paused")
 	ErrFrozen       = errors.New("trading_frozen")
 	ErrNoAccount    = errors.New("no_trading_account")
 	ErrSymbolPaused = errors.New("trading_paused")
@@ -107,6 +109,9 @@ func (a *App) Trade(ctx context.Context, u User, req TradeRequest) (trading.Resu
 	}
 	if a.Clock.Overrides().Frozen {
 		return trading.Result{}, ErrFrozen
+	}
+	if a.Paused() {
+		return trading.Result{}, ErrPaused
 	}
 	if !a.Clock.MarketOpen() {
 		return trading.Result{}, ErrMarketClosed

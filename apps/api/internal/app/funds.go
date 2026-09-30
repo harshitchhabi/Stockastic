@@ -579,6 +579,9 @@ func (a *App) allocate(u User, fundID string, req AllocationRequest) (Allocation
 		return AllocationResult{}, bad("invalid_amount", "Enter an amount to invest.")
 	}
 	window, open := a.OpenWindow()
+	if a.Paused() {
+		return AllocationResult{}, ErrPaused
+	}
 	if !open {
 		return AllocationResult{}, bad("window_closed", "Funds can only be entered or left while an allocation window is open.")
 	}
@@ -655,6 +658,9 @@ func (a *App) redeem(ctx context.Context, u User, fundID string, req AllocationR
 		return AllocationResult{}, err
 	}
 	window, open := a.OpenWindow()
+	if a.Paused() {
+		return AllocationResult{}, ErrPaused
+	}
 	if !open {
 		return AllocationResult{}, bad("window_closed", "Funds can only be entered or left while an allocation window is open.")
 	}

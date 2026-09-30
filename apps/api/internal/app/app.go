@@ -660,11 +660,16 @@ type ControlState struct {
 	OpenWindow      int               `json:"openWindow"`
 	WindowOverrides map[string]string `json:"windowOverrides"`
 	PausedSymbols   []string          `json:"pausedSymbols"`
+	// Paused: the organisers have paused the whole event (a break). Nothing trades, no prices move, no fund money
+	// moves and the clock stands still until they resume.
+	Paused bool `json:"paused"`
+	// StandingsOpen: players may see the standings now (during Phase 1 trading only).
+	StandingsOpen bool `json:"standingsOpen"`
 }
 
 func (a *App) ControlState() ControlState {
 	ov := a.Clock.Overrides()
-	cs := ControlState{TradingFrozen: ov.Frozen, MarketOpen: a.Clock.MarketOpen(), WindowOverrides: map[string]string{}, PausedSymbols: a.PausedSymbols(), OpenWindow: -1}
+	cs := ControlState{TradingFrozen: ov.Frozen, MarketOpen: a.Clock.MarketOpen(), WindowOverrides: map[string]string{}, PausedSymbols: a.PausedSymbols(), OpenWindow: -1, Paused: a.Paused(), StandingsOpen: a.StandingsVisible()}
 	if p := a.Clock.Position(); p.Started {
 		cs.Stage, cs.Step = string(a.stage()), p.Block.PublicLabel
 		if p.Ended {

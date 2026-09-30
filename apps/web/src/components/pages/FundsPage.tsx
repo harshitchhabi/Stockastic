@@ -98,7 +98,6 @@ export function FundsPage() {
           This is the last allocation window. When it closes, fund money is locked until the end of the event: make your final moves now.
         </div>
       )}
-      {view.closed && <FinalValue view={view} />}
 
       <div className="figures">
         <div className="figure">
@@ -194,52 +193,6 @@ export function FundsPage() {
       </table>
 
       <StrategyLog />
-    </div>
-  );
-}
-
-/** After the final close: how the team's fund money, and so its final value, is worked out. */
-function FinalValue({ view }: { view: FundsView }) {
-  const held = view.funds.filter((f) => f.myUnits > 0);
-  const inFunds = held.reduce((s, f) => s + f.myValue, 0);
-  return (
-    <div className="panel" style={{ margin: "12px 0" }}>
-      <div className="panel-body">
-        <h2 className="section" style={{ marginTop: 0 }}>How your final value is worked out</h2>
-        <p className="dim">
-          The event has closed and prices are final. Your fund money is the units you hold in each fund times that fund's final unit price. Fund
-          managers' fees are a separate score and are never taken from it.
-        </p>
-        {held.length > 0 ? (
-          <table className="roomy">
-            <tbody>
-              {held.map((f) => (
-                <tr key={f.id}>
-                  <td>{f.name}</td>
-                  <td className="mono">
-                    {f.myUnits.toLocaleString("en-IN", { maximumFractionDigits: 4 })} units × ₹{f.nav.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
-                  </td>
-                  <td className="mono">= ₹{money(f.myValue)}</td>
-                </tr>
-              ))}
-              <tr>
-                <td>
-                  <strong>Fund money</strong>
-                </td>
-                <td />
-                <td className="mono">
-                  <strong>₹{money(inFunds)}</strong>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        ) : (
-          <p className="dim">You held no fund units at the close.</p>
-        )}
-        <p>
-          Your final value is your cash, plus your shares at the final prices, plus your fund money: <strong>₹{money(view.myWallet)}</strong>.
-        </p>
-      </div>
     </div>
   );
 }
