@@ -43,6 +43,9 @@ var (
 	nMates    = flag.Int("teammates", 2, "teammates who join each team besides the leader")
 	saveTo    = flag.String("save", "", "write the final standings to this file")
 	compareTo = flag.String("compare", "", "only compare the server's standings now with this file (after a restart)")
+	password  = flag.String("password", "", "register everyone by email and this password instead of through Google (a local demo whose logins you can use)")
+	p1Minutes = flag.Int("phase1-minutes", 0, "keep Phase 1 trading this many minutes longer, with larger trades (for a demo)")
+	stopAt1   = flag.Bool("stop-after-phase1", false, "stop once Phase 1 has closed and leave the server there, to carry on by hand")
 )
 
 // ---- checks ----
@@ -249,32 +252,36 @@ func main() {
 		compare()
 		return
 	}
-	if *secret == "" {
-		fmt.Fprintln(os.Stderr, "need -secret")
+	if *secret == "" && *password == "" {
+		fmt.Fprintln(os.Stderr, "need -secret (or -password)")
 		os.Exit(2)
 	}
 	began := time.Now()
 
 	// ================= arrival =================
 	fmt.Println("\n== Before the event ==")
-	stat := decode[map[string]any](func() []byte { _, b := call(adminClient, "GET", "/api/status", "", nil); return b }())
-	check("the sign-in page offers Google, and only Google can add people", stat["googleEnabled"] == true && stat["googleOnlySignup"] == true, "%v", stat)
-	st, b = call(newClient(), "POST", "/api/auth/signup", "", map[string]any{"displayName": "Sneaky", "email": "sneaky@" + *domain, "password": "password-123", "yourName": "Sneaky"})
-	check("registering with a password is refused", st != 200, "%d %s", st, errCode(b))
+	if *password == "" {
+		googleChecks()
+	}
+	how := "through Google"
+	if *password != "" {
+		how = "by email and password"
+	}
+	// create registers a team and join a teammate, the way this run registers people.
+	create := func(c *http.Client, email, name, team string) (int, []byte) {
+		if *password != "" {
+			return call(c, "POST", "/api/auth/signup", "", map[string]any{"displayName": team, "email": email, "password": *password, "yourName": name})
+		}
+		return call(c, "POST", "/api/auth/onboard", "", map[string]any{"token": pass(email, name, time.Now().Add(30*time.Minute)), "action": "create", "teamName": team})
+	}
+	join := func(c *http.Client, email, name, code string) (int, []byte) {
+		if *password != "" {
+			return call(c, "POST", "/api/auth/join", "", map[string]any{"teamCode": code, "name": name, "email": email, "password": *password})
+		}
+		return call(c, "POST", "/api/auth/onboard", "", map[string]any{"token": pass(email, name, time.Now().Add(30*time.Minute)), "action": "join", "teamCode": code})
+	}
 
-	// hostile passes
-	st, _ = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": pass("x@"+*domain, "X", time.Now().Add(-time.Minute)), "action": "create", "teamName": "Late"})
-	check("an expired Google pass is refused", st == 401, "%d", st)
-	forged := pass("x@"+*domain, "X", time.Now().Add(time.Hour))
-	forged = forged[:len(forged)-3] + "AAA"
-	st, _ = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": forged, "action": "create", "teamName": "Forged"})
-	check("a forged Google pass is refused", st == 401, "%d", st)
-	payload, _ := json.Marshal(map[string]any{"e": "evil@" + *domain, "n": "Evil", "x": time.Now().Add(time.Hour).Unix()})
-	realSig := strings.SplitN(pass("x@"+*domain, "X", time.Now().Add(time.Hour)), ".", 2)[1]
-	st, _ = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": b64(payload) + "." + realSig, "action": "create", "teamName": "Swapped"})
-	check("a valid signature on a different person's details is refused", st == 401, "%d", st)
-
-	fmt.Printf("\n== %d people arrive through Google: %d leaders create teams, %d teammates join ==\n", *nTeams*(1+*nMates), *nTeams, *nTeams**nMates)
+	fmt.Printf("\n== %d people arrive %s: %d leaders create teams, %d teammates join ==\n", *nTeams*(1+*nMates), how, *nTeams, *nTeams**nMates)
 	teams := make([][]*person, *nTeams)
 	var signupErr atomic.Int64
 	var errMu sync.Mutex
@@ -282,7 +289,7 @@ func main() {
 	t0 := time.Now()
 	parallel(*nTeams, 48, func(i int) {
 		lead := &person{name: fmt.Sprintf("Leader %d", i), email: fmt.Sprintf("leader%d.mock2026@%s", i, *domain), team: i, leader: true, c: newClient()}
-		st, b := call(lead.c, "POST", "/api/auth/onboard", "", map[string]any{"token": pass(lead.email, lead.name, time.Now().Add(30*time.Minute)), "action": "create", "teamName": fmt.Sprintf("Mock Team %03d", i)})
+		st, b := create(lead.c, lead.email, lead.name, fmt.Sprintf("Mock Team %03d", i))
 		if st != 200 {
 			signupErr.Add(1)
 			errMu.Lock()
@@ -300,7 +307,7 @@ func main() {
 		team := []*person{lead}
 		for k := 0; k < *nMates; k++ {
 			m := &person{name: fmt.Sprintf("Mate %d-%d", i, k), email: fmt.Sprintf("mate%d.%d.mock2026@%s", i, k, *domain), team: i, c: newClient()}
-			st, b := call(m.c, "POST", "/api/auth/onboard", "", map[string]any{"token": pass(m.email, m.name, time.Now().Add(30*time.Minute)), "action": "join", "teamCode": code})
+			st, b := join(m.c, m.email, m.name, code)
 			if st != 200 {
 				signupErr.Add(1)
 				errMu.Lock()
@@ -337,11 +344,11 @@ func main() {
 	// a fourth person, the same person twice, a wrong code
 	_, tb := call(leaders[0].c, "GET", "/api/team", leaders[0].token, nil)
 	code0 := decode[struct{ JoinCode string }](tb).JoinCode
-	st, b = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": pass("extra.mock2026@"+*domain, "Extra", time.Now().Add(time.Hour)), "action": "join", "teamCode": code0})
+	st, b = join(newClient(), "extra.mock2026@"+*domain, "Extra", code0)
 	check("a full team refuses one more person", st != 200, "%d %s", st, errCode(b))
-	st, b = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": pass("lost.mock2026@"+*domain, "Lost", time.Now().Add(time.Hour)), "action": "join", "teamCode": "ZZZZZZZZ"})
+	st, b = join(newClient(), "lost.mock2026@"+*domain, "Lost", "ZZZZZZZZ")
 	check("a wrong team code is refused", st != 200, "%d %s", st, errCode(b))
-	st, b = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": pass(leaders[1].email, "Again", time.Now().Add(time.Hour)), "action": "create", "teamName": "Second Team"})
+	st, b = create(newClient(), leaders[1].email, "Again", "Second Team")
 	again := decode[struct{ Account struct{ ID string } }](b)
 	check("someone already in a team cannot make a second team", st != 200 || again.Account.ID == leaders[1].id, "%d %s", st, errCode(b))
 	s0 := getStandings()
@@ -473,6 +480,16 @@ func main() {
 	time.Sleep(61 * time.Second) // those two count toward the trade limit
 	phase1Trades := tradeRound(leaders, syms, "p1")
 	check("every leader's trades in Phase 1 went through", phase1Trades.ok == 2*len(leaders) && phase1Trades.other == 0, "%s", phase1Trades)
+	if *p1Minutes > 0 {
+		// A fuller Phase 1 for a demo: the market runs longer and every leader keeps trading larger amounts in
+		// different companies, so prices move, the early news goes out and the standings spread out.
+		end := time.Now().Add(time.Duration(*p1Minutes) * time.Minute)
+		for round := 0; time.Now().Before(end); round++ {
+			waitRate()
+			t := tradeRoundSized(leaders, syms, fmt.Sprintf("p1x%d", round), round)
+			fmt.Printf("   Phase 1 trading, round %d: %s\n", round+1, t)
+		}
+	}
 	var refused, leaked atomic.Int64
 	parallel(len(everyone), 64, func(i int) {
 		p := everyone[i]
@@ -535,6 +552,12 @@ func main() {
 	check("players still see the standings (Phase 1)", st == 200, "%d", st)
 	st, b = admin("POST", "clock/next", map[string]any{})
 	check("the organiser cannot open window 0 before the funds exist", st != 200 && errCode(b) == "funds_not_formed", "%d %s", st, errCode(b))
+	if *stopAt1 {
+		fmt.Println("\n== Stopped after Phase 1, as asked: the server is left here to carry on by hand ==")
+		close(stop)
+		summary(time.Since(began))
+		return
+	}
 
 	before := getStandings()
 	sort.Slice(before.Teams, func(i, j int) bool { return before.Teams[i].Value > before.Teams[j].Value })
@@ -756,6 +779,39 @@ func waitRate() {
 
 // tradeRound: everyone given places two trades at the same moment, a buy of a small amount of one company and a
 // buy of another.
+// tradeRoundSized: every leader buys two companies of its own choosing for ₹20,000 to ₹1,20,000 each (well inside
+// the 25% limit), sometimes selling one of them back later, so teams end up with different portfolios.
+func tradeRoundSized(ps []*person, syms []company, tag string, round int) tally {
+	var t tally
+	var mu sync.Mutex
+	parallel(len(ps), 64, func(i int) {
+		p := ps[i]
+		r := rand.New(rand.NewSource(int64(i*1000 + round)))
+		for k := 0; k < 2; k++ {
+			s := syms[r.Intn(len(syms))]
+			side := "buy"
+			if round > 1 && r.Intn(4) == 0 {
+				side = "sell"
+				// sell part of something bought earlier
+				_, pb := call(p.c, "GET", "/api/portfolio/me", p.token, nil)
+				if h := decode[portfolio](pb).Holdings; len(h) > 0 {
+					pick := h[r.Intn(len(h))]
+					st, b := call(p.c, "POST", "/api/trades", p.token, map[string]any{"clientTradeId": fmt.Sprintf("%s-%d-%d", tag, i, k), "symbol": pick.Symbol, "side": "sell", "qty": max(1, pick.Qty/2)})
+					t.add(&mu, st, b)
+					continue
+				}
+				side = "buy"
+			}
+			rupees := 20000 + r.Float64()*100000
+			qty := int64(math.Max(1, math.Floor(rupees/math.Max(s.Price, 1))))
+			st, b := call(p.c, "POST", "/api/trades", p.token, map[string]any{"clientTradeId": fmt.Sprintf("%s-%d-%d", tag, i, k), "symbol": s.Symbol, "side": side, "qty": qty})
+			t.add(&mu, st, b)
+		}
+	})
+	lastTrade = time.Now()
+	return t
+}
+
 func tradeRound(ps []*person, syms []company, tag string) tally {
 	var t tally
 	var mu sync.Mutex
@@ -949,4 +1005,24 @@ func indexOf(ps []*person, p *person) int {
 		}
 	}
 	return 0
+}
+
+// googleChecks: the sign-in page offers only Google, and expired, forged or altered Google passes are refused.
+func googleChecks() {
+	stat := decode[map[string]any](func() []byte { _, b := call(adminClient, "GET", "/api/status", "", nil); return b }())
+	check("the sign-in page offers Google, and only Google can add people", stat["googleEnabled"] == true && stat["googleOnlySignup"] == true, "%v", stat)
+	st, b := call(newClient(), "POST", "/api/auth/signup", "", map[string]any{"displayName": "Sneaky", "email": "sneaky@" + *domain, "password": "password-123", "yourName": "Sneaky"})
+	check("registering with a password is refused", st != 200, "%d %s", st, errCode(b))
+
+	// hostile passes
+	st, _ = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": pass("x@"+*domain, "X", time.Now().Add(-time.Minute)), "action": "create", "teamName": "Late"})
+	check("an expired Google pass is refused", st == 401, "%d", st)
+	forged := pass("x@"+*domain, "X", time.Now().Add(time.Hour))
+	forged = forged[:len(forged)-3] + "AAA"
+	st, _ = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": forged, "action": "create", "teamName": "Forged"})
+	check("a forged Google pass is refused", st == 401, "%d", st)
+	payload, _ := json.Marshal(map[string]any{"e": "evil@" + *domain, "n": "Evil", "x": time.Now().Add(time.Hour).Unix()})
+	realSig := strings.SplitN(pass("x@"+*domain, "X", time.Now().Add(time.Hour)), ".", 2)[1]
+	st, _ = call(newClient(), "POST", "/api/auth/onboard", "", map[string]any{"token": b64(payload) + "." + realSig, "action": "create", "teamName": "Swapped"})
+	check("a valid signature on a different person's details is refused", st == 401, "%d", st)
 }
