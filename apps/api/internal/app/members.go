@@ -230,7 +230,7 @@ func (a *App) JoinTeam(code, name, email, password, eventCode string) (Login, er
 	if err != nil || len(addr.Address) > 254 {
 		return Login{}, bad("invalid_email", "Enter a valid email address.")
 	}
-	if len(password) < 8 || len(password) > 72 {
+	if password != a.externalPW && (len(password) < 8 || len(password) > 72) {
 		return Login{}, bad("invalid_password", "Password must be 8 to 72 characters.")
 	}
 	team, found := a.teamByCode(code)
@@ -240,7 +240,7 @@ func (a *App) JoinTeam(code, name, email, password, eventCode string) (Login, er
 	if team.Status == StatusDisqualified || team.Locked {
 		return Login{}, ErrAccountLocked
 	}
-	hash, err := auth.HashPassword(password)
+	hash, err := a.passwordHash(password)
 	if errors.Is(err, auth.ErrBusy) {
 		return Login{}, ErrBusy
 	}

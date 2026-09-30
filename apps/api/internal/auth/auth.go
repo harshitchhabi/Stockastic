@@ -23,9 +23,13 @@ var (
 	ErrBusy = errors.New("busy")
 )
 
+// NoPassword is the stored "hash" of an account that signs in only with Google: it matches no password at all, and
+// checking against it costs nothing.
+const NoPassword = "!google-only"
+
 // gateWait is the longest a login or sign-up waits for a free slot. A flood of junk logins therefore cannot
 // build an unbounded queue: what does not fit is turned away quickly.
-const gateWait = 4 * time.Second
+const gateWait = 12 * time.Second // a hall signing in together queues; still inside the browser's 15-second wait
 
 func acquire() bool {
 	select {

@@ -510,3 +510,31 @@ func TestClosedRegistrationNeverLocksOutExistingPeople(t *testing.T) {
 		}
 	}
 }
+
+// An account made through Google has no usable password: nothing typed at the password form opens it (so no one can
+// guess their way in), and it costs the server no slow password hashing to create. Google still signs it in.
+func TestGoogleAccountsHaveNoPassword(t *testing.T) {
+	f := newFakeGoogle(t)
+	e := googleEnv(t, f, nil)
+	f.email, f.name = "lead.nopw@college.edu", "Lead"
+	loc, _ := signIn(t, e, f, "/api/auth/google/start", nil)
+	lead := finishOnboard(t, e, loc, map[string]any{"action": "create", "teamName": "No Passwords"}).Body["token"].(string)
+	code := teamCode(t, e, lead)
+	f.email, f.name, f.nonce = "mate.nopw@college.edu", "Mate", ""
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	if r := finishOnboard(t, e, loc, map[string]any{"action": "join", "teamCode": code}); r.Status != 200 {
+		t.Fatalf("join: %d %s", r.Status, r.Raw)
+	}
+	for _, email := range []string{"lead.nopw@college.edu", "mate.nopw@college.edu"} {
+		for _, pw := range []string{"", "password-123", "!google-only", "google:"} {
+			if r := e.call("POST", "/api/auth/login", "", map[string]any{"email": email, "password": pw}); r.Status == 200 {
+				t.Fatalf("%s signed in with the password %q", email, pw)
+			}
+		}
+	}
+	f.email, f.nonce = "lead.nopw@college.edu", ""
+	loc, _ = signIn(t, e, f, "/api/auth/google/start", nil)
+	if me := e.call("GET", "/api/auth/me", tokenIn(t, loc), nil); me.Status != 200 {
+		t.Fatalf("Google sign-in of the account: %d", me.Status)
+	}
+}

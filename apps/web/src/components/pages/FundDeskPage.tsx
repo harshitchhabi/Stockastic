@@ -55,7 +55,6 @@ export function FundDeskPage() {
     if (saving) return; // a second click while the first is on its way does nothing
     setMessage(null);
     if (!form.name.trim()) return setMessage({ ok: false, text: "Give the fund a name first." });
-    if (!form.strategy.trim()) return setMessage({ ok: false, text: "Write the fund's strategy (for example Growth or Value)." });
     if (!(form.managementFeePercent >= 1 && form.managementFeePercent <= 2)) return setMessage({ ok: false, text: "Set a management fee from 1% to 2%." });
     setSaving(true);
     try {

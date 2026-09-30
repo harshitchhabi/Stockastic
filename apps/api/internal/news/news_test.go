@@ -227,3 +227,37 @@ func TestDuplicateDeliveryIsIgnored(t *testing.T) {
 		t.Errorf("each feed delivers an item once: %d", len(r.deliveries()))
 	}
 }
+
+// A pause holds the public's copy: the 60-second wait counts only while the event runs, so fund managers keep
+// exactly their head start and nothing reaches the public during a break.
+func TestAPauseHoldsThePublicRelease(t *testing.T) {
+	r := &rig{ft: &fakeTime{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}, stage: rulebook.StagePhase2}
+	var mu sync.Mutex
+	paused := false
+	held := func() bool { mu.Lock(); defer mu.Unlock(); return paused }
+	setPaused := func(v bool) { mu.Lock(); paused = v; mu.Unlock() }
+	r.d = New(Config{Lead: 60 * time.Second, Now: r.ft.now, After: r.ft.after, Stage: func() rulebook.Stage { return r.stage }, Held: held, Log: quiet})
+	var public []time.Time
+	r.d.Subscribe(func(dl Delivery) {
+		if dl.Feed == PublicFeed {
+			public = append(public, dl.At)
+		}
+	})
+	start := r.ft.now()
+	r.d.Publish(KindNews, "Rate cut", "")
+	r.ft.advance(20 * time.Second)
+	setPaused(true)
+	r.ft.advance(10 * time.Minute) // a break
+	if len(public) != 0 {
+		t.Fatalf("the public got the item during the break, at %v", public[0].Sub(start))
+	}
+	setPaused(false)
+	r.ft.advance(39 * time.Second)
+	if len(public) != 0 {
+		t.Fatal("the public got the item before its 60 running seconds were up")
+	}
+	r.ft.advance(2 * time.Second)
+	if len(public) != 1 {
+		t.Fatalf("the public never got the item after the break (%d deliveries)", len(public))
+	}
+}

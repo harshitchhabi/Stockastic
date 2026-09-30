@@ -15,6 +15,7 @@ import { FundsPage } from "./pages/FundsPage";
 import { FundDeskPage } from "./pages/FundDeskPage";
 import { TeamPage } from "./pages/TeamPage";
 import { RulesPage } from "./pages/RulesPage";
+import { HelpPage } from "./pages/HelpPage";
 import { Leaderboard } from "./Leaderboard";
 import { NewsFeed } from "./NewsFeed";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -95,6 +96,7 @@ function Shell() {
     ...(standingsVisible || standingsOpen ? [{ page: "standings" as Page, label: "Standings" }] : []),
     ...(account.teamSize > 1 && !account.isAdmin ? [{ page: "team" as Page, label: "Team" }] : []),
     { page: "rules", label: "Rules" },
+    ...(!account.isAdmin ? [{ page: "help" as Page, label: "Help Desk" }] : []),
   ];
 
   // The role decides which pages exist; anything else falls back to Explore.
@@ -157,6 +159,7 @@ function Shell() {
             {page === "desk" && <FundDeskPage />}
             {page === "team" && <TeamPage />}
             {page === "rules" && <RulesPage />}
+            {page === "help" && <HelpPage />}
             {page === "standings" && (
               <div className="page">
                 <Leaderboard />

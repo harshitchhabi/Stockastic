@@ -20,6 +20,7 @@ import (
 	"stockastic/api/internal/dto"
 	"stockastic/api/internal/eventclock"
 	"stockastic/api/internal/funds"
+	"stockastic/api/internal/ids"
 	"stockastic/api/internal/ledger"
 	"stockastic/api/internal/market"
 	"stockastic/api/internal/money"
@@ -83,19 +84,22 @@ type App struct {
 	Hub       *wsapi.Hub
 	Signer    *auth.Signer
 
-	users     *userStore
-	members   *memberStore
-	revoked   *revokedSet         // sign-ins cancelled by signing out
-	memberMu  sync.Mutex          // serialises changes to members
-	watch     map[string][]string // each team's starred companies
-	watchMu   sync.Mutex
-	rulesText string // the rules players read, as an organiser last wrote them ("" = the default)
-	rulesMu   sync.Mutex
-	emailMu   sync.Mutex // one new login at a time claims an email (teams and teammates share one address space)
-	companies map[string]universe.Company
-	symbols   []string
-	started   time.Time
-	dummyHash string
+	users   *userStore
+	members *memberStore
+	revoked *revokedSet // sign-ins cancelled by signing out
+	// externalPW marks an account being created through Google (it gets no usable password). It is random for
+	// each run of the server, so nobody can send it from outside.
+	externalPW string
+	memberMu   sync.Mutex          // serialises changes to members
+	watch      map[string][]string // each team's starred companies
+	watchMu    sync.Mutex
+	rulesText  string // the rules players read, as an organiser last wrote them ("" = the default)
+	rulesMu    sync.Mutex
+	emailMu    sync.Mutex // one new login at a time claims an email (teams and teammates share one address space)
+	companies  map[string]universe.Company
+	symbols    []string
+	started    time.Time
+	dummyHash  string
 
 	auditMu sync.Mutex
 	audit   []AuditEntry
@@ -166,7 +170,7 @@ func New(cfg Config) (*App, error) {
 	}
 	a := &App{
 		cfg: cfg, RB: cfg.Rulebook, wal: cfg.WAL, now: cfg.Now, Signer: cfg.Signer,
-		users: newUserStore(), members: newMemberStore(), watch: map[string][]string{}, revoked: newRevokedSet(), companies: map[string]universe.Company{}, started: cfg.Now(),
+		users: newUserStore(), members: newMemberStore(), watch: map[string][]string{}, revoked: newRevokedSet(), externalPW: "google:" + ids.New() + ids.New(), companies: map[string]universe.Company{}, started: cfg.Now(),
 		tickets: map[string]*TicketRec{}, commits: newDurations(1000), errs: &errRing{},
 		recent: map[string][]trading.Trade{}, p1Trades: map[string]int{}, peaks: map[string]money.Paise{},
 		snapshots: map[string]FreezeSnapshot{}, paused: map[string]bool{}, pres: map[string]presence{},
@@ -197,7 +201,7 @@ func New(cfg Config) (*App, error) {
 	a.Market = market.New(cfg.Universe, cfg.Now())
 	a.Clock = eventclock.New(a.RB, cfg.Now, a.log)
 	a.Dispute = disputes.FromRulebook(a.RB.Disputes)
-	a.News = news.New(news.Config{Lead: a.RB.News.Lead(), Now: cfg.Now, Stage: a.stage, Log: a.log})
+	a.News = news.New(news.Config{Lead: a.RB.News.Lead(), Now: cfg.Now, Stage: a.stage, Held: a.Paused, Log: a.log})
 	a.Hub = wsapi.New(a.log, a.wsAuth, cfg.AllowedOrigins, a.onWSReady)
 	a.Hub.OnPresence(a.onPresence)
 	a.Hub.SetLimits(cfg.MaxSockets, cfg.MaxSocketsPerAccount)

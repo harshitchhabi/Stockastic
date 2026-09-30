@@ -68,7 +68,10 @@ type Config struct {
 	After Scheduler
 	// Stage reports the current event stage; the stagger applies only in Phase 2.
 	Stage func() rulebook.Stage
-	Log   *slog.Logger
+	// Held reports whether the event is paused. While it is, a staggered item's wait for the public stands still:
+	// the public gets it only once the event has run for the full lead time after fund managers did.
+	Held func() bool
+	Log  *slog.Logger
 }
 
 type Dispatcher struct {
@@ -78,7 +81,7 @@ type Dispatcher struct {
 	releases []*Release
 	byID     map[string]*Release
 	subs     []func(Delivery)
-	cancels  []func()
+	cancels  map[string]func() // pending public deliveries, by item id
 }
 
 func New(cfg Config) *Dispatcher {
@@ -91,7 +94,7 @@ func New(cfg Config) *Dispatcher {
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
-	return &Dispatcher{cfg: cfg, byID: map[string]*Release{}}
+	return &Dispatcher{cfg: cfg, byID: map[string]*Release{}, cancels: map[string]func(){}}
 }
 
 // Subscribe registers a delivery listener. Listeners run synchronously outside the dispatcher's lock
@@ -126,15 +129,63 @@ func (d *Dispatcher) Publish(kind Kind, headline, body string) Item {
 	return item
 }
 
+// holdStep is how often a waiting item checks whether the event is paused.
+const holdStep = 250 * time.Millisecond
+
 func (d *Dispatcher) schedulePublic(item Item, after time.Duration) {
-	if after <= 0 {
+	held := func() bool { return d.cfg.Held != nil && d.cfg.Held() }
+	if after <= 0 && !held() {
 		d.deliver(PublicFeed, item)
 		return
 	}
-	cancel := d.cfg.After(after, func() { d.deliver(PublicFeed, item) })
+	if d.cfg.Held == nil {
+		d.setCancel(item.ID, d.cfg.After(after, func() { d.finish(item) }))
+		return
+	}
+	// Count the wait down only while the event is running.
+	var step func(left time.Duration)
+	step = func(left time.Duration) {
+		if left <= 0 && !held() {
+			d.finish(item)
+			return
+		}
+		wait := min(max(left, 0), holdStep)
+		if held() {
+			wait = time.Second // paused: check once a second for the resume
+		} else if wait <= 0 {
+			wait = holdStep
+		}
+		d.setCancel(item.ID, d.cfg.After(wait, func() {
+			if !d.pending(item.ID) {
+				return // stopped or reset meanwhile
+			}
+			if !held() {
+				left -= wait
+			}
+			step(left)
+		}))
+	}
+	step(after)
+}
+
+func (d *Dispatcher) setCancel(id string, c func()) {
 	d.mu.Lock()
-	d.cancels = append(d.cancels, cancel)
+	d.cancels[id] = c
 	d.mu.Unlock()
+}
+
+func (d *Dispatcher) pending(id string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, ok := d.cancels[id]
+	return ok
+}
+
+func (d *Dispatcher) finish(item Item) {
+	d.mu.Lock()
+	delete(d.cancels, item.ID)
+	d.mu.Unlock()
+	d.deliver(PublicFeed, item)
 }
 
 func (d *Dispatcher) deliver(feed Feed, item Item) {
@@ -231,7 +282,7 @@ func (d *Dispatcher) Recover(log []Release) {
 func (d *Dispatcher) Stop() {
 	d.mu.Lock()
 	cs := d.cancels
-	d.cancels = nil
+	d.cancels = map[string]func(){}
 	d.mu.Unlock()
 	for _, c := range cs {
 		c()

@@ -1,9 +1,7 @@
 package app
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"net/mail"
 	"strings"
@@ -230,10 +228,7 @@ func (a *App) Signup(displayName, email, password, eventCode string) (User, erro
 	if err != nil || len(addr.Address) > 254 {
 		return User{}, bad("invalid_email", "Enter a valid email address.")
 	}
-	if len(password) < 8 || len(password) > 72 {
-		return User{}, bad("invalid_password", "Password must be 8 to 72 characters.")
-	}
-	hash, err := auth.HashPassword(password)
+	hash, err := a.passwordHash(password)
 	if errors.Is(err, auth.ErrBusy) {
 		return User{}, ErrBusy
 	}
@@ -294,22 +289,32 @@ func (a *App) ExternalSignIn(email, name, eventCode, teamCode, teamName string) 
 	if r := []rune(display); len(r) > 40 {
 		display = string(r[:40])
 	}
-	pw := make([]byte, 24)
-	if _, err := rand.Read(pw); err != nil {
-		return Login{}, err
-	}
+	// Google has confirmed who this is and they will always sign in with Google, so the account gets no usable
+	// password (and none of the deliberately slow password hashing, which a hall registering at once would queue on).
 	if strings.TrimSpace(teamCode) != "" {
-		return a.JoinTeam(teamCode, display, email, hex.EncodeToString(pw), eventCode)
+		return a.JoinTeam(teamCode, display, email, a.externalPW, eventCode)
 	}
 	person := display
 	if tn, ok := cleanName(teamName); ok && len([]rune(tn)) >= 2 && len([]rune(tn)) <= 40 {
 		display = tn
 	}
-	u, err := a.Signup(display, email, hex.EncodeToString(pw), eventCode)
+	u, err := a.Signup(display, email, a.externalPW, eventCode)
 	if err == nil {
 		u, _ = a.updateUser(u.ID, func(x *User) error { x.LeaderName = person; return nil })
 	}
 	return Login{Team: u}, err
+}
+
+// passwordHash hashes a new account's password, or, for an account created through Google, stores one that matches
+// no password at all.
+func (a *App) passwordHash(pw string) (string, error) {
+	if pw == a.externalPW {
+		return auth.NoPassword, nil
+	}
+	if len(pw) < 8 || len(pw) > 72 {
+		return "", bad("invalid_password", "Password must be 8 to 72 characters.")
+	}
+	return auth.HashPassword(pw)
 }
 
 // IsAdminEmail reports whether an address belongs to an organiser account.

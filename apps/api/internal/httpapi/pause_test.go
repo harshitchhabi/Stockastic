@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -108,23 +109,31 @@ func TestPausingTheEventForABreak(t *testing.T) {
 		t.Fatalf("form: %d %s", r.Status, r.Raw)
 	}
 	post("/api/admin/clock/next", map[string]any{}) // window 0
-	if r := e.call("POST", "/api/funds/F1/allocate", inv, map[string]any{"amount": 25_000}); r.Status != 200 {
-		t.Fatalf("invest: %d %s", r.Status, r.Raw)
+	// Invest what the page says a fund can take now (the market moved, so the exact share is not a round number).
+	room := func(fund string) float64 {
+		for _, f := range e.fundsView(inv)["funds"].([]any) {
+			if m := f.(map[string]any); m["id"] == fund {
+				return math.Floor(num(m["room"]))
+			}
+		}
+		return 0
 	}
+	invest := func(fund string, most float64) {
+		t.Helper()
+		amount := math.Min(most, room(fund))
+		if r := e.call("POST", "/api/funds/"+fund+"/allocate", inv, map[string]any{"amount": amount}); r.Status != 200 {
+			t.Fatalf("invest %v in %s: %d %s", amount, fund, r.Status, r.Raw)
+		}
+	}
+	invest("F1", 25_000)
 	post("/api/admin/clock/pause", map[string]any{})
 	if r := e.call("POST", "/api/funds/F1/allocate", inv, map[string]any{"amount": 10_000}); r.Status != 423 || r.Body["error"] != "event_paused" {
 		t.Fatalf("investing during a break: %d %s", r.Status, r.Raw)
 	}
 	post("/api/admin/clock/resume", map[string]any{})
 	// enough in funds that taking some out still leaves the required 5%
-	for _, step := range []struct {
-		fund   string
-		amount float64
-	}{{"F2", 25_000}, {"F1", 20_000}} {
-		if r := e.call("POST", "/api/funds/"+step.fund+"/allocate", inv, map[string]any{"amount": step.amount}); r.Status != 200 {
-			t.Fatalf("invest %v in %s: %d %s", step.amount, step.fund, r.Status, r.Raw)
-		}
-	}
+	invest("F2", 25_000)
+	invest("F1", 20_000)
 	fundCash := func() float64 { return num(e.call("GET", "/api/funds/mine", teams[0].token, nil).Body["cash"]) }
 	myCash := func() float64 { return num(e.call("GET", "/api/portfolio/me", inv, nil).Body["cashBalance"]) }
 	f0, m0 := fundCash(), myCash()

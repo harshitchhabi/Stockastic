@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 
 // Hash routing: no router library, and the browser's back button works between pages.
-export type Page = "explore" | "watchlist" | "holdings" | "funds" | "desk" | "standings" | "team" | "rules" | "company";
+export type Page = "explore" | "watchlist" | "holdings" | "funds" | "desk" | "standings" | "team" | "rules" | "help" | "company";
 
 export interface Route {
   page: Page;
   symbol?: string;
 }
 
-const PAGES: Page[] = ["explore", "watchlist", "holdings", "funds", "desk", "standings", "team", "rules"];
+const PAGES: Page[] = ["explore", "watchlist", "holdings", "funds", "desk", "standings", "team", "rules", "help"];
 
 export function parseHash(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);

@@ -446,3 +446,29 @@ func wsRefused(t *testing.T, e *env, token string) bool {
 	}
 	return true
 }
+
+// Anyone in a team can report a problem at the Help Desk, the organisers see it, and their decision reaches the team.
+func TestTeammatesReportProblemsAtTheHelpDesk(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	adm := e.admin()
+	lead, _ := e.signup("Helpers")
+	mate := join(e, teamCode(t, e, lead), "hana").Body["token"].(string)
+	r := e.call("POST", "/api/disputes", mate, map[string]any{"category": "incorrect_transaction", "summary": "My buy of 10 shares shows 1 share."})
+	if r.Status != 200 {
+		t.Fatalf("a teammate reporting a problem: %d %s", r.Status, r.Raw)
+	}
+	id := r.Body["id"].(string)
+	if r := e.call("POST", "/api/disputes", mate, map[string]any{"category": "other", "summary": "short"}); r.Status != 400 {
+		t.Fatalf("a report of 5 characters: %d", r.Status)
+	}
+	if list := e.call("GET", "/api/admin/disputes", adm, nil).Raw; !strings.Contains(string(list), "My buy of 10 shares") {
+		t.Fatalf("the organisers do not see the report: %s", list)
+	}
+	if r := e.call("POST", "/api/admin/disputes/"+id+"/resolve", adm, map[string]any{"reason": "Checked: the trade was 1 share. No change."}); r.Status != 200 {
+		t.Fatalf("resolve: %d %s", r.Status, r.Raw)
+	}
+	mine := e.call("GET", "/api/disputes/mine", lead, nil).Raw
+	if !strings.Contains(string(mine), "My buy of 10 shares") || strings.Contains(string(mine), `"status":"open"`) {
+		t.Fatalf("the leader's view of the team's reports after the decision: %s", mine)
+	}
+}
