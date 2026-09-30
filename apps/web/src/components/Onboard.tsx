@@ -26,7 +26,12 @@ export function Onboard() {
   if (!onboarding) return null;
 
   async function go(action: "create" | "join") {
+    if (busy) return;
     setError(null);
+    // Say what is missing instead of doing nothing.
+    if (needsCode && !eventCode.trim()) return setError("Enter the event code the organisers announced first.");
+    if (action === "create" && teamName.trim().length < 2) return setError("Type your team's name first (2 to 40 characters).");
+    if (action === "join" && !teamCode.trim()) return setError("Type the team code from your team leader first (it is on their Team page).");
     setBusy(action);
     try {
       await onboard(action, action === "create" ? teamName.trim() : teamCode.trim(), eventCode.trim() || undefined);
@@ -56,7 +61,7 @@ export function Onboard() {
             <h3 style={{ margin: "14px 0 0" }}>Create a team</h3>
             <div className="dim">You become the team leader. Your teammates join with the code on your Team page.</div>
             <input placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} maxLength={40} />
-            <button className="solid" style={{ padding: 11 }} disabled={busy !== null || teamName.trim().length < 2 || (needsCode && !eventCode.trim())} onClick={() => go("create")}>
+            <button className="solid" style={{ padding: 11 }} disabled={busy !== null} onClick={() => go("create")}>
               {busy === "create" ? "…" : "Create team"}
             </button>
           </>
@@ -67,7 +72,7 @@ export function Onboard() {
         <h3 style={{ margin: "14px 0 0" }}>Join a team</h3>
         <div className="dim">Ask your team leader for the team code.</div>
         <input placeholder="Team code" value={teamCode} onChange={(e) => setTeamCode(e.target.value)} autoComplete="off" autoCapitalize="characters" />
-        <button style={{ padding: 11 }} disabled={busy !== null || !teamCode.trim() || (needsCode && !eventCode.trim())} onClick={() => go("join")}>
+        <button style={{ padding: 11 }} disabled={busy !== null} onClick={() => go("join")}>
           {busy === "join" ? "…" : "Join team"}
         </button>
 

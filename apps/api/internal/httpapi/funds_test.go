@@ -310,6 +310,15 @@ func TestFundsChooseTheirFee(t *testing.T) {
 	if r := e.call("POST", "/api/funds/F1/allocate", inv, map[string]any{"amount": 25_000}); r.Status != 200 {
 		t.Fatalf("invest: %d %s", r.Status, r.Raw)
 	}
+	// the fund's managers see who invested and how much
+	desk := e.call("GET", "/api/funds/mine", mgr, nil).Body
+	inv0 := desk["investors"].([]any)
+	if len(inv0) != 1 || inv0[0].(map[string]any)["team"] != "Fee4" || num(inv0[0].(map[string]any)["contributed"]) != 25_000 {
+		t.Fatalf("the fund's investors as its managers see them: %v", desk["investors"])
+	}
+	if _, ok := desk["feesEarned"]; !ok {
+		t.Fatalf("the desk does not show the fees earned: %v", desk)
+	}
 	if r := profile(1.2); r.Status != 400 || r.Body["error"] != "fee_locked" {
 		t.Fatalf("changing the fee after investors came in: %d %s", r.Status, r.Raw)
 	}
@@ -420,5 +429,47 @@ func TestNextStepCannotSkipAStep(t *testing.T) {
 	}
 	if r := e.call("POST", "/api/admin/clock/next", adm, map[string]any{"blockId": "p1_freeze"}); r.Status != 400 || r.Body["error"] != "step_changed" {
 		t.Fatalf("a stale press: %d %s", r.Status, r.Raw)
+	}
+}
+
+// When the last allocation window opens everyone is told it is the last one, and the Funds page knows it; after the
+// final close it knows the event has closed.
+func TestTheLastWindowIsAnnounced(t *testing.T) {
+	e := newEnv(t, store.NewMem(), rb(t, 100))
+	adm := e.admin()
+	var teams []team
+	for i := 0; i < 5; i++ {
+		tok, id := e.signup(fmt.Sprintf("Last%d", i))
+		teams = append(teams, team{fmt.Sprintf("Last%d", i), tok, id})
+	}
+	inv := teams[4].token
+	next := func() {
+		if r := e.call("POST", "/api/admin/clock/next", adm, map[string]any{}); r.Status != 200 {
+			t.Fatalf("next: %d %s", r.Status, r.Raw)
+		}
+	}
+	next()
+	next()
+	if r := e.call("POST", "/api/admin/qualification/run", adm, map[string]any{"pairs": [][]string{{teams[0].id, teams[1].id}, {teams[2].id, teams[3].id}}}); r.Status != 200 {
+		t.Fatalf("form: %d %s", r.Status, r.Raw)
+	}
+	lastNotice := func() bool {
+		return strings.Contains(string(e.call("GET", "/api/news", inv, nil).Raw), "it is the last one")
+	}
+	for i := 0; i < 6; i++ { // window 0, trading, window 1, trading, window 2, trading
+		next()
+		if lastNotice() {
+			t.Fatalf("a last-window notice went out at step %d, before the last window", i+3)
+		}
+	}
+	next() // window 3
+	v := e.fundsView(inv)
+	if !lastNotice() || v["windowOpen"] != true || num(v["window"]) != num(v["lastWindow"]) {
+		t.Fatalf("the last window: notice %v, view %v", lastNotice(), v)
+	}
+	next()
+	next() // final close
+	if v := e.fundsView(inv); v["closed"] != true {
+		t.Fatalf("after the final close the Funds page does not know the event has closed: %v", v["closed"])
 	}
 }

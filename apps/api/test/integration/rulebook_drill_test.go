@@ -83,8 +83,11 @@ func TestValueChangesFlowThroughWithNoCodeEdit(t *testing.T) {
 		book := funds.NewBook(rb.Fund.LaunchNav)
 		_ = book.Apply(funds.Event{Op: funds.OpFormed, Funds: []funds.Formed{{ID: "F1", Number: 1, Account: "fund:F1"}}})
 		_ = book.Apply(funds.Event{Op: funds.OpAlloc, FundID: "F1", Investor: "x", Amount: 100_000_000, Units: 1000})
+		// The first checkpoint (window 0) only starts the first fee period; the fee is charged when the next one ends it.
+		first := book.PlanCheckpoint("w0", 0, map[string]float64{"F1": 100}, map[string]int64{"F1": 100_000_000}, rb.Fees.ManagementFeePercent, rb.Fees.PerformanceFeePercent)
+		_ = book.Apply(funds.Event{Op: funds.OpCheckpoint, Checkpoint: &first})
 		_ = book.Apply(funds.Event{Op: funds.OpSeries, AUMs: map[string]int64{"F1": 100_000_000}})
-		cp := book.PlanCheckpoint("w0", 0, map[string]float64{"F1": 110}, map[string]int64{"F1": 100_000_000}, rb.Fees.ManagementFeePercent, rb.Fees.PerformanceFeePercent)
+		cp := book.PlanCheckpoint("w1", 0, map[string]float64{"F1": 110}, map[string]int64{"F1": 100_000_000}, rb.Fees.ManagementFeePercent, rb.Fees.PerformanceFeePercent)
 		if fee := cp.Funds[0].MgmtFee; fee != int64(money.FromRupees(20_000)) {
 			t.Errorf("management fee = %v paise, want 20,000 rupees at 2%% of an AUM of 10 lakh", fee)
 		}

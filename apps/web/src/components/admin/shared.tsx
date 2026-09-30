@@ -143,6 +143,7 @@ export function ActionButton({
   description,
   danger,
   disabled,
+  missing,
   className,
   run,
 }: {
@@ -151,13 +152,16 @@ export function ActionButton({
   description?: React.ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  /** Something still to fill in: pressing the button says what, instead of opening the confirmation. */
+  missing?: string | false;
   className?: string;
   run: () => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
+  const { notify } = useAdmin();
   return (
     <>
-      <button className={className} disabled={disabled} onClick={() => setOpen(true)}>
+      <button className={className} disabled={disabled} onClick={() => (missing ? notify(missing, false) : setOpen(true))}>
         {label}
       </button>
       <ConfirmDialog

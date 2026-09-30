@@ -1016,6 +1016,14 @@ textarea {
   border-left: 3px solid var(--ink);
   font-weight: 600;
 }
+.timeline .step-note {
+  display: block;
+  margin-top: 3px;
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
 .timeline .tags {
   display: flex;
   gap: 8px;

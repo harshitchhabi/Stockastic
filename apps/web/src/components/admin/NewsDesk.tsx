@@ -63,7 +63,7 @@ export function NewsDesk() {
 
           <ActionButton
             className="solid"
-            disabled={!ready}
+            missing={!ready && "Write the headline first."}
             label="Publish"
             title={kind === "news" ? "Publish this news" : "Announce this market regime"}
             description={<strong>{headline}</strong>}

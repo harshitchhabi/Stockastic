@@ -288,6 +288,19 @@ func (a *App) Announce(actor User, reason, text string) error {
 	})
 }
 
+// notice sends everyone a desk notice from the platform itself (not an organiser), kept like an announcement.
+func (a *App) notice(text string) {
+	n := Announcement{ID: ids.New(), Text: text, At: a.now(), By: "Stockastic"}
+	if err := a.wal.Append(store.KindAnnounce, n); err != nil {
+		a.log.Error("could not save a notice", "err", err)
+		return
+	}
+	a.annMu.Lock()
+	a.announcements = append(a.announcements, n)
+	a.annMu.Unlock()
+	a.Hub.ToAll("news", dto.NewsItem{ID: n.ID, Kind: "notice", Headline: n.Text, CreatedAt: dto.MS(n.At)})
+}
+
 // SymbolPause records that trading in one company is paused or resumed.
 type SymbolPause struct {
 	Symbol string `json:"symbol"`

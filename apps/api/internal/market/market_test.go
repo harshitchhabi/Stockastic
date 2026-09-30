@@ -100,3 +100,21 @@ func TestConcurrentReadsAndWritesAreSafe(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A restart starts the market "now" and then replays the saved, older prices: the history must still run forward.
+func TestHistoryRunsForwardAfterARestart(t *testing.T) {
+	now := time.Date(2026, 9, 30, 19, 0, 0, 0, time.UTC)
+	p := market.New([]universe.Company{{Symbol: "A", Open: 10000}}, now)
+	for i, px := range []money.Paise{10100, 10200, 10150} {
+		p.Set("A", px, now.Add(-time.Hour).Add(time.Duration(i)*10*time.Second)) // replayed from an hour ago
+	}
+	h := p.History("A")
+	for i := 1; i < len(h); i++ {
+		if h[i].At.Before(h[i-1].At) {
+			t.Fatalf("history goes back in time at %d: %v", i, h)
+		}
+	}
+	if len(h) != 3 || h[2].Price != 10150 {
+		t.Fatalf("history = %v, want the 3 replayed prices", h)
+	}
+}

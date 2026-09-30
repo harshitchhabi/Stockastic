@@ -119,6 +119,7 @@ func (a *App) DefaultRules() string {
 		fmt.Sprintf("- The smallest investment in a fund is %s or %s of your wallet, whichever is lower. At most %s of your wallet may be in any one fund.", rupees(r.Fund.MinInvestmentAbsolute), pct(r.Fund.MinInvestmentWalletPercent), pct(r.Fund.MaxSingleFundWalletPercent)),
 		"- You can move money into or out of funds only while an allocation window is open. The last window is final: after it closes, fund positions are locked until the end.",
 		"- To keep things balanced, each fund can take only its share of new money until every fund has had its share. If a fund is full for now, choose another.",
+		"- At the end, your value is your cash, plus your shares at the final prices, plus the units you hold in each fund times that fund's final unit price. Fund managers' fees are a separate score and are never taken from your money.",
 		"",
 		"# Phase 2: fund managers",
 		"- Each fund publishes a name (fictional, never a real company or bank), its investment philosophy, its risk profile and its strategy.",

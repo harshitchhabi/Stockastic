@@ -35,7 +35,7 @@ function HoldingRow({ h, base, name, run }: { h: TeamDetail["holdings"][number];
           <input type="number" min="0" step="1" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 90, flex: "none" }} aria-label={`Set ${h.symbol} shares`} />
           <ActionButton
             label="Set"
-            disabled={!valid || target === h.qty}
+            missing={!valid ? "Enter a whole number of shares." : target === h.qty && `They already hold exactly ${h.qty}.`}
             title={`Set ${name}'s ${h.symbol} to exactly ${valid ? target : "…"} shares`}
             description={`Now ${h.qty}. Shares held back for a working sell order cannot be taken.`}
             run={() => run(`${base}/shares`, { direction: "set", symbol: h.symbol, qty: target }, `${name} now holds ${target} ${h.symbol}`)}
@@ -155,7 +155,7 @@ export function TeamPage({ id }: { id: string }) {
             />
             <ActionButton
               className="solid"
-              disabled={!amountOk}
+              missing={!amountOk && "Enter an amount in rupees first."}
               label="Apply"
               title={cashMode === "set" ? `Set ${a.displayName}'s cash to ₹${money(amt || 0)}` : `${amt > 0 ? "Add" : "Remove"} ₹${money(Math.abs(amt || 0))} ${amt > 0 ? "to" : "from"} ${a.displayName}`}
               run={() =>
@@ -185,7 +185,7 @@ export function TeamPage({ id }: { id: string }) {
           </div>
           <ActionButton
             className="solid"
-            disabled={!sharesOk}
+            missing={!sharesOk && (direction === "give" ? "Enter the number of shares and a value per share." : "Enter the number of shares.")}
             label={direction === "give" ? "Give shares" : direction === "take" ? "Take shares back" : "Set holding"}
             title={
               direction === "set"
@@ -259,7 +259,7 @@ export function TeamPage({ id }: { id: string }) {
       <div className="row-field" style={{ maxWidth: 460, marginTop: 14 }}>
         <input type="text" placeholder="Private message to this team (shows on their wire)" maxLength={300} value={message} onChange={(e) => setMessage(e.target.value)} />
         <ActionButton
-          disabled={!message.trim()}
+          missing={!message.trim() && "Type the message first."}
           label="Send"
           title={`Send a private message to ${a.displayName}`}
           description="Only their open pages show it. It is not kept."
@@ -269,7 +269,7 @@ export function TeamPage({ id }: { id: string }) {
       <div className="row-field" style={{ maxWidth: 460, marginTop: 14 }}>
         <input type="text" autoComplete="off" placeholder="New password (8 or more characters)" value={password} onChange={(e) => setPassword(e.target.value)} />
         <ActionButton
-          disabled={password.length < 8}
+          missing={password.length < 8 && "Type a new password of 8 or more characters first."}
           label="Reset password"
           title={`Set a new password for ${a.displayName}`}
           description="Tell the team the new password yourself. It is not stored in the history."

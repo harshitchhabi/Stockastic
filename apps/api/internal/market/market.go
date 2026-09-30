@@ -75,6 +75,12 @@ func (p *Prices) setLocked(symbol string, price money.Paise, at time.Time) {
 		return
 	}
 	s.cur = price
+	// History always runs forward in time. When a restart replays the saved prices, the opening point the market was
+	// started with ("now") is later than the replayed ones: drop anything later than this point, so charts never go
+	// backwards in time.
+	for len(s.pts) > 0 && s.pts[len(s.pts)-1].At.After(at) {
+		s.pts = s.pts[:len(s.pts)-1]
+	}
 	s.pts = append(s.pts, Point{Price: price, At: at})
 	if len(s.pts) > MaxHistory {
 		s.pts = append(s.pts[:0], s.pts[len(s.pts)-MaxHistory:]...)

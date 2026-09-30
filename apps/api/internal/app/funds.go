@@ -856,6 +856,10 @@ type FundsView struct {
 	MyWallet       float64    `json:"myWallet"`
 	Compliant      bool       `json:"compliant"`
 	Funds          []FundInfo `json:"funds"`
+	// LastWindow is the number of the final allocation window; after it closes fund money is locked.
+	LastWindow int `json:"lastWindow"`
+	// Closed is true once the event has closed and the results are final.
+	Closed bool `json:"closed"`
 }
 
 func (a *App) memberNames(f funds.Fund) []string {
@@ -890,6 +894,8 @@ func (a *App) FundsFor(u User) FundsView {
 	v := FundsView{Formed: a.Funds.Formed(), MandatoryPct: a.RB.Fund.MandatoryAllocationPercent, MinAbsolute: a.RB.Fund.MinInvestmentAbsolute,
 		MinWalletPct: a.RB.Fund.MinInvestmentWalletPercent, MaxWalletPct: a.RB.Fund.MaxSingleFundWalletPercent, Funds: []FundInfo{}, Compliant: true}
 	v.Window, v.WindowOpen = a.OpenWindow()
+	v.LastWindow = a.Clock.WindowCount() - 1
+	v.Closed = a.stage() == rulebook.StageClosing
 	if !v.Formed {
 		return v
 	}
@@ -925,6 +931,20 @@ type MyFund struct {
 	// CanTrade is false for the fund's other team: it can see the fund but only the trader places trades.
 	CanTrade   bool   `json:"canTrade"`
 	TraderName string `json:"traderName"`
+	// Investors is who has put money into the fund and how much, largest holding first.
+	Investors []FundInvestor `json:"investors"`
+	// FeesEarned is the fund's management and performance fees over every checkpoint so far (a score, never taken
+	// from investors).
+	FeesEarned float64 `json:"feesEarned"`
+}
+
+// FundInvestor is one investor in a fund, as its managers see it.
+type FundInvestor struct {
+	Team        string  `json:"team"`
+	Units       float64 `json:"units"`
+	Value       float64 `json:"value"`       // units at today's unit price
+	Contributed float64 `json:"contributed"` // everything put in
+	Redeemed    float64 `json:"redeemed"`    // everything taken out
 }
 
 type FundCheckpoint struct {
@@ -942,7 +962,7 @@ func (a *App) MyFund(u User) (MyFund, error) {
 		return MyFund{}, ErrNotAllowed
 	}
 	navs := a.navs()
-	m := MyFund{Fund: a.fundInfo(f, navs, ""), Holdings: []dto.Holding{}, Checkpoints: []FundCheckpoint{},
+	m := MyFund{Fund: a.fundInfo(f, navs, ""), Holdings: []dto.Holding{}, Checkpoints: []FundCheckpoint{}, Investors: []FundInvestor{},
 		MaxDrawdown: a.Funds.MaxDrawdown(f.ID), Retention: a.Funds.Retention(f.ID), CanTrade: f.Trader == u.ID}
 	if t, ok := a.users.get(f.Trader); ok {
 		m.TraderName = t.DisplayName
@@ -957,9 +977,20 @@ func (a *App) MyFund(u User) (MyFund, error) {
 			if fc.FundID == f.ID {
 				m.Checkpoints = append(m.Checkpoints, FundCheckpoint{Name: c.Name, NAV: fc.NAV, AUM: dto.Rupees(money.Paise(fc.AUM)), AvgAUM: dto.Rupees(money.Paise(fc.AvgAUM)),
 					MgmtFee: dto.Rupees(money.Paise(fc.MgmtFee)), PerfFee: dto.Rupees(money.Paise(fc.PerfFee))})
+				m.FeesEarned += dto.Rupees(money.Paise(fc.MgmtFee + fc.PerfFee))
 			}
 		}
 	}
+	nav := navs[f.ID]
+	for _, h := range a.Funds.InvestorsOf(f.ID) {
+		name := h.Investor
+		if t, ok := a.users.get(h.Investor); ok {
+			name = t.DisplayName
+		}
+		m.Investors = append(m.Investors, FundInvestor{Team: name, Units: h.Units, Value: math.Round(h.Units*nav*100) / 100,
+			Contributed: dto.Rupees(h.Contributed), Redeemed: dto.Rupees(h.Redeemed)})
+	}
+	sort.SliceStable(m.Investors, func(i, j int) bool { return m.Investors[i].Value > m.Investors[j].Value })
 	return m, nil
 }
 

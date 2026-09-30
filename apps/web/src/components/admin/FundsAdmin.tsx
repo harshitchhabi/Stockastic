@@ -322,7 +322,7 @@ function ManualPairs({
         {ranked.length >= 2 && <button onClick={fromRanking}>Fill from the ranking</button>}
         <ActionButton
           className="solid"
-          disabled={!ok}
+          missing={!ok && "Choose two different teams for every fund first (or press Fill from the ranking)."}
           label="Form the funds from these pairs"
           title="Form the funds from these pairs"
           description={`${rows.length} fund${rows.length === 1 ? "" : "s"} will be created and their teams become fund managers.`}

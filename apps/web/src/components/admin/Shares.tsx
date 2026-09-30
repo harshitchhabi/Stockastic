@@ -78,7 +78,7 @@ export function Shares() {
         </label>
         <ActionButton
           className="solid"
-          disabled={!valid}
+          missing={!valid && "Choose the company, and enter a number of shares and a value per share."}
           label="Give shares"
           title={`Give ${q || "…"} shares of ${symbol} to ${who}`}
           description={`Valued at ₹${p ? p.toFixed(2) : "…"} each. This cannot be undone.`}

@@ -90,7 +90,7 @@ export function MarketEvents() {
           <input type="number" step="0.5" value={shift} onChange={(e) => setShift(e.target.value)} placeholder="for example 5 or -3" />
         </label>
         <ActionButton
-          disabled={!shiftOk}
+          missing={!shiftOk && "Type how many minutes to move the news by (for example 5 or -3, at most 1440)."}
           label="Move all remaining"
           title={`Move every news item that has not gone out ${shiftBy > 0 ? "later" : "earlier"} by ${Math.abs(shiftBy)} minutes`}
           description="Use it if the event runs behind or ahead of the plan. Items already released are not affected, and nothing can go before minute 0."

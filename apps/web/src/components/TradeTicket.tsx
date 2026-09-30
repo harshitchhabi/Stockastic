@@ -42,9 +42,13 @@ export function TradeTicket({ symbol, tradingFrozen, onTraded }: { symbol: strin
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!account || price == null || n < 1) return;
+    if (!account || busy) return; // a second click while the first is on its way does nothing
     setError(null);
     setDone(null);
+    // Say what is missing instead of doing nothing.
+    if (tradingFrozen) return setError("Trading is frozen by the organisers. Wait until they resume it.");
+    if (!(n >= 1) || !Number.isInteger(n)) return setError("Enter how many shares first (a whole number, 1 or more).");
+    if (price == null) return setError("The price has not loaded yet. Try again in a moment.");
     setBusy(true);
     try {
       // A fresh id for each press; a retry of this same press reuses it, so a dropped connection can never
@@ -92,7 +96,7 @@ export function TradeTicket({ symbol, tradingFrozen, onTraded }: { symbol: strin
 
           <label className="field">
             <span className="label">Number of shares</span>
-            <input type="number" step="1" min="1" required value={qty} onChange={(e) => setQty(e.target.value)} />
+            <input type="number" step="1" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
           </label>
 
           <div className="ticket-summary">
@@ -112,7 +116,7 @@ export function TradeTicket({ symbol, tradingFrozen, onTraded }: { symbol: strin
           {viewOnly && <div className="down">{desk?.traderName} places this fund's trades. You can watch the fund from here.</div>}
           {account && !account.canTrade && <div className="dim">Only {account.traderName} can buy and sell for your team. You can watch everything from here.</div>}
 
-          <button type="submit" className="solid" disabled={!account || !account.canTrade || busy || tradingFrozen || viewOnly || price == null || n < 1} style={{ padding: 10 }}>
+          <button type="submit" className="solid" disabled={!account || !account.canTrade || busy || viewOnly} style={{ padding: 10 }}>
             {busy ? "Trading…" : `${side === "buy" ? "Buy" : "Sell"} ${n > 0 ? n : ""} ${symbol}`}
           </button>
         </form>

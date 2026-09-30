@@ -16,6 +16,7 @@ export function FundDeskPage() {
   const [data, setData] = useState<MyFund | null>(null);
   const [form, setForm] = useState({ name: "", philosophy: "", risk: "Balanced", strategy: "", managementFeePercent: 1.5 });
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [, setLoadedProfile] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -51,13 +52,20 @@ export function FundDeskPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return; // a second click while the first is on its way does nothing
     setMessage(null);
+    if (!form.name.trim()) return setMessage({ ok: false, text: "Give the fund a name first." });
+    if (!form.strategy.trim()) return setMessage({ ok: false, text: "Write the fund's strategy (for example Growth or Value)." });
+    if (!(form.managementFeePercent >= 1 && form.managementFeePercent <= 2)) return setMessage({ ok: false, text: "Set a management fee from 1% to 2%." });
+    setSaving(true);
     try {
       await api.put("/api/funds/mine/profile", form);
       setMessage({ ok: true, text: "Published. Investors see this now." });
       load();
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : "That did not save." });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -104,6 +112,10 @@ export function FundDeskPage() {
           <div className="v">{f.investors}</div>
         </div>
         <div className="figure">
+          <div className="label">Fees earned so far</div>
+          <div className="v">{money(data.feesEarned)}</div>
+        </div>
+        <div className="figure">
           <div className="label">Largest fall</div>
           <div className="v">{(data.maxDrawdown * 100).toFixed(2)}%</div>
         </div>
@@ -114,7 +126,7 @@ export function FundDeskPage() {
       </div>
       {!data.canTrade && (
         <div className="chip alert" style={{ marginTop: 8 }}>
-          Your fund is run by two teams. {data.traderName} places its trades; you can see everything and edit the profile.
+          Your fund is run by two teams. {data.traderName} places its trades and sets the profile; you can see everything.
         </div>
       )}
       <p className="dim" style={{ marginTop: 8 }}>
@@ -159,11 +171,44 @@ export function FundDeskPage() {
         </tbody>
       </table>
 
+      <h2 className="section">Investors</h2>
+      <table className="roomy">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Units</th>
+            <th>Value now</th>
+            <th>Put in</th>
+            <th>Taken out</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.investors.map((i) => (
+            <tr key={i.team}>
+              <td>
+                <strong>{i.team}</strong>
+              </td>
+              <td>{i.units.toLocaleString("en-IN", { maximumFractionDigits: 4 })}</td>
+              <td>{money(i.value)}</td>
+              <td>{money(i.contributed)}</td>
+              <td>{money(i.redeemed)}</td>
+            </tr>
+          ))}
+          {data.investors.length === 0 && (
+            <tr>
+              <td colSpan={5} className="empty">
+                nobody has put money into the fund yet
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
       <h2 className="section">Fund profile</h2>
       <form onSubmit={save} className="stack" style={{ maxWidth: 560 }}>
         <label className="field">
-          <span className="label">Fund name (a made-up name, never a real company)</span>
-          <input value={form.name} maxLength={40} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <span className="label">Fund name</span>
+          <input value={form.name} maxLength={40} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </label>
         <label className="field">
           <span className="label">Investment philosophy</span>
@@ -194,8 +239,13 @@ export function FundDeskPage() {
           />
         </label>
         <div>
-          <button type="submit" className="solid" disabled={account?.canTrade === false} title={account?.canTrade === false ? "Only the person trading for your team can change the profile" : undefined}>
-            Publish
+          <button
+            type="submit"
+            className="solid"
+            disabled={saving || account?.canTrade === false || !data.canTrade}
+            title={!data.canTrade ? "The team that trades for the fund sets its profile" : account?.canTrade === false ? "Only the person trading for your team can change the profile" : undefined}
+          >
+            {saving ? "Publishing…" : "Publish"}
           </button>
         </div>
         {message && <div className={message.ok ? "up" : "down"}>{message.text}</div>}

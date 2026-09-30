@@ -132,6 +132,10 @@ export interface FundsView {
   myWallet: number;
   compliant: boolean;
   funds: FundInfo[];
+  /** The number of the final allocation window: after it closes, fund money is locked. */
+  lastWindow: number;
+  /** The event has closed and the results are final. */
+  closed: boolean;
 }
 
 export interface FundCheckpoint {
@@ -153,6 +157,18 @@ export interface MyFund {
   /** False for the fund's other team: it can watch the fund but only the trader places trades. */
   canTrade: boolean;
   traderName: string;
+  /** Who has put money into the fund and how much, largest holding first. */
+  investors: FundInvestor[];
+  /** Management and performance fees over every checkpoint so far (a score; never taken from investors). */
+  feesEarned: number;
+}
+
+export interface FundInvestor {
+  team: string;
+  units: number;
+  value: number;
+  contributed: number;
+  redeemed: number;
 }
 
 export interface StrategyLogEntry {

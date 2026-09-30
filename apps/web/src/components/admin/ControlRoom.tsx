@@ -4,6 +4,30 @@ import type { SymbolInfo } from "@/lib/types";
 import type { Overview, TimelineBlock } from "@/lib/adminTypes";
 import { ActionButton, Badge, LoadError, useDo, usePoll } from "./shared";
 
+/** What happens during a step, in plain words, for the organisers. */
+function explainStep(b: TimelineBlock, all: TimelineBlock[]): string {
+  const windows = all.filter((x) => x.allocationWindow !== null).map((x) => x.allocationWindow as number);
+  const last = Math.max(...windows);
+  const after = all.slice(all.indexOf(b) + 1);
+  if (b.freezeSnapshot === "phase1")
+    return "Trading stops for everyone and every team's Phase 1 value is frozen and ranked. Now form the funds on the Funds page: the top 20 teams become 10 funds (1st with 20th, 2nd with 19th, and so on), each fund taking both teams' whole portfolios.";
+  if (b.freezeSnapshot === "final")
+    return "Trading stops and the final results are frozen. Each team's final value is its cash, plus its shares at the final prices, plus its fund units at each fund's final unit price. The organisers' Standings page ranks everyone.";
+  if (b.allocationWindow === 0)
+    return "Phase 2 begins with the market closed. Investors must put at least 5% of their portfolio into the funds; each fund publishes its name, strategy and fee (1% to 2%). Players no longer see the standings.";
+  if (b.allocationWindow === last)
+    return "The last allocation window, with the market closed. Investors can move money into or out of funds one final time; everyone gets a notice that it is the last. When it closes, fund money is locked until the end and fees for the period are worked out.";
+  if (b.allocationWindow !== null)
+    return "The market closes. Investors can move money into or out of funds. When the window closes, each fund's fees for the period just ended are worked out (a score for managers, never taken from investors).";
+  if (b.stage === "phase1" && b.marketOpen)
+    return "Phase 1: the market opens and every team trades its own portfolio (at most 2 trades a minute, 25% in one company). News arrives; players see the standings.";
+  if (b.marketOpen && !after.some((x) => x.allocationWindow !== null))
+    return "The market opens for the last time. Fund managers trade their funds and investors trade their own shares; fund money is locked and cannot be moved.";
+  if (b.marketOpen)
+    return "The market opens. Fund managers trade their funds and investors trade their own shares. Fund managers see each news item 60 seconds before everyone else. Money cannot be moved into or out of funds.";
+  return "";
+}
+
 export function ControlRoom() {
   const { data, error, at, reload } = usePoll<Overview>("/api/admin/overview", 2000);
   const run = useDo(reload);
@@ -93,7 +117,10 @@ export function ControlRoom() {
           return (
             <li key={b.id} className={state}>
               <span className="t mono">{i + 1}</span>
-              <span className="l">{b.label}</span>
+              <span className="l">
+                {b.label}
+                <span className="step-note">{explainStep(b, timeline)}</span>
+              </span>
               <span className="tags">
                 {b.marketOpen && <Badge tone="up">Market open</Badge>}
                 {b.allocationWindow !== null && <Badge tone="flag">Window {b.allocationWindow}</Badge>}
@@ -116,7 +143,7 @@ export function ControlRoom() {
           </select>
           <ActionButton
             label="Go"
-            disabled={!jumpTo}
+            missing={!jumpTo && "Choose a step from the list first."}
             danger
             title="Go to another step?"
             description="Use this only to correct a mistake. Steps skipped over count as having happened, including frozen results."
@@ -157,7 +184,7 @@ export function ControlRoom() {
         </select>
         <ActionButton
           danger
-          disabled={!pauseSym || control.pausedSymbols.includes(pauseSym)}
+          missing={!pauseSym ? "Choose a company first." : control.pausedSymbols.includes(pauseSym) && `${pauseSym} is already paused.`}
           label="Pause"
           title={`Pause trading in ${pauseSym}`}
           run={() => run(`/api/admin/control/symbols/${encodeURIComponent(pauseSym)}`, { paused: true }, `${pauseSym} paused`)}
@@ -185,7 +212,7 @@ export function ControlRoom() {
         <input value={announce} maxLength={280} placeholder="For example: Allocation window 1 opens in five minutes" onChange={(e) => setAnnounce(e.target.value)} />
         <ActionButton
           className="solid"
-          disabled={announce.trim().length < 3}
+          missing={announce.trim().length < 3 && "Type the announcement first (at least 3 characters)."}
           label="Announce"
           title="Send this announcement to every participant"
           description={<strong>{announce}</strong>}

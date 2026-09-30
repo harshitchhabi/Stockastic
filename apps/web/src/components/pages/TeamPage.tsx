@@ -46,6 +46,7 @@ export function TeamPage() {
   }, [load]);
 
   async function run(f: () => Promise<unknown>, ok: string) {
+    if (busy) return; // one at a time: a second click while the first is on its way does nothing
     setBusy(true);
     setMessage(null);
     try {

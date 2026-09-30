@@ -90,7 +90,7 @@ export function Participants() {
           />
           <ActionButton
             label="Save code"
-            disabled={code === null || code === settings.data.signupCode}
+            missing={(code === null || code === settings.data.signupCode) && "Type the new event code first (or clear the box to remove it)."}
             title="Change the event code"
             description="New sign-ups need this code from now on. Teams that already have accounts are not affected. Leave it empty to remove the requirement."
             run={async () => {

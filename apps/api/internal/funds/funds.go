@@ -422,6 +422,27 @@ func (b *Book) Holdings(investor string) map[string]Holding {
 	return out
 }
 
+// FundHolding is one investor's position in one fund.
+type FundHolding struct {
+	Investor string
+	Holding
+}
+
+// InvestorsOf lists every investor who has ever put money into one fund (not the managers' own stake), with what they
+// hold now and what they put in and took out.
+func (b *Book) InvestorsOf(fund string) []FundHolding {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	var out []FundHolding
+	for id, byFund := range b.holdings {
+		if h := byFund[fund]; h != nil && !h.Seed {
+			out = append(out, FundHolding{Investor: id, Holding: *h})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Investor < out[j].Investor })
+	return out
+}
+
 // Investors lists every account that has ever put money into any fund (a fund manager team's own stake in its
 // fund does not count).
 func (b *Book) Investors() []string {
@@ -574,7 +595,11 @@ func (b *Book) PlanCheckpoint(name string, at int64, navs map[string]float64, au
 		if f.Profile.ManagementFeePercent > 0 {
 			pct = f.Profile.ManagementFeePercent
 		}
-		fc.MgmtFee = int64(math.Round(avg * pct / 100))
+		// The management fee is charged for each settlement period: each gap between two checkpoints (Section 12).
+		// The first checkpoint (the close of window 0) only starts the first period, so nothing is charged there.
+		if len(b.checks) > 0 {
+			fc.MgmtFee = int64(math.Round(avg * pct / 100))
+		}
 		if nav > f.HWM {
 			fc.PerfFee = int64(money.FromRupees((nav - f.HWM) * perfPct / 100 * f.Units))
 			fc.HWMAfter = nav

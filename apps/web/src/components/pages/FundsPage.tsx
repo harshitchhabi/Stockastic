@@ -44,8 +44,13 @@ export function FundsPage() {
   }, [load]);
 
   async function act(f: FundInfo, what: "allocate" | "redeem", all = false) {
+    if (busy) return; // one at a time: a second click while the first is on its way does nothing
     const raw = amounts[f.id] ?? "";
     setMessage(null);
+    // Say what is missing instead of doing nothing.
+    if (!view?.windowOpen) return setMessage({ ok: false, text: "Money moves in and out of funds only while an allocation window is open. Wait for the organisers to open the next one." });
+    if (what === "redeem" && f.myUnits <= 0) return setMessage({ ok: false, text: `You have nothing in ${f.name} to withdraw.` });
+    if (!all && !(Number(raw) > 0)) return setMessage({ ok: false, text: `Type an amount in rupees next to ${f.name} first.` });
     setBusy(`${f.id}:${what}`);
     try {
       const r = await api.post<{ units: number; nav: number; amount: number }>(`/api/funds/${f.id}/${what}`, all ? { all: true } : { amount: Number(raw) });
@@ -83,9 +88,17 @@ export function FundsPage() {
     <div className="page">
       <div className="page-head">
         <h1>Funds</h1>
-        <span className={`chip ${view.windowOpen ? "" : "alert"}`}>{view.windowOpen ? `Allocation window ${view.window} is open` : "Allocation window closed"}</span>
+        <span className={`chip ${view.windowOpen || view.closed ? "" : "alert"}`}>
+          {view.closed ? "Event closed · results final" : view.windowOpen ? `Allocation window ${view.window} is open` : "Allocation window closed"}
+        </span>
       </div>
       {!canAct && account && <p className="dim">Only {account.traderName} can move your team's money in and out of funds. You can watch everything from here.</p>}
+      {view.windowOpen && view.window === view.lastWindow && (
+        <div className="chip alert" style={{ margin: "8px 0", display: "block" }}>
+          This is the last allocation window. When it closes, fund money is locked until the end of the event: make your final moves now.
+        </div>
+      )}
+      {view.closed && <FinalValue view={view} />}
 
       <div className="figures">
         <div className="figure">
@@ -106,7 +119,13 @@ export function FundsPage() {
         your portfolio, and no more than {view.maxWalletPercent}% of your portfolio can sit in one fund. Money moves in and out of funds only while a window is open. After the last window,
         fund positions are locked until the end.
       </p>
-      {!view.compliant && <div className="down">You are below the required share. Invest in a fund before the window closes.</div>}
+      {!view.compliant && !view.closed && (
+        <div className="down">
+          {view.windowOpen
+            ? "You are below the required share. Invest in a fund before this window closes."
+            : "You are below the required share. Put money into a fund when the next allocation window opens."}
+        </div>
+      )}
       {message && <div className={message.ok ? "up" : "down"} style={{ margin: "8px 0" }}>{message.text}</div>}
 
       <table className="roomy">
@@ -143,6 +162,8 @@ export function FundsPage() {
               <td>
                 {f.disqualified ? (
                   <span className="dim">closed</span>
+                ) : view.closed ? (
+                  <span className="dim">final</span>
                 ) : (
                   <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                     <input
@@ -153,15 +174,15 @@ export function FundsPage() {
                       style={{ width: 96 }}
                       value={amounts[f.id] ?? ""}
                       onChange={(e) => setAmounts((p) => ({ ...p, [f.id]: e.target.value }))}
-                      disabled={!view.windowOpen || !canAct}
+                      disabled={!canAct}
                     />
-                    <button className="solid" disabled={!canAct || !view.windowOpen || busy !== null || !Number(amounts[f.id])} onClick={() => act(f, "allocate")}>
-                      Invest
+                    <button className="solid" disabled={!canAct || busy !== null} onClick={() => act(f, "allocate")}>
+                      {busy === `${f.id}:allocate` ? "…" : "Invest"}
                     </button>
-                    <button disabled={!canAct || !view.windowOpen || busy !== null || f.myUnits <= 0 || !Number(amounts[f.id])} onClick={() => act(f, "redeem")}>
-                      Withdraw
+                    <button disabled={!canAct || busy !== null} onClick={() => act(f, "redeem")}>
+                      {busy === `${f.id}:redeem` ? "…" : "Withdraw"}
                     </button>
-                    <button className="ghost" disabled={!canAct || !view.windowOpen || busy !== null || f.myUnits <= 0} onClick={() => act(f, "redeem", true)}>
+                    <button className="ghost" disabled={!canAct || busy !== null} onClick={() => act(f, "redeem", true)} title="Withdraw everything from this fund">
                       All
                     </button>
                   </div>
@@ -177,6 +198,52 @@ export function FundsPage() {
   );
 }
 
+/** After the final close: how the team's fund money, and so its final value, is worked out. */
+function FinalValue({ view }: { view: FundsView }) {
+  const held = view.funds.filter((f) => f.myUnits > 0);
+  const inFunds = held.reduce((s, f) => s + f.myValue, 0);
+  return (
+    <div className="panel" style={{ margin: "12px 0" }}>
+      <div className="panel-body">
+        <h2 className="section" style={{ marginTop: 0 }}>How your final value is worked out</h2>
+        <p className="dim">
+          The event has closed and prices are final. Your fund money is the units you hold in each fund times that fund's final unit price. Fund
+          managers' fees are a separate score and are never taken from it.
+        </p>
+        {held.length > 0 ? (
+          <table className="roomy">
+            <tbody>
+              {held.map((f) => (
+                <tr key={f.id}>
+                  <td>{f.name}</td>
+                  <td className="mono">
+                    {f.myUnits.toLocaleString("en-IN", { maximumFractionDigits: 4 })} units × ₹{f.nav.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                  </td>
+                  <td className="mono">= ₹{money(f.myValue)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td>
+                  <strong>Fund money</strong>
+                </td>
+                <td />
+                <td className="mono">
+                  <strong>₹{money(inFunds)}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        ) : (
+          <p className="dim">You held no fund units at the close.</p>
+        )}
+        <p>
+          Your final value is your cash, plus your shares at the final prices, plus your fund money: <strong>₹{money(view.myWallet)}</strong>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** Prize 3: 2 to 3 sentences at each checkpoint, what you did and why. No entry, no eligibility. */
 function StrategyLog() {
   const { account } = useSession();
@@ -184,6 +251,7 @@ function StrategyLog() {
   const [logs, setLogs] = useState<StrategyLogEntry[]>([]);
   const [text, setText] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -195,14 +263,19 @@ function StrategyLog() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setMessage(null);
+    if (!text.trim()) return setMessage({ ok: false, text: "Write 2 to 3 sentences first: what you did, and why." });
+    setSaving(true);
     try {
       await api.post("/api/strategy-log", { text });
       setText("");
-      setMessage({ ok: true, text: "Saved." });
+      setMessage({ ok: true, text: "Saved. Your entry is recorded for this checkpoint." });
       load();
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : "That did not save." });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -213,10 +286,10 @@ function StrategyLog() {
         To be considered for the creative and strategic investor prize, write 2 to 3 sentences at two or three checkpoints during Phase 2: what you did and why.
       </p>
       <form onSubmit={submit} className="stack" style={{ maxWidth: 640 }}>
-        <textarea rows={3} maxLength={600} value={text} onChange={(e) => setText(e.target.value)} placeholder="What did you do, and why?" required />
+        <textarea rows={3} maxLength={600} value={text} onChange={(e) => setText(e.target.value)} placeholder="What did you do, and why?" />
         <div>
-          <button type="submit" className="solid" disabled={!canAct || !text.trim()} title={canAct ? undefined : "Only the person trading for your team can save the log"}>
-            Save entry
+          <button type="submit" className="solid" disabled={!canAct || saving} title={canAct ? undefined : "Only the person trading for your team can save the log"}>
+            {saving ? "Saving…" : "Save entry"}
           </button>
         </div>
         {message && <div className={message.ok ? "up" : "down"}>{message.text}</div>}

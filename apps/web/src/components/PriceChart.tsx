@@ -14,6 +14,11 @@ const chartColors = () => ({
 
 export type HistoryPoint = { price: number; timestamp: number };
 
+type Time = import("lightweight-charts").UTCTimestamp;
+// The chart library shows times in UTC. Shift each point by this computer's offset so the axis shows local time,
+// the same clock as the news and everything else on screen.
+const localTime = (ms: number) => (Math.floor(ms / 1000) - new Date(ms).getTimezoneOffset() * 60) as Time;
+
 export function PriceChart({ symbol, onHistory }: { symbol: string; onHistory?: (h: HistoryPoint[]) => void }) {
   const onHistoryRef = useRef(onHistory);
   onHistoryRef.current = onHistory;
@@ -37,13 +42,29 @@ export function PriceChart({ symbol, onHistory }: { symbol: string; onHistory?: 
       });
       series = chart.addLineSeries({ color: cssVar("--ink"), lineWidth: 2, priceLineColor: cssVar("--flag") });
 
-      const history = await api.get<{ price: number; timestamp: number }[]>(
-        `/api/symbols/${symbol}/history`
-      );
+      // Load the history; if the server is busy or asks us to slow down, wait a moment and try again.
+      let history: HistoryPoint[] | null = null;
+      for (let attempt = 0; history === null && attempt < 5; attempt++) {
+        try {
+          history = await api.get<HistoryPoint[]>(`/api/symbols/${symbol}/history`);
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        }
+        if (disposed) return; // the page moved on to another company while this was loading
+      }
+      if (disposed || !history) return;
       onHistoryRef.current?.(history);
-      series.setData(
-        history.map((h) => ({ time: Math.floor(h.timestamp / 1000) as import("lightweight-charts").UTCTimestamp, value: h.price }))
-      );
+      // One point per second at most (the library needs strictly increasing times): the latest price in a second wins.
+      const points: { time: Time; value: number }[] = [];
+      for (const h of history) {
+        const time = localTime(h.timestamp);
+        if (points.length && points[points.length - 1].time >= time) points[points.length - 1] = { time: points[points.length - 1].time, value: h.price };
+        else points.push({ time, value: h.price });
+      }
+      series.setData(points);
+      let last = points.length ? points[points.length - 1].time : 0;
+      // Show the whole history across the chart's width, however short or long it is.
+      chart.timeScale().fitContent();
 
       const resize = () => {
         if (containerRef.current && chart) {
@@ -56,7 +77,10 @@ export function PriceChart({ symbol, onHistory }: { symbol: string; onHistory?: 
       const onPrices = (u: PricesUpdate) => {
         const p = u.prices.find((x) => x.symbol === symbol);
         if (!p || !series) return;
-        series.update({ time: Math.floor(u.at / 1000) as import("lightweight-charts").UTCTimestamp, value: p.price });
+        const time = localTime(u.at);
+        if (time < last) return; // an update older than what is shown (after a reconnect, say) is skipped
+        last = time;
+        series.update({ time, value: p.price });
       };
       socket.on("prices", onPrices);
 

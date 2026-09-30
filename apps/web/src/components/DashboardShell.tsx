@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useControlState } from "@/lib/useControlState";
-import { useConnection } from "@/lib/useConnection";
+import { useConnection, useConnectionProblem } from "@/lib/useConnection";
 import { UniverseProvider, useUniverse } from "@/lib/universe";
 import { pagePath, useRoute, type Page } from "@/lib/router";
 import { api } from "@/lib/api";
@@ -34,7 +34,8 @@ function Shell() {
   const phase1 = stage === "" || stage === "phase1";
   const phaseText = stage === "" ? "Not started" : stage === "phase1" ? "Phase 1" : stage === "closing" ? "Event closed" : "Phase 2";
   const phaseDetail = stage === "closing" ? "" : marketOpen ? "market open" : openWindow >= 0 ? `allocation window ${openWindow} open` : "market closed";
-  const connection = useConnection();
+  const connection = useConnectionProblem();
+  const live = useConnection();
   const route = useRoute();
   const { starred } = useUniverse();
   const [standingsVisible, setStandingsVisible] = useState(false);
@@ -134,7 +135,7 @@ function Shell() {
         <button onClick={logout}>Sign out</button>
       </header>
 
-      {connection !== "open" && (
+      {connection && (
         <div role="status" className="banner">
           {connection === "unauthenticated"
             ? "Your session is no longer valid. Please sign in again."
@@ -170,8 +171,8 @@ function Shell() {
 
       <footer className="statusbar">
         <span>
-          <i className={`dot ${connection === "open" ? "" : "off"}`} />
-          {connection === "open" ? "Live" : "Reconnecting"}
+          <i className={`dot ${live === "open" ? "" : "off"}`} />
+          {live === "open" ? "Live" : live === "connecting" ? "Connecting" : "Reconnecting"}
         </span>
         <span>Last trade {lastTrade ? new Date(lastTrade).toLocaleTimeString() : "—"}</span>
       </footer>

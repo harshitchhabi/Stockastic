@@ -21,13 +21,17 @@ export function RulesEditor() {
     <div className="page">
       <LoadError error={error} at={at} />
       <div className="page-head">
-        <h1>Rules shown to players</h1>
-        <span className="dim">{data.edited ? "edited by an organiser" : "the default, written from the rulebook"}</span>
+        <h1>Rules shown</h1>
       </div>
-      <p className="dim">
-        This is what players read on their Rules page. Changing it does not change how the game works. A line starting with "# " is a heading, a line
-        starting with "- " is a bullet point, and anything else is a paragraph.
-      </p>
+      <ul className="dim" style={{ margin: "0 0 12px", paddingLeft: 18 }}>
+        <li>
+          <span className="mono"># Topic</span> — a line starting with # and a space is a topic heading
+        </li>
+        <li>
+          <span className="mono">- Point</span> — a line starting with - and a space is a bullet point
+        </li>
+        <li>Any other line is a paragraph</li>
+      </ul>
       <div className="two-col" style={{ gap: 32, alignItems: "start" }}>
         <div className="stack">
           <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={34} style={{ width: "100%", fontFamily: "var(--mono)", fontSize: 13 }} />

@@ -223,3 +223,24 @@ func TestARestartAfterTheTableContinuesExactly(t *testing.T) {
 		}
 	}
 }
+
+// With a price table the price moves at exactly the item's minute. In Phase 2 fund managers get the news 60 seconds
+// before the public, so it goes out 60 seconds early: the public reads it as the price moves, not a minute later.
+func TestTableNewsReachesThePublicAsThePriceMoves(t *testing.T) {
+	sc := writeTable(t, `{"newsClock":"market","pricesFile":"prices.json","events":[
+ {"id":"n1","atMinute":2,"headline":"Policy change","type":"REAL","category":"X"},
+ {"id":"r1","atMinute":2,"headline":"Bull run","type":"REGIME","category":"REGIME"}]}`)
+	r := newRig(t, sc, companies(), 60*time.Second)
+	r.run(59)
+	if r.wire.count() != 0 {
+		t.Fatalf("after 59 seconds: %v", r.wire.items)
+	}
+	r.run(1)
+	if r.wire.count() != 1 || r.wire.items[0].headline != "Policy change" {
+		t.Fatalf("at 60 seconds the news should go to fund managers (the public gets it at 120, with the price): %v", r.wire.items)
+	}
+	r.run(60)
+	if r.wire.count() != 2 || r.wire.items[1].kind != news.KindRegime {
+		t.Fatalf("the bull run is announced to everyone on time, at 120 seconds: %v", r.wire.items)
+	}
+}

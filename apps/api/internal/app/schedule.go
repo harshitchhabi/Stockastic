@@ -278,6 +278,9 @@ func (a *App) ClockNext(actor User, reason, to string) error {
 		a.persistClock()
 		a.Clock.Tick() // the step's start (a results freeze, say) happens now, not on the next tick
 		a.broadcastControl()
+		if w := b.AllocationWindow; w != nil && *w == a.Clock.WindowCount()-1 && *w > 0 {
+			a.notice(fmt.Sprintf("Allocation window %d is open, and it is the last one. Put money into funds or take it out now: when it closes, fund money is locked until the end of the event.", *w))
+		}
 		return nil
 	})
 }

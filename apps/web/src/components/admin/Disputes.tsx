@@ -99,7 +99,7 @@ export function Disputes() {
         </label>
         <ActionButton
           className="solid"
-          disabled={!fillId.trim() || !note.trim()}
+          missing={!fillId.trim() ? "Enter the trade's ID first." : !note.trim() && "Write what the correction is."}
           label="Record correction"
           title="Record a correction against this trade"
           run={() =>

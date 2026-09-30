@@ -278,10 +278,21 @@ func (e *Engine) fireDueLocked(elapsed time.Duration, now time.Time, out *[]rele
 	if e.sc.NewsClock == "market" {
 		mins = float64(e.st.MarketSeconds) / 60
 	}
+	// With a price table the price reacts at exactly the item's minute. Fund managers see news first and everyone
+	// else a little later (Phase 2), so the item goes out that much earlier: managers get their head start, and
+	// the public reads it as the price moves, never after. A bull or bear run reaches everyone at once, on time.
+	early := 0.0
+	if e.sc.table != nil {
+		early = e.d.Lead().Minutes()
+	}
 	dirty := false
 	for _, ev := range e.sc.Events {
 		ev = e.effective(ev)
-		if mins >= ev.AtMinute && !e.fired[ev.ID] && !e.skipped(ev.ID) && e.inPhase(ev) {
+		due := ev.AtMinute
+		if ev.Type != "REGIME" {
+			due -= early
+		}
+		if mins >= due && !e.fired[ev.ID] && !e.skipped(ev.ID) && e.inPhase(ev) {
 			e.fireEventLocked(ev, now, out)
 			dirty = true
 		}

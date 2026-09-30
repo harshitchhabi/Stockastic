@@ -69,8 +69,15 @@ func TestPerformanceFeeOnlyOnNewProfitAboveTheHighWaterMark(t *testing.T) {
 	if c4.PerfFee != int64(money.FromRupees(500)) {
 		t.Fatalf("new profit above the mark: %+v", c4)
 	}
-	if c1.MgmtFee != 30_000 {
-		t.Fatalf("management fee = %d paise, want 30000 (1.5%% of average AUM Rs 20,000)", c1.MgmtFee)
+	// The first checkpoint (window 0 closing) only starts the first settlement period: no management fee there. Each
+	// later checkpoint ends a period and charges 1.5% of the period's average AUM (Rs 20,000).
+	if c1.MgmtFee != 0 {
+		t.Fatalf("management fee at the first checkpoint = %d paise, want 0: no period has passed yet", c1.MgmtFee)
+	}
+	for i, c := range []FundCheckpoint{c2, c3, c4} {
+		if c.MgmtFee != 30_000 {
+			t.Fatalf("management fee for period %d = %d paise, want 30000", i+1, c.MgmtFee)
+		}
 	}
 }
 
