@@ -56,7 +56,7 @@ These are set to placeholders and are all one value in `rulebook.json` (or a but
   download of each), and **Funds** shows every strategy log for the judges.
 - **Management fee**: each fund chooses 1 to 2% on its Fund desk (1.5% until it chooses); it is fixed once investors are in.
 - **Tie-break order** for the 20th qualifying place (peak value, then fewer trades, then coin toss). Publish it before Phase 1.
-- Whether **fund managers may see who invested** in their fund (they see counts and totals only now).
+- Fund managers see **who invested** in their fund and how much (each team, its units, value, money put in and taken out) on their Fund desk.
 - **What follows a warning** for a team below the 5% share in funds (a second warning could mean disqualification).
 - The minimum **device and browser** requirements to publish a day ahead (any current Chrome, Edge, Firefox or Safari works).
 
