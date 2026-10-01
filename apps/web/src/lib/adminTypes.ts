@@ -50,6 +50,8 @@ export interface Systems {
   lastPriceAt: number;
   diskFreeMb: number;
   diskLow: boolean;
+  heapMb: number;
+  goroutines: number;
   recentErrors: { at: number; message: string }[];
 }
 

@@ -64,6 +64,8 @@ var (
 	subs      = flag.Int("subs", 1, "companies each browser has open (order book subscriptions)")
 	storm     = flag.Int("storm", 200, "most teams logging in at the very same instant (a venue rarely exceeds this)")
 	mates     = flag.Int("teammates", 0, "teammates who join each team with their own login and only watch (the leader trades)")
+	stormFrac = flag.Float64("reconnect-storm", 0, "halfway through steady trading, cut this share of all connections at once and reconnect them together (0.2 = 20%)")
+	sampleInt = flag.Duration("sample", 0, "how often to record the server's memory, tasks and connections during steady trading (0 = off), to find leaks in a long run")
 
 	client = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{MaxIdleConns: 2000, MaxIdleConnsPerHost: 2000, IdleConnTimeout: 90 * time.Second}}
 
@@ -243,23 +245,31 @@ func main() {
 	fmt.Printf("opening %d WebSockets ...\n", len(everyone))
 	stop := make(chan struct{})
 	var wsWG sync.WaitGroup
-	var readyMu sync.Mutex
 	var statReady stats
-	parallel(len(everyone), 32, func(i int) {
+	type live struct {
+		c      *websocket.Conn
+		killed atomic.Bool // closed on purpose by the reconnection storm: not a drop
+	}
+	conns := make([]*live, len(everyone))
+	var connMu sync.Mutex
+	// open connects one person's live socket the way the browser does: auth, subscribe, ping every 15 seconds.
+	// onReady gets the time to "ready"; onState is called when the first control state arrives after it.
+	open := func(i int, onReady func(time.Duration), onState func()) error {
 		u := everyone[i]
 		t0 := time.Now()
 		c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err != nil {
-			orderErr.Add(1)
-			return
+			return err
 		}
+		l := &live{c: c}
+		connMu.Lock()
+		conns[i] = l
+		connMu.Unlock()
 		_ = c.WriteJSON(map[string]any{"t": "auth", "d": map[string]any{"token": u.token}})
 		for k := 0; k < *subs; k++ {
 			_ = c.WriteJSON(map[string]any{"t": "subscribe:symbol", "d": syms[rand.Intn(len(syms))].Symbol})
 		}
-		readyMu.Lock()
 		wsConnected.Add(1)
-		readyMu.Unlock()
 		wsWG.Add(1)
 		go func() { // the real web client sends a ping every 15 seconds
 			t := time.NewTicker(15 * time.Second)
@@ -269,7 +279,7 @@ func main() {
 				case <-stop:
 					return
 				case <-t.C:
-					if c.WriteJSON(map[string]any{"t": "ping"}) != nil {
+					if l.killed.Load() || c.WriteJSON(map[string]any{"t": "ping"}) != nil {
 						return
 					}
 				}
@@ -278,14 +288,16 @@ func main() {
 		go func() {
 			defer wsWG.Done()
 			defer c.Close()
-			first := true
+			ready, state := false, false
 			for {
 				_, data, err := c.ReadMessage()
 				if err != nil {
 					select {
 					case <-stop:
 					default:
-						wsDropped.Add(1)
+						if !l.killed.Load() {
+							wsDropped.Add(1)
+						}
 					}
 					return
 				}
@@ -301,9 +313,17 @@ func main() {
 				if json.Unmarshal(data, &f) != nil {
 					continue
 				}
-				if f.T == "ready" && first {
-					first = false
-					statReady.add(now.Sub(t0))
+				if f.T == "ready" && !ready {
+					ready = true
+					if onReady != nil {
+						onReady(now.Sub(t0))
+					}
+				}
+				if f.T == "controlState" && ready && !state {
+					state = true
+					if onState != nil {
+						onState()
+					}
 				}
 				if f.T == "trade" && f.D.ClientTradeID != "" {
 					if v, ok := sent.LoadAndDelete(f.D.ClientTradeID); ok {
@@ -312,7 +332,56 @@ func main() {
 				}
 			}
 		}()
+		return nil
+	}
+	parallel(len(everyone), 32, func(i int) {
+		if err := open(i, func(d time.Duration) { statReady.add(d) }, nil); err != nil {
+			orderErr.Add(1)
+		}
 	})
+
+	// The reconnection storm: part of the room loses its connection at the same moment (a Wi-Fi access point
+	// dropping, say) and every one of those browsers reconnects at once. Each must be signed in again and get the
+	// current state of the event.
+	var stormN, stormFailed, stormReady, stormState atomic.Int64
+	var statStorm stats
+	storm := func() {
+		n := int(float64(len(everyone)) * *stormFrac)
+		if n <= 0 {
+			return
+		}
+		pick := rand.Perm(len(everyone))[:n]
+		connMu.Lock()
+		for _, i := range pick {
+			if l := conns[i]; l != nil {
+				l.killed.Store(true)
+				_ = l.c.UnderlyingConn().Close() // cut, with no goodbye, as a lost network does
+			}
+		}
+		connMu.Unlock()
+		stormN.Store(int64(n))
+		fmt.Printf("   reconnection storm: %d connections cut at once; all reconnect together ...\n", n)
+		var g sync.WaitGroup
+		g.Add(1)
+		var w sync.WaitGroup
+		for _, i := range pick {
+			w.Add(1)
+			go func(i int) {
+				defer w.Done()
+				g.Wait()
+				err := open(i, func(d time.Duration) { stormReady.Add(1); statStorm.add(d) }, func() { stormState.Add(1) })
+				if err != nil {
+					stormFailed.Add(1)
+				}
+			}(i)
+		}
+		g.Done()
+		w.Wait()
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) && (stormReady.Load() < int64(n)-stormFailed.Load() || stormState.Load() < int64(n)-stormFailed.Load()) {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 
 	place := func(u *user, n int, sym string, open float64, into *stats) {
 		side := "buy"
@@ -355,6 +424,53 @@ func main() {
 
 	// ---- 5. steady trading ----
 	fmt.Printf("trading steadily for %s (%.1f trades per team per minute) ...\n", *steady, *perMin)
+	if *stormFrac > 0 {
+		go func() {
+			time.Sleep(*steady / 2)
+			storm()
+		}()
+	}
+	type sample struct {
+		at                        time.Duration
+		heap, tasks, conns, p99ms int64
+		journalErrors             int64
+	}
+	var samples []sample
+	var sampleMu sync.Mutex
+	sampleDone := make(chan struct{})
+	if *sampleInt > 0 {
+		go func() {
+			defer close(sampleDone)
+			t0 := time.Now()
+			tick := time.NewTicker(*sampleInt)
+			defer tick.Stop()
+			for n := 0; time.Since(t0) < *steady; n++ {
+				<-tick.C
+				var sys struct {
+					HeapMB        int64 `json:"heapMb"`
+					Goroutines    int64 `json:"goroutines"`
+					Connected     int64 `json:"connected"`
+					CommitP99Ms   int64 `json:"commitP99Ms"`
+					JournalErrors int64 `json:"journalErrors"`
+				}
+				st, b, err := call("GET", "/api/admin/systems", adm, nil)
+				if err != nil || st != 200 {
+					continue
+				}
+				_ = json.Unmarshal(b, &sys)
+				sm := sample{time.Since(t0), sys.HeapMB, sys.Goroutines, sys.Connected, sys.CommitP99Ms, sys.JournalErrors}
+				sampleMu.Lock()
+				samples = append(samples, sm)
+				sampleMu.Unlock()
+				if n%10 == 0 {
+					fmt.Printf("   %6s  memory %4d MB  tasks %5d  connected %5d  save p99 %3d ms  failed saves %d  trades ok %d, errors %d\n",
+						sm.at.Round(time.Second), sm.heap, sm.tasks, sm.conns, sm.p99ms, sm.journalErrors, orderOK.Load(), orderErr.Load())
+				}
+			}
+		}()
+	} else {
+		close(sampleDone)
+	}
 	deadline := time.Now().Add(*steady)
 	var tw sync.WaitGroup
 	interval := time.Duration(float64(time.Minute) / *perMin)
@@ -411,6 +527,7 @@ func main() {
 		}(w)
 	}
 	tw.Wait()
+	<-sampleDone
 
 	// ---- 6. the worst moment: every team hits the same company in the same instant ----
 	time.Sleep(2 * time.Second)
@@ -469,6 +586,35 @@ func main() {
 		float64(wsMsgs.Load())/float64(max(1, int(wsConnected.Load())))/secs, float64(wsBytes.Load())/1024/float64(max(1, int(wsConnected.Load())))/secs)
 	fmt.Printf("server view: connected %d, (unused %d), save time p50 %dms p99 %dms, failed saves %d, stopped companies %d\n",
 		sys.Connected, sys.OpenOrders, sys.CommitP50Ms, sys.CommitP99Ms, sys.JournalErrors, len(sys.Halted))
+	if stormN.Load() > 0 {
+		fmt.Printf("reconnection storm: %d cut at once; reconnected and signed in %d, got the current state %d, failed to connect %d\n",
+			stormN.Load(), stormReady.Load(), stormState.Load(), stormFailed.Load())
+		fmt.Println(statStorm.line("  reconnect to ready, all at once"))
+	}
+	sampleMu.Lock()
+	if len(samples) >= 8 {
+		q := len(samples) / 4
+		avg := func(xs []sample, f func(sample) int64) float64 {
+			var t int64
+			for _, x := range xs {
+				t += f(x)
+			}
+			return float64(t) / float64(len(xs))
+		}
+		heap := func(x sample) int64 { return x.heap }
+		tasks := func(x sample) int64 { return x.tasks }
+		var maxHeap, maxTasks int64
+		for _, x := range samples {
+			maxHeap, maxTasks = max(maxHeap, x.heap), max(maxTasks, x.tasks)
+		}
+		h1, h4 := avg(samples[:q], heap), avg(samples[len(samples)-q:], heap)
+		g1, g4 := avg(samples[:q], tasks), avg(samples[len(samples)-q:], tasks)
+		fmt.Printf("memory over the run: first quarter %.0f MB, last quarter %.0f MB, highest %d MB\n", h1, h4, maxHeap)
+		fmt.Printf("tasks over the run:  first quarter %.0f, last quarter %.0f, highest %d\n", g1, g4, maxTasks)
+		leak := h4 > h1*1.5+20 || g4 > g1*1.2+50
+		fmt.Printf("leak check: %s\n", map[bool]string{false: "PASS (memory and tasks level off)", true: "FAIL (still climbing at the end)"}[leak])
+	}
+	sampleMu.Unlock()
 	close(stop)
 	fmt.Println("(closing sockets)")
 	os.Exit(0)

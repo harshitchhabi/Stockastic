@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -535,20 +536,24 @@ type ErrorRow struct {
 }
 
 type Systems struct {
-	UptimeSec     int64      `json:"uptimeSec"`
-	DBOK          bool       `json:"dbOk"`
-	Connected     int        `json:"connected"`
-	TradesPerMin  int64      `json:"tradesPerMin"`
-	CommitP50Ms   int64      `json:"commitP50Ms"`
-	CommitP99Ms   int64      `json:"commitP99Ms"`
-	JournalErrors int64      `json:"journalErrors"`
-	SymbolsTotal  int        `json:"symbolsTotal"`
-	PriceTicks    int        `json:"priceTicks"`
-	TickSeconds   int        `json:"tickSeconds"`
-	LastPriceAt   int64      `json:"lastPriceAt"`
-	DiskFreeMB    int64      `json:"diskFreeMb"`
-	DiskLow       bool       `json:"diskLow"`
-	RecentErrors  []ErrorRow `json:"recentErrors"`
+	UptimeSec     int64 `json:"uptimeSec"`
+	DBOK          bool  `json:"dbOk"`
+	Connected     int   `json:"connected"`
+	TradesPerMin  int64 `json:"tradesPerMin"`
+	CommitP50Ms   int64 `json:"commitP50Ms"`
+	CommitP99Ms   int64 `json:"commitP99Ms"`
+	JournalErrors int64 `json:"journalErrors"`
+	SymbolsTotal  int   `json:"symbolsTotal"`
+	PriceTicks    int   `json:"priceTicks"`
+	TickSeconds   int   `json:"tickSeconds"`
+	LastPriceAt   int64 `json:"lastPriceAt"`
+	DiskFreeMB    int64 `json:"diskFreeMb"`
+	DiskLow       bool  `json:"diskLow"`
+	// HeapMB is the memory the server is using for live data, and Goroutines how many tasks it is running. Both
+	// should level off during an event; a steady climb would mean something is not being released.
+	HeapMB       int64      `json:"heapMb"`
+	Goroutines   int        `json:"goroutines"`
+	RecentErrors []ErrorRow `json:"recentErrors"`
 }
 
 func (a *App) Systems() Systems {
@@ -561,6 +566,9 @@ func (a *App) Systems() Systems {
 		JournalErrors: a.journalErrors.Load(), SymbolsTotal: len(a.symbols), PriceTicks: st.Ticks, TickSeconds: st.TickSeconds,
 		LastPriceAt: a.lastTick.Load(), RecentErrors: []ErrorRow{},
 	}
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	s.HeapMB, s.Goroutines = int64(ms.HeapAlloc>>20), runtime.NumGoroutine()
 	if free, ok := a.cfg.Disk.Free(); ok {
 		s.DiskFreeMB = int64(free >> 20)
 		s.DiskLow = a.cfg.Disk.Check() != nil

@@ -39,6 +39,8 @@ export function Systems() {
         <Tile label="Trade save time (slowest 1%)" value={`${data.commitP99Ms} ms`} tone={slow ? "down" : undefined} sub={slow ? "slower than usual" : undefined} />
         <Tile label="Failed saves" value={data.journalErrors} tone={data.journalErrors > 0 ? "down" : "up"} sub="trades refused rather than lost" />
         <Tile label="Disk space free" value={disk} tone={data.diskLow ? "down" : "up"} sub={data.diskLow ? "trades are refused until space is freed" : undefined} />
+        <Tile label="Memory in use" value={`${data.heapMb} MB`} sub="should level off; a steady climb means a problem" />
+        <Tile label="Tasks running" value={String(data.goroutines)} sub="rises and falls with connections" />
         <Tile
           label="Price updates"
           value={data.priceTicks}
