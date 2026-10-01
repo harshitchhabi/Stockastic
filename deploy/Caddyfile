@@ -31,7 +31,11 @@ stockastic.dreammerchantsevent.me {
 			read_timeout 0
 			write_timeout 0
 		}
-		health_uri /healthz
-		health_interval 5s
+		# One app behind Caddy: if it is restarting (a crash, an update), wait for it and try again for up to 20
+		# seconds instead of answering "unavailable". A request is only retried when it never reached the app, so
+		# nothing is ever sent twice. (Active health checks are left off: with a single app they only turn a
+		# few-second restart into errors.)
+		lb_try_duration 20s
+		lb_try_interval 250ms
 	}
 }
