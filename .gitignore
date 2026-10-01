@@ -29,3 +29,6 @@ Stochasticdata*.xlsx
 ~$*
 
 final_rulebook_doc*.docx
+
+# Secrets kept on this computer until they go onto the server (never committed)
+*.secret.env
