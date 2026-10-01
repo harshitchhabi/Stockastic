@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"runtime/metrics"
 	"sort"
 	"strings"
 	"time"
@@ -566,9 +567,7 @@ func (a *App) Systems() Systems {
 		JournalErrors: a.journalErrors.Load(), SymbolsTotal: len(a.symbols), PriceTicks: st.Ticks, TickSeconds: st.TickSeconds,
 		LastPriceAt: a.lastTick.Load(), RecentErrors: []ErrorRow{},
 	}
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	s.HeapMB, s.Goroutines = int64(ms.HeapAlloc>>20), runtime.NumGoroutine()
+	s.HeapMB, s.Goroutines = liveHeapMB(), runtime.NumGoroutine()
 	if free, ok := a.cfg.Disk.Free(); ok {
 		s.DiskFreeMB = int64(free >> 20)
 		s.DiskLow = a.cfg.Disk.Check() != nil
@@ -577,6 +576,19 @@ func (a *App) Systems() Systems {
 		s.RecentErrors = append(s.RecentErrors, ErrorRow{At: dto.MS(e.At), Message: e.Message})
 	}
 	return s
+}
+
+// liveHeapMB is the memory the server's data was using right after the last garbage collection: what it really
+// holds, without the garbage waiting to be collected (which makes a plain heap reading swing up and down).
+func liveHeapMB() int64 {
+	sample := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	metrics.Read(sample)
+	if sample[0].Value.Kind() != metrics.KindUint64 {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		return int64(ms.HeapAlloc >> 20)
+	}
+	return int64(sample[0].Value.Uint64() >> 20)
 }
 
 // SimStatus is what the price simulation is doing and which events are scheduled.

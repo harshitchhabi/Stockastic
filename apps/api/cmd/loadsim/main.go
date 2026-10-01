@@ -66,6 +66,7 @@ var (
 	mates     = flag.Int("teammates", 0, "teammates who join each team with their own login and only watch (the leader trades)")
 	stormFrac = flag.Float64("reconnect-storm", 0, "halfway through steady trading, cut this share of all connections at once and reconnect them together (0.2 = 20%)")
 	sampleInt = flag.Duration("sample", 0, "how often to record the server's memory, tasks and connections during steady trading (0 = off), to find leaks in a long run")
+	idleFor   = flag.Duration("idle", 0, "after steady trading, keep everyone connected but trading nothing for this long while sampling: memory must stay flat (a leak keeps growing with nothing happening)")
 
 	client = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{MaxIdleConns: 2000, MaxIdleConnsPerHost: 2000, IdleConnTimeout: 90 * time.Second}}
 
@@ -528,6 +529,25 @@ func main() {
 	}
 	tw.Wait()
 	<-sampleDone
+	// The quiet period: everyone still connected, nobody trading. Kept data stays the same size; a leak would grow.
+	var idleFirst, idleLast, idleMax int64 = -1, 0, 0
+	if *idleFor > 0 && *sampleInt > 0 {
+		fmt.Printf("quiet period: everyone connected, no trading, for %s ...\n", *idleFor)
+		end := time.Now().Add(*idleFor)
+		for time.Now().Before(end) {
+			time.Sleep(*sampleInt)
+			var sys struct {
+				HeapMB int64 `json:"heapMb"`
+			}
+			if st, b, err := call("GET", "/api/admin/systems", adm, nil); err == nil && st == 200 {
+				_ = json.Unmarshal(b, &sys)
+				if idleFirst < 0 {
+					idleFirst = sys.HeapMB
+				}
+				idleLast, idleMax = sys.HeapMB, max(idleMax, sys.HeapMB)
+			}
+		}
+	}
 
 	// ---- 6. the worst moment: every team hits the same company in the same instant ----
 	time.Sleep(2 * time.Second)
@@ -611,8 +631,18 @@ func main() {
 		g1, g4 := avg(samples[:q], tasks), avg(samples[len(samples)-q:], tasks)
 		fmt.Printf("memory over the run: first quarter %.0f MB, last quarter %.0f MB, highest %d MB\n", h1, h4, maxHeap)
 		fmt.Printf("tasks over the run:  first quarter %.0f, last quarter %.0f, highest %d\n", g1, g4, maxTasks)
-		leak := h4 > h1*1.5+20 || g4 > g1*1.2+50
-		fmt.Printf("leak check: %s\n", map[bool]string{false: "PASS (memory and tasks level off)", true: "FAIL (still climbing at the end)"}[leak])
+		if n := orderOK.Load(); n > 0 && len(samples) > 1 {
+			grew := float64(samples[len(samples)-1].heap - samples[0].heap)
+			fmt.Printf("memory kept per 1,000 trades: about %.1f MB (every trade is kept for the organisers and to refuse duplicates)\n", grew/float64(n)*1000)
+		}
+		taskLeak := g4 > g1*1.2+50
+		if idleFirst >= 0 {
+			idleLeak := idleLast > idleFirst+5
+			fmt.Printf("quiet period memory: start %d MB, end %d MB, highest %d MB\n", idleFirst, idleLast, idleMax)
+			fmt.Printf("leak check: %s\n", map[bool]string{false: "PASS (memory stays flat with nothing happening; tasks level off)", true: "FAIL (memory or tasks grow with nothing happening)"}[idleLeak || taskLeak])
+		} else {
+			fmt.Printf("task check: %s (run with -idle to check memory with nothing happening)\n", map[bool]string{false: "PASS (tasks level off)", true: "FAIL (tasks still climbing)"}[taskLeak])
+		}
 	}
 	sampleMu.Unlock()
 	close(stop)
